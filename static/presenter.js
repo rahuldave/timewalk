@@ -47,7 +47,8 @@ function draw() {
     text.textContent = command.text;
     const track = document.createElement("span");
     track.className = "track";
-    track.textContent = { main: "in main", runs: "in the Runs tab" }[command.track] || "at this step";
+    const extra = /^runs([2-9])$/.exec(command.track);
+    track.textContent = extra ? `in the Runs ${extra[1]} tab` : { main: "in main", runs: "in the Runs tab" }[command.track] || "at this step";
     button.append(text, track);
     button.title = "Types this into the terminal the audience sees, and runs it";
     button.onclick = () => act(() => api("/api/type", { track: command.track, text: command.text }));

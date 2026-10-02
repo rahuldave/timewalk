@@ -316,6 +316,11 @@ function drawTabs() {
 }
 
 function selectTab(id) {
+  // A command sent to "runs2" (up to "runs9") opens that tab the first time it is used.
+  if (/^runs[2-9]$/.test(id) && !ui.tabs.some((tab) => tab.id === id)) {
+    const after = ui.tabs.findLastIndex((tab) => tab.id.startsWith("runs"));
+    ui.tabs.splice(after + 1, 0, { id, label: "Runs " + id.slice(4), hint: "Another shell at this step, for a second long command" });
+  }
   if (!ui.tabs.some((tab) => tab.id === id)) return;
   ui.active = id;
   ui.tabs.find((tab) => tab.id === id).unseen = false;

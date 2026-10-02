@@ -288,6 +288,7 @@ Say **hello**.
 
 $ ls -la
 runs$ just train modal configs/helpdesk.yaml
+runs2$ just train modal configs/ablation.yaml
 main$ just mlflow
 
 ## step-01
@@ -307,6 +308,7 @@ def test_notes_are_read_per_step() -> None:
     assert first["commands"] == [
         {"track": "replay", "text": "ls -la"},
         {"track": "runs", "text": "just train modal configs/helpdesk.yaml"},
+        {"track": "runs2", "text": "just train modal configs/ablation.yaml"},
         {"track": "main", "text": "just mlflow"},
     ]
     assert first["text"] == "Say **hello**."
@@ -482,3 +484,20 @@ def test_the_terminal_runs_commands_in_the_working_copy(served: TestClient, repo
 def test_unknown_terminal_names_are_refused(served: TestClient) -> None:
     "Only the known tab names get a shell."
     assert served.post("/api/type", params={"t": TOKEN}, json={"track": "../../bin", "text": "echo no"}).status_code == 409
+
+
+def test_a_second_runs_tab_takes_commands(served: TestClient, repo: timewalk.Repo) -> None:
+    "A command sent to `runs2` runs in its own shell in the replay copy, so two long commands can go at once."
+    assert served.post("/api/type", params={"t": TOKEN}, json={"track": "runs2", "text": "echo second-$((6*7)) && pwd"}).status_code == 200
+    with served.websocket_connect(f"/ws/term/runs2?t={TOKEN}") as socket:
+        seen, deadline = b"", time.time() + 20
+        while time.time() < deadline and not (b"second-42" in seen and repo.work.name.encode() in seen):
+            seen += socket.receive_bytes()
+    assert b"second-42" in seen
+    assert repo.work.name.encode() in seen
+
+
+def test_runs_tabs_stop_at_nine(served: TestClient) -> None:
+    "`runs2` to `runs9` exist; `runs1` and `runs10` are not names of anything."
+    for name in ("runs1", "runs10", "runs0"):
+        assert served.post("/api/type", params={"t": TOKEN}, json={"track": name, "text": "echo no"}).status_code == 409

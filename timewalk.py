@@ -250,6 +250,8 @@ def parse_notes(
         $ just test           a command for the terminal at this step; one click sends it
         runs$ just train      a command for the Runs tab: a second shell at this step, for commands that take a
                               while, so the first shell stays free
+        runs2$ just sweep     the same in a further Runs tab (runs2 to runs9), for a second long command while
+                              the first is still going
         main$ git log         a command for the terminal in the repository you started from
 
     Every other line is prose, shown as written.
@@ -267,7 +269,7 @@ def parse_notes(
         if current is None:
             continue
         planned = re.match(r"^time:\s*(\d+):(\d\d)\s*$", line.strip())
-        command = re.match(r"^\s*(main|runs)?\$\s+(.+)$", line)
+        command = re.match(r"^\s*(main|runs[2-9]?)?\$\s+(.+)$", line)
         if planned:
             current["time"] = int(planned.group(1)) * 60 + int(planned.group(2))
         elif command:
@@ -471,10 +473,10 @@ def make_app(
     terminals: dict[str, Terminal] = {}
 
     def terminal_for(
-        name: str,  # Tab name: replay, runs, main, assistant, or extra-N
+        name: str,  # Tab name: replay, runs, runs2 to runs9, main, assistant, or extra-N
     ) -> Terminal | None:  # The shell behind that tab, made on first use
         "Find or start the shell for a tab. Every tab runs at the current step except `main`."
-        if not re.fullmatch(r"replay|runs|main|assistant|extra-\d{1,2}", name):
+        if not re.fullmatch(r"replay|runs[2-9]?|main|assistant|extra-\d{1,2}", name):
             return None
         if name not in terminals:
             terminals[name] = Terminal(repo.main if name == "main" else repo.work, startup=assistant if name == "assistant" else "")

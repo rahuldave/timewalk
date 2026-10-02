@@ -118,6 +118,7 @@ main$ git log --oneline
 | `time: 0:37` | The planned start, minutes:seconds into the session |
 | `$ command` | A command for the terminal at this step |
 | `runs$ command` | The same, in the Runs tab |
+| `runs2$ command` | The same, in a second Runs tab (up to `runs9$`), opened when first used: for a second long command while the first is still going |
 | `main$ command` | The same, in the repository you started from |
 | anything else | Shown to you as Markdown |
 
@@ -156,7 +157,7 @@ Claude tab (`--assistant ''` gives a plain shell there instead, `--assistant aid
 ## Development
 
 ```
-just test      # 42 tests: the git layer, notes and slides, the web application's guards, a real terminal
+just test      # 44 tests: the git layer, notes and slides, the web application's guards, a real terminal
 just lint
 ```
 
