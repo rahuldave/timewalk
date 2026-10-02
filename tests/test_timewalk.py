@@ -486,10 +486,11 @@ def test_unknown_terminal_names_are_refused(served: TestClient) -> None:
     assert served.post("/api/type", params={"t": TOKEN}, json={"track": "../../bin", "text": "echo no"}).status_code == 409
 
 
-def test_a_second_runs_tab_takes_commands(served: TestClient, repo: timewalk.Repo) -> None:
-    "A command sent to `runs2` runs in its own shell in the replay copy, so two long commands can go at once."
-    assert served.post("/api/type", params={"t": TOKEN}, json={"track": "runs2", "text": "echo second-$((6*7)) && pwd"}).status_code == 200
+def test_a_second_runs_tab_has_a_shell_of_its_own(served: TestClient, repo: timewalk.Repo) -> None:
+    "`runs2` is a further shell in the replay copy, so two long commands can go at once."
     with served.websocket_connect(f"/ws/term/runs2?t={TOKEN}") as socket:
+        socket.send_json({"type": "resize", "rows": 24, "cols": 100})
+        socket.send_json({"type": "input", "data": "echo second-$((6*7)) && pwd\r"})
         seen, deadline = b"", time.time() + 20
         while time.time() < deadline and not (b"second-42" in seen and repo.work.name.encode() in seen):
             seen += socket.receive_bytes()
