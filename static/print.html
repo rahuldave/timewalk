@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <title>Slides</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/vendor/highlight/github.min.css">
+  <link rel="stylesheet" href="/static/app.css">
+  <style>
+    /* One slide per page, 16:9. 13.333in x 7.5in is 1280 x 720 CSS pixels. */
+    @page { size: 13.333in 7.5in; margin: 0; }
+    html, body { height: auto; overflow: visible; display: block; background: #fff; }
+    .page { width: 1280px; height: 720px; display: flex; flex-direction: column; overflow: hidden; break-after: page; background: #fff; position: relative; }
+    .page .slide { flex: 1; min-height: 0; overflow: hidden; display: flex; }
+    .page .slide-md { font-size: 27px; padding: 44px 64px 20px; overflow: hidden; }
+    .page .slide img { max-height: 100%; }
+    .page .slide-md img { max-height: 470px; }
+    .page footer { flex: none; display: flex; justify-content: space-between; gap: 24px; padding: 0 64px 18px; font-size: 13px; color: #6f7b8b; }
+    .page footer span:nth-child(2) { flex: 1; text-align: center; }
+    @media screen { body { background: #d9dee5; } .page { margin: 16px auto; box-shadow: 0 1px 6px rgba(0,0,0,.25); } }
+  </style>
+</head>
+<body>
+  <script src="/static/vendor/highlight/highlight.min.js"></script>
+  <script src="/static/vendor/highlight/dockerfile.min.js"></script>
+  <script type="module" src="/static/print.js"></script>
+</body>
+</html>

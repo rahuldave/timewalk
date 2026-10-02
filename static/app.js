@@ -1,0 +1,449 @@
+// The audience page: step bar, read-only file view, terminal tabs.
+import { init, Terminal, FitAddon } from "/static/vendor/ghostty-web/ghostty-web.js";
+import { api, socket, onEvents, escapeHtml, settings, stepLabel, drawSlide } from "/static/common.js";
+
+const $ = (id) => document.getElementById(id);
+const LANGUAGES = { py: "python", toml: "ini", cfg: "ini", ini: "ini", yaml: "yaml", yml: "yaml", json: "json", jsonl: "json", md: "markdown",
+  qmd: "markdown", sh: "bash", zsh: "bash", js: "javascript", ts: "typescript", html: "xml", css: "css", lua: "lua", lock: "ini" };
+const TERM_THEMES = {
+  light: { background: "#fbfbfc", foreground: "#17202b", cursor: "#2456b5", selectionBackground: "#cfdcf5",
+    black: "#17202b", red: "#b3372f", green: "#1d7a4c", yellow: "#946200", blue: "#2456b5", magenta: "#8a3ea8", cyan: "#0f7b86", white: "#6f7b8b",
+    brightBlack: "#4d5969", brightRed: "#c9453c", brightGreen: "#22915a", brightYellow: "#a85b00", brightBlue: "#3468cf", brightMagenta: "#a14fc0", brightCyan: "#12909c", brightWhite: "#17202b" },
+  dark: { background: "#0f141b", foreground: "#e7ebf1", cursor: "#8db0f7", selectionBackground: "#2b3f66",
+    black: "#11161d", red: "#f0827a", green: "#58c48e", yellow: "#f0c05a", blue: "#8db0f7", magenta: "#d59cf0", cyan: "#6ed3de", white: "#b0bac8",
+    brightBlack: "#8d99aa", brightRed: "#ff9d95", brightGreen: "#7ddcaa", brightYellow: "#ffd77a", brightBlue: "#aac5ff", brightMagenta: "#e6b8fb", brightCyan: "#8fe6ef", brightWhite: "#ffffff" },
+};
+
+const ui = {
+  state: null,            // what /api/state returned
+  tree: null,             // what /api/tree returned
+  open: null,             // path of the file being read
+  view: "file",           // "file" or "diff"
+  closedDirs: new Set(),
+  knownRecipes: null,     // recipe names seen at the previous step, to mark new ones
+  recipes: { replay: [], main: [] },
+  tabs: [{ id: "replay", label: "At this step", hint: "A shell in the working copy at this step" },
+         { id: "runs", label: "Runs", hint: "A second shell at this step, for commands that take a while, such as a training run" },
+         { id: "main", label: "Main", hint: "A shell in the repository you started from" },
+         { id: "assistant", label: "Claude", hint: "Starts Claude Code at this step. Ask it what the code is at this commit" }],
+  active: "replay",
+  terms: new Map(),       // tab id -> { term, fit, ws, el }
+  theme: settings.get("theme", "light"),
+  size: settings.get("size", 14),
+  layout: settings.get("layout", "split"),   // "slides", "split" or "code"; only used when there are slides
+};
+
+// ---------- steps ----------
+
+async function refresh() {
+  ui.state = await api("/api/state");
+  drawSteps();
+  drawSlides();
+  await Promise.all([loadTree(), loadRecipes()]);
+  if (ui.open) await openFile(ui.open, ui.view, false);
+}
+
+function drawSteps() {
+  const { steps, current } = ui.state;
+  const list = $("step-list");
+  list.replaceChildren(...steps.map((step) => {
+    const item = document.createElement("li");
+    const button = document.createElement("button");
+    button.textContent = stepLabel(step);
+    button.title = `${step.name}: ${step.subject}`;
+    button.className = step.index === current ? "here" : current !== null && step.index < current ? "done" : "";
+    if (step.index === current) button.setAttribute("aria-current", "step");
+    button.onclick = () => move(step.index);
+    item.append(button);
+    return item;
+  }));
+  const here = current === null ? null : steps[current];
+  $("step-name").textContent = here ? here.name : "between steps";
+  $("step-subject").textContent = here ? here.subject : "The working copy is not at one of the steps. Choose a step to return.";
+  $("note").hidden = !(here && here.note);
+  $("note").textContent = here ? here.note : "";
+  $("prev").disabled = current === null || current === 0;
+  $("next").disabled = current !== null && current === steps.length - 1;
+  document.title = here ? `${here.name} · timewalk` : "timewalk";
+  list.querySelector(".here")?.scrollIntoView({ block: "nearest", inline: "center" });
+}
+
+async function move(to, setAside = false) {
+  if (to < 0 || to >= ui.state.steps.length) return;
+  hideNotice();
+  try {
+    await api("/api/move", { to, set_aside: setAside });
+    // the server tells every page it moved, this one included; refresh() runs from the event
+  } catch (error) {
+    if (error.body?.edits?.length && error.message === "uncommitted edits") askAboutEdits(to, error.body.edits);
+    else showNotice(error.message, true);
+  }
+}
+
+function askAboutEdits(to, edits) {
+  const notice = $("notice");
+  notice.className = "notice";
+  notice.replaceChildren();
+  const text = document.createElement("span");
+  text.textContent = `${edits.length} file${edits.length === 1 ? " has" : "s have"} edits that are not committed: ${edits.slice(0, 4).join(", ")}${edits.length > 4 ? ", ..." : ""}.`;
+  const go = document.createElement("button");
+  go.textContent = "Set the edits aside and move";
+  go.title = "Runs git stash, so the edits can be brought back with git stash pop";
+  go.onclick = () => move(to, true);
+  const stay = document.createElement("button");
+  stay.textContent = "Stay here";
+  stay.onclick = hideNotice;
+  notice.append(text, go, stay);
+  notice.hidden = false;
+}
+
+function showNotice(message, isError = false) {
+  const notice = $("notice");
+  notice.className = isError ? "notice error" : "notice";
+  notice.textContent = message;
+  notice.hidden = false;
+}
+
+function hideNotice() { $("notice").hidden = true; }
+
+// ---------- slides ----------
+
+function drawSlides() {
+  const { slides = [], slide = 0, has_slides: hasSlides } = ui.state;
+  $("layouts").hidden = !hasSlides;
+  // A step without slides shows its code, whatever the chosen layout.
+  document.body.dataset.layout = hasSlides && slides.length ? ui.layout : "code";
+  document.body.classList.toggle("no-slides-here", hasSlides && !slides.length);
+  for (const button of $("layouts").querySelectorAll("button")) button.setAttribute("aria-pressed", String(button.dataset.layout === ui.layout));
+  $("slide-count").textContent = slides.length ? `Slide ${slide + 1} of ${slides.length}` : "No slides for this step";
+  $("slide-prev").disabled = slide <= 0;
+  $("slide-next").disabled = slide >= slides.length - 1;
+  drawSlide($("slide"), slides[slide]);
+  for (const entry of ui.terms.values()) if (!entry.el.hidden) requestAnimationFrame(() => entry.fit.fit());
+}
+
+function setLayout(layout) {
+  ui.layout = layout;
+  settings.set("layout", layout);
+  drawSlides();
+}
+
+async function showSlide(to) {
+  try { await api("/api/slide", { to }); } catch (error) { showNotice(error.message, true); }
+}
+
+// ---------- files ----------
+
+async function loadTree() {
+  ui.tree = await api("/api/tree");
+  drawTree();
+}
+
+function drawTree() {
+  const onlyChanged = $("only-changed").checked;
+  const files = ui.tree.files.filter((f) => !onlyChanged || f.status);
+  const changed = ui.tree.files.filter((f) => f.status).length;
+  $("tree-summary").textContent = `${ui.tree.files.length} files` + (changed ? `, ${changed} changed` : "");
+  $("tree-summary").title = ui.tree.summary || "";
+
+  const root = { dirs: new Map(), files: [] };
+  for (const file of files) {
+    const parts = file.path.split("/");
+    let node = root;
+    for (const part of parts.slice(0, -1)) {
+      if (!node.dirs.has(part)) node.dirs.set(part, { dirs: new Map(), files: [], changed: false });
+      node = node.dirs.get(part);
+      if (file.status) node.changed = true;
+    }
+    node.files.push({ ...file, name: parts.at(-1) });
+  }
+  // On a large tree, start with folders that hold no change closed. The user's own toggles win after that.
+  if (ui.closedDirs.size === 0 && ui.tree.files.length > 60) {
+    const seed = (node, prefix) => node.dirs.forEach((child, name) => {
+      const path = prefix + name;
+      if (!child.changed) ui.closedDirs.add(path);
+      seed(child, path + "/");
+    });
+    seed(root, "");
+  }
+
+  const build = (node, prefix, depth) => {
+    const list = document.createElement("ul");
+    for (const [name, child] of [...node.dirs].sort(([a], [b]) => a.localeCompare(b))) {
+      const path = prefix + name;
+      const item = document.createElement("li");
+      item.className = "dir" + (ui.closedDirs.has(path) ? " closed" : "");
+      const button = document.createElement("button");
+      button.style.setProperty("--depth", depth);
+      button.textContent = name + "/";
+      button.onclick = () => {
+        item.classList.toggle("closed");
+        if (item.classList.contains("closed")) ui.closedDirs.add(path); else ui.closedDirs.delete(path);
+      };
+      item.append(button, build(child, path + "/", depth + 1));
+      list.append(item);
+    }
+    for (const file of node.files.sort((a, b) => a.name.localeCompare(b.name))) {
+      const item = document.createElement("li");
+      item.className = "file" + (file.path === ui.open ? " open" : "");
+      const button = document.createElement("button");
+      button.style.setProperty("--depth", depth);
+      button.append(file.name);
+      if (file.status) {
+        const badge = document.createElement("span");
+        badge.className = "badge " + file.status;
+        badge.textContent = file.status === "A" ? "new" : "changed";
+        button.append(badge);
+      }
+      button.onclick = () => openFile(file.path, file.status === "M" ? ui.view : "file");
+      item.append(button);
+      list.append(item);
+    }
+    return list;
+  };
+
+  const tree = $("tree");
+  tree.replaceChildren(build(root, "", 0));
+  if (ui.tree.deleted.length) {
+    const gone = document.createElement("p");
+    gone.className = "gone";
+    gone.textContent = "Removed in this step: " + ui.tree.deleted.join(", ");
+    tree.append(gone);
+  }
+}
+
+async function openFile(path, view = "file", scrollTop = true) {
+  ui.open = path;
+  ui.view = view;
+  const file = await api("/api/file?path=" + encodeURIComponent(path));
+  $("file-path").textContent = path;
+  $("view-file").setAttribute("aria-selected", String(view === "file"));
+  $("view-diff").setAttribute("aria-selected", String(view === "diff"));
+  $("view-diff").disabled = !file.diff;
+  const body = $("file-body");
+  if (file.missing) body.innerHTML = `<p class="empty">This file does not exist at this step.</p>`;
+  else if (file.skipped) body.innerHTML = `<p class="empty">Not shown: ${escapeHtml(file.skipped)}.</p>`;
+  else if (view === "diff" && file.diff) body.replaceChildren(drawDiff(file.diff));
+  else body.replaceChildren(drawCode(path, file.text));
+  if (scrollTop) body.scrollTop = 0;
+  document.querySelectorAll("#tree .file").forEach((item) => item.classList.remove("open"));
+  drawTree();
+}
+
+function drawCode(path, text) {
+  const name = path.split("/").at(-1);
+  const ext = name.includes(".") ? name.split(".").at(-1).toLowerCase() : "";
+  const language = name === "Dockerfile" || ext === "dockerfile" ? "dockerfile" : name === "justfile" ? "makefile" : LANGUAGES[ext];
+  let html;
+  try {
+    html = language && window.hljs?.getLanguage(language) ? window.hljs.highlight(text, { language }).value : escapeHtml(text);
+  } catch { html = escapeHtml(text); }
+  const count = text.endsWith("\n") ? text.split("\n").length - 1 : text.split("\n").length;
+  const wrap = document.createElement("div");
+  wrap.className = "code";
+  const gutter = document.createElement("pre");
+  gutter.className = "gutter";
+  gutter.setAttribute("aria-hidden", "true");
+  gutter.textContent = Array.from({ length: Math.max(count, 1) }, (_, i) => i + 1).join("\n");
+  const code = document.createElement("pre");
+  code.className = "source hljs";
+  code.innerHTML = html;
+  wrap.append(gutter, code);
+  return wrap;
+}
+
+function drawDiff(diff) {
+  const pre = document.createElement("pre");
+  pre.className = "diff";
+  for (const line of diff.split("\n")) {
+    if (/^(diff --git|index |--- |\+\+\+ )/.test(line)) continue;
+    const row = document.createElement("span");
+    row.className = "line" + (line.startsWith("@@") ? " hunk" : line.startsWith("+") ? " add" : line.startsWith("-") ? " del" : "");
+    row.textContent = line || " ";
+    pre.append(row);
+  }
+  return pre;
+}
+
+// ---------- just recipes ----------
+
+async function loadRecipes() {
+  ui.recipes = await api("/api/recipes");
+  drawRecipes();
+  ui.knownRecipes = new Set(ui.recipes.replay.map((r) => r.name));
+}
+
+function drawRecipes() {
+  const track = ui.active === "main" ? "main" : "replay";   // which working copy's justfile the chips list
+  const list = ui.recipes[track] || [];
+  const holder = $("recipes");
+  holder.replaceChildren();
+  if (!list.length) {
+    const none = document.createElement("span");
+    none.className = "label";
+    none.textContent = "no justfile here";
+    holder.append(none);
+    return;
+  }
+  const label = document.createElement("span");
+  label.className = "label";
+  label.textContent = "just";
+  holder.append(label);
+  for (const recipe of list) {
+    const button = document.createElement("button");
+    button.textContent = recipe.name;
+    const isNew = track === "replay" && ui.knownRecipes && !ui.knownRecipes.has(recipe.name);
+    if (isNew) button.className = "new";
+    button.title = (recipe.doc || "just " + recipe.name) + (recipe.needs.length ? `\nNeeds: ${recipe.needs.join(", ")}` : "") + (isNew ? "\nNew at this step" : "");
+    button.onclick = () => typeInto(ui.active, "just " + recipe.name + (recipe.needs.length ? " " : "\r"));
+    holder.append(button);
+  }
+}
+
+// ---------- terminals ----------
+
+function drawTabs() {
+  $("tabs").replaceChildren(...ui.tabs.map((tab) => {
+    const button = document.createElement("button");
+    button.setAttribute("role", "tab");
+    button.setAttribute("aria-selected", String(tab.id === ui.active));
+    button.textContent = tab.label;
+    if (tab.unseen) { button.classList.add("unseen"); button.setAttribute("aria-label", tab.label + ", new output"); }
+    button.title = tab.hint;
+    button.onclick = () => selectTab(tab.id);
+    return button;
+  }));
+}
+
+function selectTab(id) {
+  if (!ui.tabs.some((tab) => tab.id === id)) return;
+  ui.active = id;
+  ui.tabs.find((tab) => tab.id === id).unseen = false;
+  drawTabs();
+  const entry = ui.terms.get(id) || startTerminal(id);
+  for (const [other, { el }] of ui.terms) el.hidden = other !== id;
+  drawRecipes();
+  requestAnimationFrame(() => { entry.fit.fit(); entry.term.focus(); });
+}
+
+function startTerminal(id) {
+  const el = document.createElement("div");
+  el.className = "term";
+  $("terms").append(el);
+  const term = new Terminal({ fontSize: ui.size, fontFamily: 'ui-monospace, "SF Mono", Menlo, Consolas, "Symbols Nerd Font Mono", "Symbols Nerd Font", monospace',
+    theme: TERM_THEMES[ui.theme], cursorBlink: true, scrollback: 8000 });
+  const fit = new FitAddon();
+  term.loadAddon(fit);
+  term.open(el);
+  const ws = socket("/ws/term/" + id);
+  ws.binaryType = "arraybuffer";
+  const sendSize = () => ws.readyState === WebSocket.OPEN && ws.send(JSON.stringify({ type: "resize", rows: term.rows, cols: term.cols }));
+  ws.onopen = () => { fit.fit(); sendSize(); };
+  ws.onmessage = (event) => {
+    term.write(typeof event.data === "string" ? event.data : new Uint8Array(event.data));
+    // A tab that printed something while another was in front gets a dot, so a finished run is noticed.
+    const tab = ui.tabs.find((candidate) => candidate.id === id);
+    if (tab && ui.active !== id && !tab.unseen && opened) { tab.unseen = true; drawTabs(); }
+  };
+  let opened = false;
+  setTimeout(() => { opened = true; }, 1500);   // the replay of earlier output on connecting is not news
+  ws.onclose = () => term.write("\r\n[disconnected from timewalk]\r\n");
+  term.onData((data) => ws.readyState === WebSocket.OPEN && ws.send(JSON.stringify({ type: "input", data })));
+  term.onResize(sendSize);
+  new ResizeObserver(() => { if (!el.hidden) fit.fit(); }).observe(el);
+  const entry = { term, fit, ws, el };
+  ui.terms.set(id, entry);
+  return entry;
+}
+
+function typeInto(id, text) {
+  const entry = ui.terms.get(id) || startTerminal(id);
+  const send = () => entry.ws.send(JSON.stringify({ type: "input", data: text }));
+  if (entry.ws.readyState === WebSocket.OPEN) send(); else entry.ws.addEventListener("open", send, { once: true });
+  entry.term.focus();
+}
+
+function resizeTerminalText() {
+  // The text size changes on the live terminal. Making a new one would replay old output at a new width, which garbles it.
+  for (const { term, fit, el } of ui.terms.values()) { term.options.fontSize = ui.size; if (!el.hidden) fit.fit(); }
+}
+
+function restartTerminals() {
+  // The theme is fixed when a terminal is made. The server replays recent output, so nothing is lost.
+  for (const { term, ws, el } of ui.terms.values()) { ws.onclose = null; ws.close(); term.dispose(); el.remove(); }
+  ui.terms.clear();
+  selectTab(ui.active);
+}
+
+// ---------- appearance ----------
+
+function applyAppearance() {
+  document.documentElement.dataset.theme = ui.theme;
+  document.documentElement.style.setProperty("--size", ui.size + "px");
+  $("hl-light").disabled = ui.theme === "dark";
+  $("hl-dark").disabled = ui.theme !== "dark";
+  $("theme").textContent = ui.theme === "dark" ? "Light" : "Dark";
+  settings.set("theme", ui.theme);
+  settings.set("size", ui.size);
+}
+
+function wireControls() {
+  $("prev").onclick = () => move((ui.state.current ?? 1) - 1);
+  $("next").onclick = () => move((ui.state.current ?? -1) + 1);
+  $("only-changed").onchange = drawTree;
+  $("slide-prev").onclick = () => showSlide(ui.state.slide - 1);
+  $("slide-next").onclick = () => showSlide(ui.state.slide + 1);
+  for (const button of $("layouts").querySelectorAll("button")) button.onclick = () => setLayout(button.dataset.layout);
+  $("view-file").onclick = () => ui.open && openFile(ui.open, "file");
+  $("view-diff").onclick = () => ui.open && openFile(ui.open, "diff");
+  $("theme").onclick = () => { ui.theme = ui.theme === "dark" ? "light" : "dark"; applyAppearance(); restartTerminals(); };
+  $("larger").onclick = () => { ui.size = Math.min(ui.size + 1, 26); applyAppearance(); resizeTerminalText(); };
+  $("smaller").onclick = () => { ui.size = Math.max(ui.size - 1, 10); applyAppearance(); resizeTerminalText(); };
+  $("add-tab").onclick = () => {
+    const n = ui.tabs.filter((tab) => tab.id.startsWith("extra-")).length + 1;
+    if (n > 9) return;
+    ui.tabs.push({ id: "extra-" + n, label: "Shell " + n, hint: "Another shell at this step" });
+    selectTab("extra-" + n);
+  };
+  document.addEventListener("keydown", (event) => {
+    if (!event.altKey || event.metaKey || event.ctrlKey) return;
+    if (event.key === "ArrowRight") { event.preventDefault(); $("next").click(); }
+    if (event.key === "ArrowLeft") { event.preventDefault(); $("prev").click(); }
+    if (event.key === "ArrowDown") { event.preventDefault(); $("slide-next").click(); }
+    if (event.key === "ArrowUp") { event.preventDefault(); $("slide-prev").click(); }
+  });
+  // drag the bar between the reader and the terminal
+  const divider = $("divider");
+  divider.addEventListener("pointerdown", (down) => {
+    divider.setPointerCapture(down.pointerId);
+    const onMove = (e) => {
+      const height = Math.min(Math.max(window.innerHeight - e.clientY, 120), window.innerHeight - 220);
+      document.documentElement.style.setProperty("--term-height", height + "px");
+      settings.set("term-height", height);
+    };
+    divider.addEventListener("pointermove", onMove);
+    divider.addEventListener("pointerup", () => divider.removeEventListener("pointermove", onMove), { once: true });
+  });
+  const saved = settings.get("term-height", null);
+  if (saved) document.documentElement.style.setProperty("--term-height", saved + "px");
+}
+
+// ---------- start ----------
+
+applyAppearance();
+wireControls();
+await init();
+await refresh();
+selectTab("replay");
+onEvents(async (event) => {
+  if (event.type === "moved") { hideNotice(); await refresh(); }
+  if (event.type === "slide") { ui.state = await api("/api/state"); drawSlides(); }
+  if (event.type === "show") {
+    if (event.layout) setLayout(event.layout);
+    if (event.path) {
+      if (ui.layout === "slides") setLayout("split");
+      await openFile(event.path, event.view || "file");
+    }
+    if (event.track) selectTab(event.track);
+  }
+});

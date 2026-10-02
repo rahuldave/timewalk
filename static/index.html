@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="data:,">
+  <title>timewalk</title>
+  <link rel="stylesheet" href="/static/vendor/highlight/github.min.css" id="hl-light">
+  <link rel="stylesheet" href="/static/vendor/highlight/github-dark.min.css" id="hl-dark" disabled>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <header class="bar">
+    <div class="steps">
+      <button id="prev" class="nav" title="Previous step (Alt+Left)" aria-label="Previous step">&#9664;</button>
+      <ol id="step-list" aria-label="Steps"></ol>
+      <button id="next" class="nav" title="Next step (Alt+Right)" aria-label="Next step">&#9654;</button>
+    </div>
+    <div class="where">
+      <span id="step-name" class="step-name"></span>
+      <span id="step-subject" class="step-subject"></span>
+    </div>
+    <div class="tools">
+      <span id="layouts" class="layouts" role="group" aria-label="What to show" hidden>
+        <button data-layout="slides" title="Slides only">Slides</button>
+        <button data-layout="split" title="Slides beside the code">Both</button>
+        <button data-layout="code" title="Code only">Code</button>
+      </span>
+      <button id="smaller" title="Smaller text" aria-label="Smaller text">A&minus;</button>
+      <button id="larger" title="Larger text" aria-label="Larger text">A+</button>
+      <button id="theme" title="Switch between light and dark">Dark</button>
+    </div>
+  </header>
+
+  <div id="notice" class="notice" hidden></div>
+  <p id="note" class="note" hidden></p>
+
+  <main class="panes">
+    <section class="slide-pane" id="slide-pane">
+      <div class="pane-head">
+        <span id="slide-count">Slides</span>
+        <span class="views">
+          <button id="slide-prev" title="Previous slide (Alt+Up)" aria-label="Previous slide">&#9650;</button>
+          <button id="slide-next" title="Next slide (Alt+Down)" aria-label="Next slide">&#9660;</button>
+        </span>
+      </div>
+      <div id="slide" class="slide"></div>
+    </section>
+
+    <aside class="tree-pane">
+      <div class="pane-head">
+        <span id="tree-summary">Files</span>
+        <label class="only"><input type="checkbox" id="only-changed"> changed in this step</label>
+      </div>
+      <nav id="tree" aria-label="Files"></nav>
+    </aside>
+
+    <section class="file-pane">
+      <div class="pane-head">
+        <span id="file-path" class="file-path">Choose a file</span>
+        <span class="views" role="tablist">
+          <button id="view-file" role="tab" aria-selected="true">File</button>
+          <button id="view-diff" role="tab" aria-selected="false">Changes in this step</button>
+        </span>
+      </div>
+      <div id="file-body" class="file-body"><p class="empty">Files are shown as they are at this step. They cannot be edited here.</p></div>
+    </section>
+  </main>
+
+  <div id="divider" class="divider" title="Drag to resize the terminal" role="separator" aria-orientation="horizontal"></div>
+
+  <section class="term-pane" id="term-pane">
+    <div class="pane-head">
+      <span id="tabs" class="tabs" role="tablist"></span>
+      <button id="add-tab" title="Open another shell at this step" aria-label="Open another shell">+</button>
+      <span id="recipes" class="recipes" aria-label="just recipes"></span>
+    </div>
+    <div id="terms" class="terms"></div>
+  </section>
+
+  <script src="/static/vendor/highlight/highlight.min.js"></script>
+  <script src="/static/vendor/highlight/dockerfile.min.js"></script>
+  <script type="module" src="/static/app.js"></script>
+</body>
+</html>

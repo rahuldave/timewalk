@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 300" font-family="system-ui, sans-serif">
+  <rect width="640" height="300" fill="#ffffff"/>
+  <text x="320" y="44" text-anchor="middle" font-size="24" font-weight="600" fill="#17202b">A few files at a time</text>
+  <g font-size="16" fill="#17202b">
+    <rect x="40" y="90" width="160" height="110" rx="6" fill="#e4ebf9" stroke="#2456b5"/>
+    <text x="120" y="140" text-anchor="middle">a file</text>
+    <text x="120" y="164" text-anchor="middle" fill="#4d5969" font-size="13">no tests, no types</text>
+    <rect x="240" y="90" width="160" height="110" rx="6" fill="#e3f4ea" stroke="#1d7a4c"/>
+    <text x="320" y="140" text-anchor="middle">its tests</text>
+    <text x="320" y="164" text-anchor="middle" fill="#4d5969" font-size="13">now it can change safely</text>
+    <rect x="440" y="90" width="160" height="110" rx="6" fill="#fbefdd" stroke="#a85b00"/>
+    <text x="520" y="140" text-anchor="middle">types and docs</text>
+    <text x="520" y="164" text-anchor="middle" fill="#4d5969" font-size="13">now it explains itself</text>
+  </g>
+  <g stroke="#6f7b8b" stroke-width="2" fill="#6f7b8b">
+    <line x1="204" y1="145" x2="232" y2="145"/><polygon points="232,140 240,145 232,150"/>
+    <line x1="404" y1="145" x2="432" y2="145"/><polygon points="432,140 440,145 432,150"/>
+  </g>
+  <text x="320" y="250" text-anchor="middle" font-size="15" fill="#4d5969">and again, for the next file</text>
+</svg>
