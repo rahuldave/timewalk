@@ -29,3 +29,11 @@ test *args:
 # Lint the Python
 lint:
     uvx ruff check .
+
+# Take the site's screenshots again, from a throwaway clone of the demo
+screenshots:
+    uv run docs/screenshots.py
+
+# Build the site into docs/_site and serve it at http://127.0.0.1:8000
+site:
+    uv run docs/build.py --serve

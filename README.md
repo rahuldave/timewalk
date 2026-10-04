@@ -1,251 +1,76 @@
 # timewalk
 
-Browse a git repository one commit at a time, with slides for each step, a terminal that runs in the
-repository as it was at that step, and a private page of presenter notes. Built for teaching a project
-by replaying how it was developed.
+Teach a project by replaying how it was built. timewalk steps through a repository's tags one at a time,
+and for each step shows your slides, the files as they were, what the step changed, and real terminals in
+the repository at that step. A second page, on your own screen, holds your private notes, a clock, and
+buttons that drive the projector.
+
+**Documentation, with screenshots: [rahuldave.com/timewalk](https://rahuldave.com/timewalk/)**
+
+![The projector page at the demo's second step](docs/images/projector.png)
+
+## Try it
+
+```
+git clone https://github.com/rahuldave/timewalk
+cd timewalk
+just demo
+```
+
+`just demo` fetches the sample project, [timewalk-demo](https://github.com/rahuldave/timewalk-demo), and
+opens it. It prints two addresses: the first for the projector, the second, ending in `/presenter`, for
+your screen. Then take [the tour of the demo](https://rahuldave.com/timewalk/demo.html).
+
+On your own project:
 
 ```
 uv run timewalk.py ~/code/project --notes notes.md --slides slides/slides.toml
 ```
 
-It prints two addresses. Open the first on the projector and the second on your own screen.
+By default the steps are the tags matching `step-*`, and an annotated tag's message is the note the
+audience sees.
 
-## Try it
+## What it does
 
-```
-just demo
-```
+- **Slides and documents** for each step, from a TOML manifest of Markdown slides, pictures, PDF pages,
+  or one longer scrolling document. A PDF handout of them all with `slides_pdf.py`.
+- **The files at each step**, with what the step changed, and **live edits**: run `ruff format` at a step
+  and the page shows what it changed, as it happens.
+- **Terminals** at the step, for long runs, in your own repository, and running Claude Code.
+- **Presenter notes** with planned times and one-click commands that run on the projector.
+- **Keyboard**: Left and Right for steps, Up and Down for slides.
 
-opens the sample repository, [timewalk-demo](https://github.com/rahuldave/timewalk-demo), with the demo's notes and slides.
-It is a git submodule in `demo/timewalk-demo`, fetched the first time. Its five steps grow two small functions: tests,
-then formatting, then types and docs. At step-02 the notes run `uvx ruff format`, and the reader shows the edits as
-they happen.
+## What it will not do to your repository
 
-## What is on each page
+- It never moves it: stepping happens in a second working copy, `<repo>-replay`, a git worktree.
+- It never deletes an untracked file, so a run's outputs survive every move.
+- It never discards an edit: moving with edits asks, then stashes them.
+- The file view cannot write.
 
-**The projector page** (`/`)
-
-| Part | What it shows |
-|---|---|
-| Step bar | One chip per step. Click one, or press Left and Right |
-| Slides | The slides for this step, to the left of the files. Up and Down change slide when the step has more than one. A step can show one longer Markdown document here instead, which scrolls and has no slide arrows. The Slides, Both and Code buttons choose what is shown |
-| Files | The tracked files at this step. Files the step added or changed are marked, and so are files edited since, for example by `just fmt` run in a terminal. Either kind can be listed alone |
-| Reader | A file in one of three views: **File**, as it is on disk; **Changes in this step**, what the step's commit changed; **Edits since the step**, what has been edited since that commit, shown only when there are edits. It follows edits as they happen. Files cannot be edited here |
-| Terminals | Tabs, each a real shell built on Ghostty's terminal core. **At this step**: in the repository at this step. **Runs**: a second shell there, for commands that take a while. **Main**: in the repository you started from (see [The terminals](#the-terminals)). **Claude**: starts Claude Code at this step, to ask what the code is at this commit. **+** opens more |
-| Recipes | The `just` recipes that exist at this step, as buttons. Ones new at this step are highlighted |
-
-**The keyboard.** The page keeps the arrow keys until you click into a terminal, which then has them,
-shown by a blue edge. Click anywhere else to give them back. A command sent from the presenter page also
-gives its terminal the keys. Alt with an arrow moves steps and slides from anywhere, a terminal included.
-
-**The presenter page** (`/presenter`), for your screen only
-
-| Part | What it shows |
-|---|---|
-| Notes | Your notes for this step, from the notes file |
-| Clock | Time since you pressed start, time left in this step, and how far over you are |
-| Slides | A preview, the list, and which of Slides, Both or Code the projector shows |
-| Commands | The commands from your notes. One click types and runs one on the projector |
-| Files | The files this step changed, and the files edited since. One click opens one on the projector, as the file, as the step's changes, or as the edits |
-| Next | The step that follows, and when it is due |
-
-The Right arrow moves to the next slide, then to the next step. Shift+Right moves a whole step.
-Everything done on the presenter page happens on the projector page too.
-
-## Steps
-
-By default the steps are the tags matching `step-*`, in name order. An annotated tag's message is shown
-to the audience as the step's note.
-
-| Option | Steps are |
-|---|---|
-| (none) | tags matching `step-*` |
-| `--tags 'v*'` | tags matching another pattern |
-| `--commits` | every commit on the current branch, oldest first |
-
-## Slides
-
-Slides are Markdown. A manifest, a TOML file, says which slides go with which step.
-
-```toml
-[slides]
-step-00 = ["opening.md"]                       # every slide in that file
-step-01 = ["tools.md#1-3", "pictures/a.svg"]   # slides 1 to 3 of a file, then a picture
-step-02 = ["handout.pdf#page=2"]               # one page of a PDF
-
-[docs]
-step-03 = "walkthrough.md"                     # one whole Markdown document instead of slides
-```
-
-| Entry | Means |
-|---|---|
-| `"talk.md"` | every slide in the file, in order |
-| `"talk.md#2"` | its second slide |
-| `"talk.md#2-4"` | its second to fourth |
-| `"picture.svg"`, `.png`, `.jpg` | a picture as a slide |
-| `"deck.pdf#page=3"` | a page of a PDF |
-| `"deck.html#/3"` | a slide of an HTML deck, with whatever fragment that deck uses |
-| `7`, `"8-10"` | with `deck = "talk.md"` at the top of the manifest, those slides of that deck |
-| `"guide.md#doc"` | the whole file as one document, as under `[docs]` |
-
-In a Markdown file, **a line that is exactly `---` starts the next slide**. Everything else is ordinary
-Markdown: headings, lists, tables, links, bold, `code`, fenced code (highlighted when the fence names a
-language), and pictures as `![description](path)` with the path relative to the slide file. For a
-horizontal rule inside a slide, write `***`.
-
-### A document instead of slides
-
-A step listed under `[docs]` shows one Markdown file in the slide pane, whole. It is not split at `---`
-(there it is an ordinary rule), it keeps the slides' text size, and it scrolls instead of paging, so the
-slide arrows are hidden. It replaces any `[slides]` entry for that step. Use it for a walkthrough, a
-reading, or anything longer than a slide. The demo has one: `demo/slides/formatting.md`, at step-03.
-
-Paths in the manifest are relative to the manifest. The manifest and the slide files are read afresh
-whenever a slide is shown, so they can be edited while presenting. A step with no entry shows the code
-alone.
-
-### A PDF of the slides
-
-```
-uv run slides_pdf.py slides/slides.toml -o handout.pdf --title "My talk" --notes notes.md
-```
-
-writes every slide in step order, one per page, with a footer naming the step. A document runs over as
-many pages as it needs, headed by its step. Markdown slides
-and pictures are drawn as the browser draws them; pages of a PDF deck are copied from that PDF. A slide
-with too much on it is shrunk to fit its page. `--notes` is read only for each step's title. It needs
-Chrome or Edge, which it finds if installed; otherwise run `uvx playwright install chromium` once.
-
-## Notes
-
-A Markdown file with one section per step:
-
-```markdown
-## step-07 Training
-time: 0:37
-
-Start the run first, then read the code while it runs.
-
-runs$ just train modal configs/cheese.yaml
-$ cat configs/cheese.yaml
-main$ git log --oneline
-```
-
-| Line | Does |
-|---|---|
-| `## step-name Title` | Starts a step's notes. The title replaces the commit subject on the presenter page |
-| `time: 0:37` | The planned start, minutes:seconds into the session |
-| `$ command` | A command for the terminal at this step |
-| `runs$ command` | The same, in the Runs tab |
-| `runs2$ command` | The same, in a second Runs tab (up to `runs9$`), opened when first used: for a second long command while the first is still going |
-| `main$ command` | The same, in the repository you started from |
-| anything else | Shown to you as Markdown |
-
-Notes are served only to the presenter page.
-
-## What it will and will not do to your repository
-
-- **It never moves the repository you point it at.** Stepping happens in a second working copy,
-  `<repo>-replay`, made beside it with `git worktree`. `--in-place` steps the repository itself.
-- **It never deletes an untracked file.** Whatever a command wrote at one step (an environment, a
-  database, a run's output) is still there at the next. If a later step has a file where an untracked
-  one sits, the move is refused and the file is named.
-- **It never discards an edit.** Edits are shown as they happen, against the step's commit. If tracked files were edited, moving asks first, and then sets the edits
-  aside with `git stash`, labelled with the step they were made at.
-- **The file view cannot write.** There is no route that changes a file. The terminals can, as any
-  terminal can.
-
-### The replay copy is a git worktree
-
-`<repo>-replay` is neither a clone nor a branch. It is a **git worktree**: a second working folder
-attached to the same repository. Its `.git` is a one-line file pointing back into your repository's
-`.git`, and `git worktree list` in your repository shows it.
-
-- **It shares everything committed.** Commits, tags and objects are the repository's own, so nothing is
-  copied or fetched and every tag is there at once.
-- **It has its own HEAD, index and untracked files.** It stands on a step's commit with a detached HEAD.
-  Moving is `git checkout --detach` to the next step. Its `.venv`, outputs and stashes are its own.
-- **It is built from commits only.** Uncommitted edits, untracked files and an uncommitted `uv lock` in
-  your repository never reach it. Tags are read when timewalk starts, so restart it after re-tagging.
-- **It is made once and reused.** Remove it with `git worktree remove <repo>-replay`.
-
-### A Python project at each step
-
-`pyproject.toml` and `uv.lock` are tracked, so they change with every step. The `.venv` is untracked,
-so it does not: it is the replay copy's own, and moving never touches it.
-
-- **Through `uv run`, nothing more is needed going forward.** `uv run` (and a `just` recipe that calls
-  it) syncs the environment to the step's lockfile before it runs.
-- **Going backwards leaves later packages installed.** `uv run` adds and updates but does not remove,
-  so code at an early step can import a package that only a later step adds, and nobody notices.
-- **Bare commands do not sync.** `python`, `pytest` or anything run straight from `.venv/bin` uses
-  whatever was installed last.
-- **A lockfile out of step with `pyproject.toml` is rewritten** by a plain `uv run`, which is an edit to
-  a tracked file. `uv run --locked` stops with an error instead.
-
-To have each step's environment exactly, run `uv sync --locked` when you arrive at a step, for example
-as the first `$` line of each step in the notes. It installs what the step adds, removes what it does
-not list, and refuses a stale lockfile. On a warm cache it takes about a second.
-
-### The terminals
-
-Every tab is an ordinary login shell, your own `$SHELL`. They differ only in the folder they start in.
-
-| Tab | Starts in | Its edits show in the file view |
-|---|---|---|
-| At this step, Runs, Runs 2 to 9, + | the replay copy | yes, live, as "edited" |
-| Claude | the replay copy, running `claude` | yes |
-| Main | the repository you started timewalk on, on its own branch | no: the page never shows that repository |
-
-**Runs** is for a command that takes a while, such as a training run, so it can keep going while you
-work in "At this step". A `runs$` line in the notes sends its command there; `runs2$` to `runs9$` open
-further Runs tabs for a second or third long command. A tab that prints while another is in front gets
-a dot, so a finished run is noticed.
-
-**A long command keeps running when you move to another step, and the files change under it.** What
-the program has already loaded stays as it was. What it reads later comes from the new step: a config, a
-module imported late, a script a recipe starts. Move on while a run is going only if it has read
-everything it needs. The Main tab's files do not move, but it runs the repository's current code, not
-the step's.
-
-The shells get your environment, less timewalk's own Python: `uv run timewalk.py` puts its script
-environment first on `PATH`, and the shells take it off, so `python` there is the project's or yours.
+More in [The replay copy](https://rahuldave.com/timewalk/replay.html).
 
 ## Safety
 
-A terminal in a web page is a way to run commands on your machine, so:
-
-- The server listens on `127.0.0.1` only.
-- Every page, API call, socket, slide and script needs the token in the printed address. A new token is
-  made at each start.
-- A request addressed to any other host name is refused, which stops a hostile web page from reaching
-  the server by pointing a name at localhost.
-
-Do not put the printed address on a slide or in a recording: anyone on your machine who has it can run
-commands as you while the server is running.
+A terminal in a web page runs commands on your machine. timewalk listens on `127.0.0.1` only, and every
+request needs the token in the address it prints, new at each start. **Do not put that address on a
+slide or in a recording.** More in [Safety](https://rahuldave.com/timewalk/safety.html).
 
 ## Requirements
 
-`uv`, `git`, and a browser. `just` if the recipe buttons are wanted, and `claude` on the path for the
-Claude tab (`--assistant ''` gives a plain shell there instead, `--assistant aider` another tool).
+`uv`, `git`, and a browser. `just` for the recipes, `claude` on the path for the Claude tab, Chrome or
+Edge for the PDF handout. Checked in Chrome; Safari and Firefox are not checked.
 
 ## Development
 
 ```
-just test      # 51 tests: the git layer, notes and slides, the web application's guards, a real terminal
-just lint
+just test            # the tests
+just lint            # ruff
+just screenshots     # retake the site's pictures from the demo
+just site            # build the site into docs/_site and serve it locally
 ```
 
-| File | What it is |
-|---|---|
-| `timewalk.py` | The server: the git layer, notes and slides readers, terminals, the web application |
-| `slides_pdf.py` | The PDF export |
-| `static/` | The two pages, the print page, and the vendored libraries |
-| `static/vendor/` | ghostty-web (the terminal), highlight.js, marked. Each with its licence |
-| `demo/` | The sample repository as a submodule, `timewalk-demo`, and the notes and slides for it |
-
-Checked by driving both pages in headless Chrome through every step and slide, including typing in the
-terminal. Not checked: Safari and Firefox.
+See [Development](https://rahuldave.com/timewalk/development.html). The site's pages are Markdown
+in [`docs/`](docs/), published by a GitHub Action.
 
 ## Licence
 

@@ -5,7 +5,9 @@ A step browser for teaching a project by replaying how it was built. Each step i
 the files at that step, what the step changed, and real terminals in the repository as it was then. The
 presenter page (`/presenter`) shows private notes, a clock, and buttons that drive the projector.
 
-The README is the user documentation. Read it first; keep it true when behaviour changes.
+The user documentation is the site in `docs/`, published to rahuldave.com/timewalk; the README is a
+short front page that links into it. Keep both true when behaviour changes, and retake the screenshots
+(`just screenshots`) when the pages look different.
 
 ## Who uses it, and why it is a separate repository
 
@@ -54,6 +56,7 @@ These were set by Rahul. Each has tests; do not weaken them.
 | `static/vendor/` | ghostty-web, highlight.js, marked, each with its licence. Vendored: do not edit |
 | `tests/test_timewalk.py` | The git layer, notes and slides, the app's guards, a real terminal |
 | `demo/timewalk-demo` | A git submodule: the sample repository, five tagged steps, at github.com/rahuldave/timewalk-demo. Its replay copy, `demo/timewalk-demo-replay`, is ignored |
+| `docs/` | The site: one Markdown page per topic, `build.py` (the order is its `PAGES` list), `site.css`, `screenshots.py`, `images/`. `_site/` is built and ignored. `.github/workflows/pages.yml` publishes it |
 | `demo/notes.md`, `demo/slides/` | The demo's presenter notes and slides. They stay here, outside the sample, as a class kit does |
 
 There is no `pyproject.toml`. The scripts carry their dependencies as inline script metadata (PEP 723)
@@ -69,6 +72,8 @@ just lint            # ruff
 just demo            # fetch the sample submodule if needed, and open it
 just walk <repo> ... # run timewalk on a repository
 just pdf <manifest> -o out.pdf --title "..."
+just screenshots     # retake docs/images from a throwaway clone of the demo
+just site            # build docs/_site and serve it at http://127.0.0.1:8000
 ```
 
 The test that hung once was a terminal test waiting on output from `/api/type`. Terminal tests type

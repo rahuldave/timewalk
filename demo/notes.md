@@ -34,7 +34,8 @@ $ uvx ruff format
 $ uvx pytest -q
 runs$ for epoch in 1 2 3 4 5; do echo "epoch $epoch"; sleep 2; done
 
-Moving on asks to set the edits aside: they are stashed, not lost. Or undo them first:
+Moving on asks to set the edits aside: they are stashed, not lost. The last command below undoes them
+instead.
 
 $ git restore .
 
