@@ -7,21 +7,24 @@ default:
     @just --list --unsorted
 
 # Browse a repository. Extra arguments go to timewalk: just walk ~/code/project --notes notes.md --slides slides/slides.toml
+[positional-arguments]
 walk repo *args:
-    uv run timewalk.py {{ repo }} {{ args }}
+    uv run timewalk.py "$@"
 
-# Build the small sample repository and browse it, with its notes and slides
+# Browse the sample repository, the submodule demo/timewalk-demo, with its notes and slides. Fetches it the first time
 demo:
-    python3 demo/make_demo.py
-    uv run timewalk.py demo/sample --notes demo/notes.md --slides demo/slides/slides.toml
+    git submodule update --init demo/timewalk-demo
+    uv run timewalk.py demo/timewalk-demo --notes demo/notes.md --slides demo/slides/slides.toml
 
 # Make one PDF of every slide in a manifest: just pdf slides/slides.toml -o handout.pdf --title "My talk"
+[positional-arguments]
 pdf manifest *args:
-    uv run slides_pdf.py {{ manifest }} {{ args }}
+    uv run slides_pdf.py "$@"
 
 # Run the tests. Extra arguments go to pytest: just test -k slides
+[positional-arguments]
 test *args:
-    uv run --no-project {{ deps }} pytest -q tests {{ args }}
+    uv run --no-project {{ deps }} pytest -q tests "$@"
 
 # Lint the Python
 lint:

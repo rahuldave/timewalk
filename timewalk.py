@@ -40,6 +40,7 @@ import secrets
 import shutil
 import struct
 import subprocess
+import sys
 import termios
 import time
 import tomllib
@@ -376,6 +377,23 @@ def load_slides(
     return out
 
 
+def shell_environment(
+    inherited: dict[str, str],  # This process's environment
+) -> dict[str, str]:  # The environment for a shell in the browsed repository
+    """Give a shell the user's environment without this tool's own Python.
+
+    `uv run timewalk.py` puts the script's environment first on PATH and names it in VIRTUAL_ENV. Left there, `python`,
+    `pytest` and the rest in a class shell would be timewalk's, not the project's."""
+    env = {**inherited, "TERM": "xterm-256color", "COLORTERM": "truecolor", "TIMEWALK": "1"}
+    ours = {str(Path(sys.prefix) / "bin")}
+    if env.get("VIRTUAL_ENV"):
+        ours.add(str(Path(env["VIRTUAL_ENV"]) / "bin"))
+    env["PATH"] = os.pathsep.join(p for p in env.get("PATH", "").split(os.pathsep) if p and p.rstrip("/") not in ours)
+    for name in ("VIRTUAL_ENV", "UV_PROJECT_ENVIRONMENT", "UV_RUN_RECURSION_DEPTH", "PYTHONHOME", "PYTHONPATH"):
+        env.pop(name, None)
+    return env
+
+
 class Terminal:
     "A shell on a pseudo-terminal, shared by every page connected to it and kept alive between page loads."
 
@@ -399,9 +417,7 @@ class Terminal:
         if self.process is not None and self.process.poll() is None:
             return
         self.master, slave = pty.openpty()
-        env = {**os.environ, "TERM": "xterm-256color", "COLORTERM": "truecolor", "TIMEWALK": "1"}
-        for inherited in ("VIRTUAL_ENV", "UV_PROJECT_ENVIRONMENT", "UV_RUN_RECURSION_DEPTH"):
-            env.pop(inherited, None)  # the shell belongs to the browsed repository, not to this tool's environment
+        env = shell_environment(dict(os.environ))
         self.process = subprocess.Popen(
             [os.environ.get("SHELL", "/bin/zsh"), "-l"], cwd=self.cwd, env=env, stdin=slave, stdout=slave, stderr=slave,
             start_new_session=True, preexec_fn=lambda: fcntl.ioctl(slave, termios.TIOCSCTTY, 0),

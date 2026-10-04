@@ -541,6 +541,16 @@ def test_the_terminal_runs_commands_in_the_working_copy(served: TestClient, repo
     assert repo.work.name.encode() in seen
 
 
+def test_shells_do_not_inherit_this_tools_python() -> None:
+    "The environment uv run made for timewalk is taken off PATH, so `python` in a class shell is the project's."
+    tool = "/cache/uv/environments-v2/timewalk-abc"
+    env = timewalk.shell_environment({"PATH": f"{tool}/bin:{sys.prefix}/bin:/opt/homebrew/bin:/usr/bin", "VIRTUAL_ENV": tool,
+                                      "UV_RUN_RECURSION_DEPTH": "1", "HOME": "/home/me"})
+    assert env["PATH"] == "/opt/homebrew/bin:/usr/bin"
+    assert "VIRTUAL_ENV" not in env and "UV_RUN_RECURSION_DEPTH" not in env
+    assert env["HOME"] == "/home/me" and env["TIMEWALK"] == "1"
+
+
 def test_unknown_terminal_names_are_refused(served: TestClient) -> None:
     "Only the known tab names get a shell."
     assert served.post("/api/type", params={"t": TOKEN}, json={"track": "../../bin", "text": "echo no"}).status_code == 409
