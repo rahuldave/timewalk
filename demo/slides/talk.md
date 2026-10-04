@@ -1,7 +1,8 @@
-# One function, four steps
+# Two functions, five steps
 
 - A file arrives the way it was first written
 - Then its tests
+- Then a formatter tidies it
 - Then its types and docs
 
 Watch what a reader can learn from the code at each step.
@@ -17,8 +18,8 @@ Watch what a reader can learn from the code at each step.
 ## Code with nothing around it
 
 ```python
-def greet(name, excited=False):
-    return "Hello, " + name + ("!" if excited else ".")
+def greet( name,excited = False ):
+    return 'Hello, '+name+( '!' if excited else '.' )
 ```
 
 - What is `name`? A string, a list, a user object?
@@ -34,8 +35,18 @@ def greet(name, excited=False):
 | `test_plain` | Does a name get a full stop? |
 | `test_excited` | Does `excited=True` change the ending? |
 | `test_empty_name` | What happens with no name at all? |
+| `test_shout` | Is the loud greeting in capitals? |
 
-Run them with `just test`.
+Run them with `uvx pytest -q`.
+
+---
+
+## A formatter decides the layout
+
+- `uvx ruff format` rewrites the files; `--check` only says whether it would
+- One quote style, standard spacing, one statement a line
+- The rules live in `pyproject.toml`, so everyone formats the same way
+- The tests pass before and after: only the layout changed
 
 ---
 

@@ -23,6 +23,14 @@ It was built for `~/Projects/babykev-class`, the class kit for `~/Projects/babyk
 - A possible future mode is in `babykev-class/NARRATIVE_IDEA.md` point 4: follow a branch being rebuilt
   live instead of checking out tags. Not started.
 
+## The demo
+
+The demo is shaped like a real class: the history in its own repository, the notes and slides outside it.
+To change the sample's history, work in the submodule (or `~/Projects/timewalk-demo`), keep one commit per
+step with an annotated `step-NN` tag, and push its `main` and tags with `--force` only after asking. Then
+commit the new submodule pointer here, and check `demo/notes.md` and `demo/slides/slides.toml` against the
+steps.
+
 ## Rules the tool must keep
 
 These were set by Rahul. Each has tests; do not weaken them.
@@ -45,7 +53,8 @@ These were set by Rahul. Each has tests; do not weaken them.
 | `static/` | `index.html`/`app.js` (projector), `presenter.html`/`presenter.js`, `print.*` (for the PDF), `common.js`, `app.css` |
 | `static/vendor/` | ghostty-web, highlight.js, marked, each with its licence. Vendored: do not edit |
 | `tests/test_timewalk.py` | The git layer, notes and slides, the app's guards, a real terminal |
-| `demo/` | `make_demo.py` builds `demo/sample` (four tagged steps), plus notes and slides for it. `sample/` and `sample-replay/` are generated and ignored |
+| `demo/timewalk-demo` | A git submodule: the sample repository, five tagged steps, at github.com/rahuldave/timewalk-demo. Its replay copy, `demo/timewalk-demo-replay`, is ignored |
+| `demo/notes.md`, `demo/slides/` | The demo's presenter notes and slides. They stay here, outside the sample, as a class kit does |
 
 There is no `pyproject.toml`. The scripts carry their dependencies as inline script metadata (PEP 723)
 and run with `uv run`. The test dependencies are listed in the `justfile`.
@@ -57,7 +66,7 @@ Use the recipes, not the commands behind them.
 ```
 just test            # all tests; extra arguments go to pytest: just test -k slides
 just lint            # ruff
-just demo            # build the sample repository and open it
+just demo            # fetch the sample submodule if needed, and open it
 just walk <repo> ... # run timewalk on a repository
 just pdf <manifest> -o out.pdf --title "..."
 ```
@@ -94,4 +103,4 @@ through the socket.
 - End every commit message with the line `Coded using Claude`. No `Co-Authored-By` or session lines.
   This is Rahul's rule and overrides the default attribution.
 - Subject says what changed; the body says why, in the README's voice.
-- The repository is public at github.com/rahuldave/timewalk. Push `main` there after committing; no need to ask.
+- **Ask before every commit.** Once Rahul approves a commit, push `main` to github.com/rahuldave/timewalk without asking again.

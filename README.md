@@ -16,7 +16,10 @@ It prints two addresses. Open the first on the projector and the second on your 
 just demo
 ```
 
-builds a four-step sample repository in `demo/sample` and opens it with the demo's notes and slides.
+opens the sample repository, [timewalk-demo](https://github.com/rahuldave/timewalk-demo), with the demo's notes and slides.
+It is a git submodule in `demo/timewalk-demo`, fetched the first time. Its five steps grow two small functions: tests,
+then formatting, then types and docs. At step-02 the notes run `uvx ruff format`, and the reader shows the edits as
+they happen.
 
 ## What is on each page
 
@@ -157,7 +160,7 @@ Claude tab (`--assistant ''` gives a plain shell there instead, `--assistant aid
 ## Development
 
 ```
-just test      # 48 tests: the git layer, notes and slides, the web application's guards, a real terminal
+just test      # 49 tests: the git layer, notes and slides, the web application's guards, a real terminal
 just lint
 ```
 
@@ -167,7 +170,7 @@ just lint
 | `slides_pdf.py` | The PDF export |
 | `static/` | The two pages, the print page, and the vendored libraries |
 | `static/vendor/` | ghostty-web (the terminal), highlight.js, marked. Each with its licence |
-| `demo/` | The sample repository's builder, notes and slides |
+| `demo/` | The sample repository as a submodule, `timewalk-demo`, and the notes and slides for it |
 
 Checked by driving both pages in headless Chrome through every step and slide, including typing in the
 terminal. Not checked: Safari and Firefox.
