@@ -58,12 +58,13 @@ function draw() {
 
   const files = $("files");
   files.replaceChildren();
-  for (const file of ui.tree.files.filter((f) => f.status)) {
+  const edited = new Set(ui.tree.edits);
+  for (const file of ui.tree.files.filter((f) => f.status || edited.has(f.path))) {
     const row = document.createElement("div");
     row.className = "row";
     const badge = document.createElement("span");
-    badge.className = "badge " + file.status;
-    badge.textContent = file.status === "A" ? "new" : "changed";
+    badge.className = "badge " + (file.status || "E");
+    badge.textContent = file.status === "A" ? "new" : file.status ? "changed" : "edited";
     const path = document.createElement("span");
     path.className = "path";
     path.textContent = file.path;
@@ -78,9 +79,16 @@ function draw() {
       changes.onclick = () => act(() => api("/api/show", { path: file.path, view: "diff" }));
       row.append(changes);
     }
+    if (edited.has(file.path)) {
+      const edits = document.createElement("button");
+      edits.textContent = "Edits";
+      edits.title = "Shows what commands run at this step have changed in this file, not committed";
+      edits.onclick = () => act(() => api("/api/show", { path: file.path, view: "edits" }));
+      row.append(edits);
+    }
     files.append(row);
   }
-  if (!files.children.length) files.innerHTML = `<span class="p-empty">This step changed no files.</span>`;
+  if (!files.children.length) files.innerHTML = `<span class="p-empty">This step changed no files, and none are edited.</span>`;
 
   const { slides = [], slide = 0 } = ui.state;
   $("slides-card").hidden = !ui.state.has_slides;
@@ -166,4 +174,4 @@ document.addEventListener("keydown", (event) => {
 
 await refresh();
 setInterval(drawClock, 1000);
-onEvents((event) => { if (["moved", "clock", "slide"].includes(event.type)) refresh(); });
+onEvents((event) => { if (["moved", "clock", "slide", "edits"].includes(event.type)) refresh(); });

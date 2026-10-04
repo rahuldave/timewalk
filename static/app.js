@@ -18,7 +18,7 @@ const ui = {
   state: null,            // what /api/state returned
   tree: null,             // what /api/tree returned
   open: null,             // path of the file being read
-  view: "file",           // "file" or "diff"
+  view: "file",           // "file", "diff" (what the step changed) or "edits" (what was edited since the step)
   closedDirs: new Set(),
   knownRecipes: null,     // recipe names seen at the previous step, to mark new ones
   recipes: { replay: [], main: [] },
@@ -141,9 +141,10 @@ async function loadTree() {
 
 function drawTree() {
   const onlyChanged = $("only-changed").checked;
-  const files = ui.tree.files.filter((f) => !onlyChanged || f.status);
+  const edited = new Set(ui.tree.edits);
+  const files = ui.tree.files.filter((f) => !onlyChanged || f.status || edited.has(f.path));
   const changed = ui.tree.files.filter((f) => f.status).length;
-  $("tree-summary").textContent = `${ui.tree.files.length} files` + (changed ? `, ${changed} changed` : "");
+  $("tree-summary").textContent = `${ui.tree.files.length} files` + (changed ? `, ${changed} changed` : "") + (edited.size ? `, ${edited.size} edited` : "");
   $("tree-summary").title = ui.tree.summary || "";
 
   const root = { dirs: new Map(), files: [] };
@@ -153,7 +154,7 @@ function drawTree() {
     for (const part of parts.slice(0, -1)) {
       if (!node.dirs.has(part)) node.dirs.set(part, { dirs: new Map(), files: [], changed: false });
       node = node.dirs.get(part);
-      if (file.status) node.changed = true;
+      if (file.status || edited.has(file.path)) node.changed = true;
     }
     node.files.push({ ...file, name: parts.at(-1) });
   }
@@ -195,7 +196,14 @@ function drawTree() {
         badge.textContent = file.status === "A" ? "new" : "changed";
         button.append(badge);
       }
-      button.onclick = () => openFile(file.path, file.status === "M" ? ui.view : "file");
+      if (edited.has(file.path)) {
+        const badge = document.createElement("span");
+        badge.className = "badge E";
+        badge.textContent = "edited";
+        badge.title = "Edited since the step's commit, by a command run here";
+        button.append(badge);
+      }
+      button.onclick = () => openFile(file.path, edited.has(file.path) ? "edits" : file.status === "M" && ui.view === "diff" ? "diff" : "file");
       item.append(button);
       list.append(item);
     }
@@ -213,15 +221,19 @@ function drawTree() {
 }
 
 async function openFile(path, view = "file", scrollTop = true) {
+  const file = await api("/api/file?path=" + encodeURIComponent(path));
+  // A view with nothing to show falls back to the file, for example once edits are stashed or undone.
+  if ((view === "diff" && !file.diff) || (view === "edits" && !file.edits)) view = "file";
   ui.open = path;
   ui.view = view;
-  const file = await api("/api/file?path=" + encodeURIComponent(path));
   $("file-path").textContent = path;
-  $("view-file").setAttribute("aria-selected", String(view === "file"));
-  $("view-diff").setAttribute("aria-selected", String(view === "diff"));
+  for (const name of ["file", "diff", "edits"]) $("view-" + name).setAttribute("aria-selected", String(view === name));
   $("view-diff").disabled = !file.diff;
+  $("view-edits").disabled = !file.edits;
+  $("view-edits").hidden = !file.edits;
   const body = $("file-body");
-  if (file.missing) body.innerHTML = `<p class="empty">This file does not exist at this step.</p>`;
+  if (view === "edits") body.replaceChildren(drawDiff(file.edits));
+  else if (file.missing) body.innerHTML = `<p class="empty">This file does not exist at this step.</p>`;
   else if (file.skipped) body.innerHTML = `<p class="empty">Not shown: ${escapeHtml(file.skipped)}.</p>`;
   else if (view === "diff" && file.diff) body.replaceChildren(drawDiff(file.diff));
   else body.replaceChildren(drawCode(path, file.text));
@@ -401,6 +413,7 @@ function wireControls() {
   for (const button of $("layouts").querySelectorAll("button")) button.onclick = () => setLayout(button.dataset.layout);
   $("view-file").onclick = () => ui.open && openFile(ui.open, "file");
   $("view-diff").onclick = () => ui.open && openFile(ui.open, "diff");
+  $("view-edits").onclick = () => ui.open && openFile(ui.open, "edits");
   $("theme").onclick = () => { ui.theme = ui.theme === "dark" ? "light" : "dark"; applyAppearance(); restartTerminals(); };
   $("larger").onclick = () => { ui.size = Math.min(ui.size + 1, 26); applyAppearance(); resizeTerminalText(); };
   $("smaller").onclick = () => { ui.size = Math.max(ui.size - 1, 10); applyAppearance(); resizeTerminalText(); };
@@ -442,6 +455,10 @@ await refresh();
 selectTab("replay");
 onEvents(async (event) => {
   if (event.type === "moved") { hideNotice(); await refresh(); }
+  if (event.type === "edits") {
+    await loadTree();
+    if (ui.open) await openFile(ui.open, ui.view, false);
+  }
   if (event.type === "slide") { ui.state = await api("/api/state"); drawSlides(); }
   if (event.type === "show") {
     if (event.layout) setLayout(event.layout);

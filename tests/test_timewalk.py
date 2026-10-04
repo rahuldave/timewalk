@@ -254,6 +254,56 @@ def test_untracked_files_survive_every_move(repo: timewalk.Repo) -> None:
     assert repo.edits() == [], "untracked files are not edits"
 
 
+def test_edits_are_shown_against_the_step(repo: timewalk.Repo) -> None:
+    "What a command changed in a tracked file is shown as a diff against the step's commit; other files show none."
+    repo.move(2)
+    (repo.work / "src" / "greet.py").write_text("def greet(name: str) -> str:\n    return f'Hello, {name}'\n")
+    edits = repo.edit_diff("src/greet.py")
+    assert "-    return 'Hello, ' + name" in edits and "+    return f'Hello, {name}'" in edits
+    assert repo.edit_diff("README.md") == ""
+    assert repo.edit_diff("../sample/README.md") == ""
+    assert "return 'Hello, ' + name" in repo.diff("src/greet.py"), "the step's own changes are still against the step before"
+
+
+def test_edit_marks_notice_a_second_edit(repo: timewalk.Repo) -> None:
+    "Editing an already edited file changes the fingerprint, so the pages hear of it."
+    repo.move(1)
+    assert repo.edit_marks() == ()
+    target = repo.work / "src" / "greet.py"
+    target.write_text("one\n")
+    first = repo.edit_marks()
+    target.write_text("two, longer\n")
+    assert first and repo.edit_marks() != first
+
+
+def test_the_watcher_announces_edits(repo: timewalk.Repo) -> None:
+    "The watcher tells the pages when the working copy's edits change, and stays quiet otherwise."
+    import asyncio
+
+    class Listener(timewalk.Hub):
+        def __init__(self) -> None:
+            super().__init__()
+            self.heard: list[dict] = []
+
+        async def tell(self, event: dict) -> None:
+            self.heard.append(event)
+
+    async def scenario() -> list[dict]:
+        hub = Listener()
+        watcher = asyncio.create_task(timewalk.watch_edits(repo, hub, every=0.05))
+        await asyncio.sleep(0.2)
+        assert hub.heard == [], "nothing changed yet"
+        (repo.work / "README.md").write_text("edited\n")
+        for _ in range(60):
+            if hub.heard:
+                break
+            await asyncio.sleep(0.05)
+        watcher.cancel()
+        return hub.heard
+
+    assert asyncio.run(asyncio.wait_for(scenario(), timeout=10)) == [{"type": "edits"}]
+
+
 def test_an_untracked_file_is_never_overwritten(repo: timewalk.Repo) -> None:
     "If a later step has a file where an untracked one sits, the move is refused and the file kept."
     (repo.work / "justfile").write_text("mine\n")
@@ -457,9 +507,19 @@ def test_file_api_is_read_only_and_stays_inside(served: TestClient) -> None:
     served.post("/api/move", params=auth, json={"to": 2})
     shown = served.get("/api/file", params={**auth, "path": "src/greet.py"}).json()
     assert "name: str" in shown["text"] and "+def greet(name: str) -> str:" in shown["diff"]
-    assert served.get("/api/file", params={**auth, "path": "../sample/README.md"}).json() == {"path": "../sample/README.md", "missing": True, "diff": ""}
+    assert served.get("/api/file", params={**auth, "path": "../sample/README.md"}).json() == {"path": "../sample/README.md", "missing": True, "diff": "", "edits": ""}
     for method in (served.post, served.put, served.delete):
         assert method("/api/file", params={**auth, "path": "README.md"}).status_code == 405
+
+
+def test_file_api_shows_edits(served: TestClient, repo: timewalk.Repo) -> None:
+    "The file route returns an edited file's new text and its edits, and the tree names it as edited."
+    auth = {"t": TOKEN}
+    served.post("/api/move", params=auth, json={"to": 1})
+    (repo.work / "src" / "greet.py").write_text("def greet(name):\n    return 'Hi, ' + name\n")
+    shown = served.get("/api/file", params={**auth, "path": "src/greet.py"}).json()
+    assert "'Hi, '" in shown["text"] and "+    return 'Hi, ' + name" in shown["edits"]
+    assert served.get("/api/tree", params=auth).json()["edits"] == ["src/greet.py"]
 
 
 def test_notes_are_served_only_by_their_own_route(served: TestClient) -> None:

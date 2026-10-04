@@ -188,6 +188,8 @@ body[data-layout="slides"] .tree-pane, body[data-layout="slides"] .file-pane { d
 .badge.A { color: var(--added); background: var(--added-soft); }
 .badge.M { color: var(--changed); background: var(--changed-soft); }
 .badge.D { color: var(--removed); background: var(--removed-soft); }
+.badge.E { color: var(--accent); background: var(--accent-soft); }
+.badge + .badge { margin-left: 4px; }
 .gone { padding: 6px 10px; color: var(--ink-3); font-family: var(--sans); font-size: 0.95em; }
 
 .file-path { font-family: var(--mono); color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

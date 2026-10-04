@@ -26,8 +26,8 @@ builds a four-step sample repository in `demo/sample` and opens it with the demo
 |---|---|
 | Step bar | One chip per step. Click one, or use the arrows, or Alt+Left and Alt+Right |
 | Slides | The slides for this step, to the left of the files. Alt+Up and Alt+Down change slide. The Slides, Both and Code buttons choose what is shown |
-| Files | The tracked files at this step. Files the step added or changed are marked, and can be listed alone |
-| Reader | A file as it is at this step, or what this step changed in it. Files cannot be edited here |
+| Files | The tracked files at this step. Files the step added or changed are marked, and so are files edited since, for example by `just fmt` run in a terminal. Either kind can be listed alone |
+| Reader | A file as it is on disk, what this step changed in it, or what has been edited in it since the step's commit. It follows edits as they happen. Files cannot be edited here |
 | Terminals | Tabs, each a real shell built on Ghostty's terminal core. **At this step**: in the repository at this step. **Runs**: a second shell there, for commands that take a while. **Main**: in the repository you started from. **Claude**: starts Claude Code at this step, to ask what the code is at this commit. **+** opens more |
 | Recipes | The `just` recipes that exist at this step, as buttons. Ones new at this step are highlighted |
 
@@ -39,7 +39,7 @@ builds a four-step sample repository in `demo/sample` and opens it with the demo
 | Clock | Time since you pressed start, time left in this step, and how far over you are |
 | Slides | A preview, the list, and which of Slides, Both or Code the projector shows |
 | Commands | The commands from your notes. One click types and runs one on the projector |
-| Files | The files this step changed. One click opens one on the projector, as the file or as its changes |
+| Files | The files this step changed, and the files edited since. One click opens one on the projector, as the file, as the step's changes, or as the edits |
 | Next | The step that follows, and when it is due |
 
 The Right arrow moves to the next slide, then to the next step. Shift+Right moves a whole step.
@@ -131,7 +131,7 @@ Notes are served only to the presenter page.
 - **It never deletes an untracked file.** Whatever a command wrote at one step (an environment, a
   database, a run's output) is still there at the next. If a later step has a file where an untracked
   one sits, the move is refused and the file is named.
-- **It never discards an edit.** If tracked files were edited, moving asks first, and then sets the edits
+- **It never discards an edit.** Edits are shown as they happen, against the step's commit. If tracked files were edited, moving asks first, and then sets the edits
   aside with `git stash`, labelled with the step they were made at.
 - **The file view cannot write.** There is no route that changes a file. The terminals can, as any
   terminal can.
@@ -157,7 +157,7 @@ Claude tab (`--assistant ''` gives a plain shell there instead, `--assistant aid
 ## Development
 
 ```
-just test      # 44 tests: the git layer, notes and slides, the web application's guards, a real terminal
+just test      # 48 tests: the git layer, notes and slides, the web application's guards, a real terminal
 just lint
 ```
 

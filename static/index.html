@@ -50,7 +50,7 @@
     <aside class="tree-pane">
       <div class="pane-head">
         <span id="tree-summary">Files</span>
-        <label class="only"><input type="checkbox" id="only-changed"> changed in this step</label>
+        <label class="only"><input type="checkbox" id="only-changed"> changed or edited</label>
       </div>
       <nav id="tree" aria-label="Files"></nav>
     </aside>
@@ -61,6 +61,7 @@
         <span class="views" role="tablist">
           <button id="view-file" role="tab" aria-selected="true">File</button>
           <button id="view-diff" role="tab" aria-selected="false">Changes in this step</button>
+          <button id="view-edits" role="tab" aria-selected="false" hidden title="What commands run here, such as a formatter, have changed in this file since the step's commit. Not committed">Edits since the step</button>
         </span>
       </div>
       <div id="file-body" class="file-body"><p class="empty">Files are shown as they are at this step. They cannot be edited here.</p></div>

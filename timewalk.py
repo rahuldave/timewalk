@@ -30,6 +30,7 @@ terminal in a web page is a way to run commands on this machine.
 
 import argparse
 import asyncio
+import contextlib
 import fcntl
 import json
 import os
@@ -147,6 +148,17 @@ class Repo:
         out = git(self.work, "status", "--porcelain", "--untracked-files=no")
         return [line[3:] for line in out.splitlines() if line]
 
+    def edit_marks(self) -> tuple:  # Each edited path with its modification time and size, None for a deleted file
+        "Fingerprint the edits cheaply, so a second edit to an already edited file is noticed too."
+        marks = []
+        for relative in self.edits():
+            try:
+                info = (self.work / relative).stat()
+                marks.append((relative, info.st_mtime_ns, info.st_size))
+            except OSError:
+                marks.append((relative, None, None))
+        return tuple(marks)
+
     def move(
         self,
         index: int,  # Step to move to
@@ -213,6 +225,15 @@ class Repo:
         if not index:
             return ""
         return git(self.work, "diff", "--no-color", self.steps[index - 1].sha, self.steps[index].sha, "--", relative)
+
+    def edit_diff(
+        self,
+        relative: str,  # Path inside the working copy
+    ) -> str:  # Unified diff of this file's uncommitted edits, against the commit the working copy is at
+        "Show what commands run here, such as a formatter, have changed in one file since the step's commit."
+        if relative not in self.edits():
+            return ""
+        return git(self.work, "diff", "--no-color", "HEAD", "--", relative)
 
     def state(self) -> dict:  # Everything a page needs to draw its header
         "Summarise where the working copy is."
@@ -461,6 +482,24 @@ class Hub:
                 self.pages.discard(page)
 
 
+async def watch_edits(
+    repo: Repo,  # The repository being browsed
+    hub: Hub,  # Where to announce changes
+    every: float = 1.0,  # Seconds between looks
+) -> None:
+    "Tell every page when the edits in the working copy change, so a command such as `just fmt` shows at once."
+    seen = None
+    while True:
+        try:
+            now = await asyncio.to_thread(repo.edit_marks)
+        except GitError:
+            now = seen
+        if seen is not None and now != seen:
+            await hub.tell({"type": "edits"})
+        seen = now
+        await asyncio.sleep(every)
+
+
 def make_app(
     repo: Repo,  # The repository to browse
     token: str,  # Secret every request must carry
@@ -468,6 +507,7 @@ def make_app(
     notes_path: Path | None = None,  # The presenter's notes file, if there is one
     assistant: str = "claude",  # Command started in the assistant tab; empty for a plain shell
     slides_path: Path | None = None,  # The slides manifest, if there is one
+    watch_every: float = 1.0,  # Seconds between looks for edits in the working copy
 ) -> Starlette:  # The web application
     "Build the web application: the two pages, the read-only repository API, the terminals, and the event hub."
     terminals: dict[str, Terminal] = {}
@@ -542,10 +582,10 @@ def make_app(
 
     @guarded
     async def file(request: Request) -> dict:
-        "One file's text and what the current step did to it."
+        "One file's text, what the current step did to it, and what has been edited since."
         path = request.query_params["path"]
         found = repo.read(path)
-        return {**found, "diff": "" if found.get("missing") else repo.diff(path)}
+        return {**found, "diff": "" if found.get("missing") else repo.diff(path), "edits": repo.edit_diff(path)}
 
     @guarded
     async def move(request: Request) -> dict:
@@ -646,7 +686,16 @@ def make_app(
     if slides_path is not None:
         mounts.append(Mount("/slides", behind_token(StaticFiles(directory=slides_path.parent))))
 
-    return Starlette(routes=[
+    @contextlib.asynccontextmanager
+    async def lifespan(app: Starlette):
+        "Watch the working copy for edits while the server runs."
+        watcher = asyncio.create_task(watch_edits(repo, hub, watch_every))
+        try:
+            yield
+        finally:
+            watcher.cancel()
+
+    return Starlette(lifespan=lifespan, routes=[
         Route("/", page("index.html")),
         Route("/presenter", page("presenter.html")),
         Route("/api/state", state),
