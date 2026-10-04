@@ -429,6 +429,23 @@ def test_bare_numbers_refer_to_the_default_deck(tmp_path: Path) -> None:
     assert timewalk.load_slides(manifest) == {"step-00": ["handout.pdf#page=1", "handout.pdf#page=2", "handout.pdf#page=3"]}
 
 
+
+def test_a_step_can_show_a_document_instead_of_slides(tmp_path: Path) -> None:
+    "A step under [docs] is one whole document, not split at ---, and it replaces any slides that step had."
+    manifest = tmp_path / "slides.toml"
+    (tmp_path / "talk.md").write_text("# One\n\n---\n\n# Two\n")
+    (tmp_path / "guide.md").write_text("# Guide\n\nA paragraph.\n\n---\n\nMore after a rule.\n")
+    manifest.write_text('[slides]\nstep-00 = ["talk.md"]\nstep-01 = ["talk.md"]\n[docs]\nstep-01 = "guide.md"\nstep-02 = "guide.md"\n')
+    assert timewalk.load_slides(manifest) == {"step-00": ["talk.md#1", "talk.md#2"], "step-01": ["guide.md#doc"], "step-02": ["guide.md#doc"]}
+
+
+def test_a_document_entry_passes_through_slides(tmp_path: Path) -> None:
+    "Written in [slides] as `file.md#doc`, a document stays one entry beside ordinary slides."
+    manifest = tmp_path / "slides.toml"
+    (tmp_path / "talk.md").write_text("# One\n\n---\n\n# Two\n")
+    manifest.write_text('[slides]\nstep-00 = ["talk.md#1", "talk.md#doc"]\n')
+    assert timewalk.load_slides(manifest) == {"step-00": ["talk.md#1", "talk.md#doc"]}
+
 # ---------- the web application ----------
 
 
@@ -499,6 +516,13 @@ def test_api_reports_edits_instead_of_moving(served: TestClient, repo: timewalk.
     assert refused.status_code == 409
     assert refused.json() == {"error": "uncommitted edits", "edits": ["justfile"]}
     assert served.post("/api/move", params=auth, json={"to": 2, "set_aside": True}).json()["current"] == 2
+
+
+def test_scripts_are_revalidated_on_every_load(served: TestClient) -> None:
+    "Scripts and slides are sent with no-cache, so a browser never runs a new page against an old cached script."
+    response = served.get("/static/common.js", params={"t": TOKEN})
+    assert response.status_code == 200 and response.headers["cache-control"] == "no-cache"
+    assert served.get("/slides/one.md", params={"t": TOKEN}).headers["cache-control"] == "no-cache"
 
 
 def test_file_api_is_read_only_and_stays_inside(served: TestClient) -> None:

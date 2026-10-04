@@ -340,7 +340,7 @@ def expand_entry(
         prefix = "#page=" if deck.lower().endswith(".pdf") else "#"
         return [f"{deck}{prefix}{n}" for n in numbers]
     path, _, fragment = text.partition("#")
-    if not path.lower().endswith((".md", ".markdown")):
+    if not path.lower().endswith((".md", ".markdown")) or fragment == "doc":
         return [text]
     picked = re.fullmatch(r"(\d+)(?:-(\d+))?", fragment)
     if picked:
@@ -362,6 +362,12 @@ def load_slides(
         step-01 = ["tools.md#1-3", "pictures/mask.svg"]   # slides 1 to 3 of a file, then a picture
         step-02 = [7, "8-10", "handout.pdf#page=2"]       # slides of the default deck, then a page of a PDF
 
+        [docs]
+        step-03 = "walkthrough.md"                        # one Markdown document, whole, scrolled instead of slides
+
+    A step under [docs] shows that file as one document in the slide pane, instead of any slides: it is not split
+    at `---`, and it scrolls. In the list it is the single entry `walkthrough.md#doc`, which [slides] may also use.
+
     Each entry is a path beside the manifest. A Markdown file holds one slide or several, separated by lines
     that are exactly `---`. Images are slides of their own. A PDF page is written `deck.pdf#page=3`, and a slide
     of an HTML deck with whatever fragment that deck uses, such as `deck.html#/3`.
@@ -374,6 +380,9 @@ def load_slides(
     for step, entries in data.get("slides", {}).items():
         if isinstance(entries, list):
             out[step] = [slide for entry in entries for slide in expand_entry(entry, manifest.parent, deck)]
+    for step, doc in data.get("docs", {}).items():
+        if isinstance(doc, str) and doc.strip():
+            out[step] = [doc.strip().partition("#")[0] + "#doc"]
     return out
 
 
@@ -580,7 +589,12 @@ def make_app(
             if scope["type"] == "http" and not allowed(Request(scope)):
                 await Response("Open the address timewalk printed, including its ?t=... part.", status_code=403)(scope, receive, send)
                 return
-            await files(scope, receive, send)
+            async def revalidated(message) -> None:
+                # Scripts change between versions, and a page that mixes a new script with a cached old one is blank.
+                if message["type"] == "http.response.start":
+                    message["headers"] = [*message.get("headers", []), (b"cache-control", b"no-cache")]
+                await send(message)
+            await files(scope, receive, revalidated)
         return serve
 
     @guarded
