@@ -201,14 +201,19 @@ def shoot(browser, base: str, repo: timewalk.Repo) -> None:
     page.wait_for_timeout(300)
     save("terminal-focused", ".term-pane", focused=True)
 
-    # The presenter page, with the clock running.
-    presenter = browser.new_page(viewport={"width": 1280, "height": 900}, device_scale_factor=1)
+    # The presenter page: the same page, with the clock band and the notes, at step-02 with the clock running.
+    presenter = browser.new_page(viewport={"width": 1600, "height": 1000}, device_scale_factor=1)
     presenter.on("pageerror", lambda error: errors.append(str(error)))
     at(2)
+    layout("split")
+    open_file("test_greet.py")
+    tab("At this step")
+    typed("clear; uvx pytest -q", 5000)
     presenter.goto(f"{base}/presenter?t={TOKEN}")
     presenter.wait_for_selector("#commands button")
     presenter.locator("#clock-start").click()
     presenter.wait_for_timeout(2500)
+    presenter.evaluate("document.activeElement && document.activeElement.blur()")
     presenter.mouse.move(2, 2)
     presenter.screenshot(path=str(OUT / "presenter.png"))
     presenter.close()

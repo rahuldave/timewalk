@@ -1,46 +1,56 @@
 # The presenter page
 
-The page at the second address, ending in `/presenter`. It is for your screen only: it holds your notes,
-which the projector page never receives. Everything you do here happens on the projector.
+The page at the second address, ending in `/presenter`, for your own screen. It is the
+[projector page](projector.md), with two things added: a band across the top with the clock and what
+comes next, and a column on the right with your notes for the step and their commands.
 
-![The presenter page at step-02, with the clock running](images/presenter.png)
+![The presenter page: the projector page, a clock band on top, and the notes on the right](images/presenter.png)
 
-## What is on it
+## One page, two screens
 
-| Part | What it shows |
+The projector and the presenter page show the same thing. The server keeps what is shown, and every
+change made on either page is sent to both:
+
+| Shared by both pages | Each page's own |
 |---|---|
-| Step | The step's name and title, with **◀ Step** and **Step ▶** to move |
-| Clock | Time since you pressed **Start the clock**, time left in this step, and how far over you are |
-| Your notes for this step | The step's section of the notes file, as Markdown |
-| Slides for this step | A preview of the slide on the projector, the step's list of slides, and **Slides**, **Both**, **Code** for the projector's layout |
-| Commands | The commands from your notes. One click types one into the projector's terminal and runs it |
-| Files | The files this step changed, and files edited since. **Show** opens one on the projector; **Changes** and **Edits** open it in those views |
-| What the audience sees | The tag's message, as shown in the band on the projector |
-| Next | The next step's title, and when it is planned |
+| The step | The theme, dark or light |
+| The slide | The text size |
+| Slides, Both or Code | The height of the terminals |
+| The open file, and its view | Where a file or slide is scrolled to |
+| The terminal tab in front | Which terminal has the keyboard |
+| The terminals themselves: the same shells | |
 
-## The clock
+So you drive the room from your screen: press **Right** and the projector moves; choose **Code** and the
+projector shows the code; open `greet.py` in **Changes in this step** and the class sees it. What you see
+is what they see, with your notes beside it.
 
-Each step's notes can give a planned start, `time: 0:37`, in minutes and seconds from the start of the
-session. Once the clock is started, the page shows the time left before the next step is due, and turns
-red with how far over you are. **Reset** stops it.
+## The band
 
-## Commands
+| Part | Shows |
+|---|---|
+| The clock | Time since you pressed **Start the clock**. **Reset** stops it |
+| The plan | Time left before the next step is due, or how far over you are, in red |
+| Next | The next step's name and title, and when it is planned |
 
-A line in your notes that starts with `$ ` is a command for the terminal at this step; `runs$ ` sends it
-to the Runs tab, `runs2$ ` to `runs9$ ` to further Runs tabs, and `main$ ` to the Main tab. Each is a
-button here. One click types it on the projector and presses Enter, switches the projector to that tab,
-and gives that terminal the keyboard. See [Presenter notes](notes.md).
+The planned times come from `time:` lines in your notes. Without them the band shows the clock alone.
+
+## The notes column
+
+Your notes for the step, as Markdown, headed by the step's name and the title from your notes. Below them
+are the step's commands, one button each. A click types the command into its terminal and runs it,
+brings that tab to the front on both pages, and gives the projector's terminal the keyboard. See
+[Presenter notes](notes.md).
+
+The notes are read afresh at every step, so you can edit the file while presenting. The projector page
+never asks for them.
 
 ## The keyboard
 
-| Key | Does |
-|---|---|
-| Right | The next slide; after the last slide, the next step |
-| Left | The previous slide; before the first, the previous step |
-| Shift with Right or Left | A whole step, whatever the slide |
+The same as the projector page. **Left** and **Right** move steps, **Up** and **Down** change slides when
+there is more than one, and Alt with an arrow works even inside a terminal. A terminal has the keys only
+after you click into it.
 
-## Two screens, one state
+## On a narrow screen
 
-Both pages follow the server. Moving, changing slide, opening a file or running a command on either page
-is sent to every open page. A page that is reloaded comes back where the others are, and a terminal that
-reconnects replays its recent output.
+Below about 1000 pixels wide the notes move under the terminals, so a laptop screen still has room for
+the code.

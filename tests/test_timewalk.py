@@ -546,6 +546,29 @@ def test_file_api_shows_edits(served: TestClient, repo: timewalk.Repo) -> None:
     assert served.get("/api/tree", params=auth).json()["edits"] == ["src/greet.py"]
 
 
+def test_both_pages_share_what_is_shown(served: TestClient) -> None:
+    "Layout, open file, view and terminal tab are kept by the server, so the projector and the presenter page agree."
+    auth = {"t": TOKEN}
+    state = served.get("/api/state", params=auth).json()
+    assert (state["layout"], state["path"], state["track"]) == ("split", None, "replay")
+    served.post("/api/show", params=auth, json={"layout": "code"})
+    served.post("/api/show", params=auth, json={"path": "README.md", "view": "diff", "track": "main"})
+    state = served.get("/api/state", params=auth).json()
+    assert (state["layout"], state["path"], state["view"], state["track"]) == ("code", "README.md", "diff", "main")
+    served.post("/api/show", params=auth, json={"layout": "slides"})
+    served.post("/api/show", params=auth, json={"path": "README.md"})
+    assert served.get("/api/state", params=auth).json()["layout"] == "split", "a file asked for is never hidden behind the slides"
+    served.post("/api/show", params=auth, json={"layout": "sideways", "track": "nowhere"})
+    state = served.get("/api/state", params=auth).json()
+    assert (state["layout"], state["track"]) == ("split", "main"), "unknown layouts and tabs are ignored"
+
+
+def test_the_presenter_page_is_the_projector_page(served: TestClient) -> None:
+    "/presenter serves the same page; the script adds the notes and the clock there."
+    auth = {"t": TOKEN}
+    assert served.get("/presenter", params=auth).text == served.get("/", params=auth).text
+
+
 def test_notes_are_served_only_by_their_own_route(served: TestClient) -> None:
     "The presenter's notes come from /api/notes and are not part of the state the audience page reads."
     auth = {"t": TOKEN}

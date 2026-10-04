@@ -10,6 +10,15 @@
   <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
+  <!-- On the presenter page only: the clock and what comes next, across the top. -->
+  <div id="band" class="band" hidden>
+    <span class="band-label">Presenter</span>
+    <span id="elapsed" class="elapsed">0:00</span>
+    <span id="plan" class="plan"></span>
+    <button id="clock-start">Start the clock</button>
+    <span id="upcoming" class="upcoming"></span>
+  </div>
+
   <header class="bar">
     <div class="steps">
       <button id="prev" class="nav" title="Previous step (Left arrow; Alt+Left inside a terminal)" aria-label="Previous step">&#9664;</button>
@@ -78,6 +87,16 @@
     </div>
     <div id="terms" class="terms"></div>
   </section>
+
+  <!-- On the presenter page only: your notes and their commands. The projector page never asks for them. -->
+  <aside id="notes-pane" class="notes-pane" hidden>
+    <div class="pane-head"><span id="notes-title">Notes</span></div>
+    <div class="notes-body">
+      <div id="notes" class="p-notes"></div>
+      <h2 class="notes-h">Commands</h2>
+      <div id="commands" class="p-commands"></div>
+    </div>
+  </aside>
 
   <script src="/static/vendor/highlight/highlight.min.js"></script>
   <script src="/static/vendor/highlight/dockerfile.min.js"></script>

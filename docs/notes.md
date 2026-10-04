@@ -1,7 +1,7 @@
 # Presenter notes
 
 A Markdown file with one section per step, passed with `--notes notes.md`. Only the presenter page
-receives it. It is read afresh whenever the presenter page asks, so it can be edited while presenting.
+asks for it, and shows it in the column on its right. It is read afresh whenever the presenter page asks, so it can be edited while presenting.
 
 ```markdown
 ## step-07 Training
@@ -24,8 +24,9 @@ main$ git log --oneline
 | `main$ command` | The same, in the Main tab, in the repository you started from |
 | anything else | Shown to you as Markdown |
 
-Each command is a button on the presenter page. One click types it into that tab on the projector,
-presses Enter, brings the tab to the front, and gives it the keyboard.
+Each command is a button under the notes on the presenter page. One click types it into that tab,
+presses Enter, and brings the tab to the front on both pages. The projector's terminal gets the keyboard,
+so you can type a follow-up there.
 
 ## Writing good notes
 

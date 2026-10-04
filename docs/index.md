@@ -2,8 +2,9 @@
 
 timewalk lets you teach a project by replaying how it was built. Each step of the project is a git tag.
 For every step it shows the slides you wrote for it, the files as they were then, what that step changed,
-and real terminals in the repository at that step. A second page, on your own screen, holds your private
-notes, a clock, and buttons that drive the projector.
+and real terminals in the repository at that step. A second page, on your own screen, is the same page
+with your private notes beside it and a clock across the top; whatever you do there happens on the
+projector too.
 
 ![The projector page at the demo's second step: a slide, the files, the file the step added, and a terminal at that step](images/projector.png)
 
@@ -54,8 +55,9 @@ uv run timewalk.py ~/code/project --notes notes.md --slides slides/slides.toml
 | Page | What it covers |
 |---|---|
 | [A tour of the demo](demo.md) | The sample project, step by step, with what to try at each |
+| [How it works](model.md) | The folders, the worktree, what every button does where, what is kept where |
 | [The projector page](projector.md) | Steps, slides, files, the reader's three views, recipes, the keyboard |
-| [The presenter page](presenter.md) | Notes, the clock, one-click commands, files to show |
+| [The presenter page](presenter.md) | The same page, with your notes, the clock and one-click commands |
 | [Live edits](edits.md) | A command changes files at a step, and the page shows what it did as it happens |
 | [The terminals](terminals.md) | What each tab is, where it starts, long runs, focus |
 | [Making the steps](steps.md) | Tags, their notes, and how to build a history worth walking |

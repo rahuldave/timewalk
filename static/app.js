@@ -1,8 +1,11 @@
-// The audience page: step bar, read-only file view, terminal tabs.
+// The projector page, and the presenter page: the same page, which on /presenter adds a clock band and the notes.
+// What both show (step, slide, layout, open file and view, terminal tab) is kept by the server, so they agree.
 import { init, Terminal, FitAddon } from "/static/vendor/ghostty-web/ghostty-web.js";
-import { api, socket, onEvents, escapeHtml, settings, stepLabel, drawSlide, isDoc } from "/static/common.js";
+import { api, socket, onEvents, escapeHtml, settings, stepLabel, drawSlide, isDoc, renderMarkdown } from "/static/common.js";
 
 const $ = (id) => document.getElementById(id);
+const PRESENTER = location.pathname.startsWith("/presenter");
+const PAGE = Math.random().toString(36).slice(2);   // tells this page's own requests apart from the other page's
 const LANGUAGES = { py: "python", toml: "ini", cfg: "ini", ini: "ini", yaml: "yaml", yml: "yaml", json: "json", jsonl: "json", md: "markdown",
   qmd: "markdown", sh: "bash", zsh: "bash", js: "javascript", ts: "typescript", html: "xml", css: "css", lua: "lua", lock: "ini" };
 const TERM_THEMES = {
@@ -31,17 +34,28 @@ const ui = {
   terms: new Map(),       // tab id -> { term, fit, ws, el }
   theme: settings.get("theme", "light"),
   size: settings.get("size", 14),
-  layout: settings.get("layout", "split"),   // "slides", "split" or "code"; only used when there are slides
+  layout: "split",        // "slides", "split" or "code", as the server says; only used when there are slides
+  notes: {},              // the presenter's notes, on the presenter page only
+  notesPath: null,
+  skew: 0,                // the server's clock minus this one's
 };
 
 // ---------- steps ----------
 
 async function refresh() {
   ui.state = await api("/api/state");
+  ui.layout = ui.state.layout;
+  ui.skew = ui.state.now - Date.now() / 1000;
   drawSteps();
   drawSlides();
-  await Promise.all([loadTree(), loadRecipes()]);
+  await Promise.all([loadTree(), loadRecipes(), PRESENTER ? loadNotes() : null]);
   if (ui.open) await openFile(ui.open, ui.view, false);
+  if (PRESENTER) { drawNotes(); drawBand(); }
+}
+
+/** Ask the server to change what both pages show. The change comes back to this page as an event too. */
+function show(what) {
+  return api("/api/show", { ...what, from: PAGE }).catch((error) => showNotice(error.message, true));
 }
 
 function drawSteps() {
@@ -65,7 +79,7 @@ function drawSteps() {
   $("note").textContent = here ? here.note : "";
   $("prev").disabled = current === null || current === 0;
   $("next").disabled = current !== null && current === steps.length - 1;
-  document.title = here ? `${here.name} · timewalk` : "timewalk";
+  document.title = (here ? `${here.name} · ` : "") + (PRESENTER ? "timewalk presenter" : "timewalk");
   list.querySelector(".here")?.scrollIntoView({ block: "nearest", inline: "center" });
 }
 
@@ -126,9 +140,8 @@ function drawSlides() {
   for (const entry of ui.terms.values()) if (!entry.el.hidden) requestAnimationFrame(() => entry.fit.fit());
 }
 
-function setLayout(layout) {
+function applyLayout(layout) {
   ui.layout = layout;
-  settings.set("layout", layout);
   drawSlides();
 }
 
@@ -207,7 +220,7 @@ function drawTree() {
         badge.title = "Edited since the step's commit, by a command run here";
         button.append(badge);
       }
-      button.onclick = () => openFile(file.path, edited.has(file.path) ? "edits" : file.status === "M" && ui.view === "diff" ? "diff" : "file");
+      button.onclick = () => show({ path: file.path, view: edited.has(file.path) ? "edits" : file.status === "M" && ui.view === "diff" ? "diff" : "file" });
       item.append(button);
       list.append(item);
     }
@@ -326,17 +339,21 @@ function drawTabs() {
     button.textContent = tab.label;
     if (tab.unseen) { button.classList.add("unseen"); button.setAttribute("aria-label", tab.label + ", new output"); }
     button.title = tab.hint;
-    button.onclick = () => selectTab(tab.id, true);
+    button.onclick = () => { selectTab(tab.id, true); show({ track: tab.id }); };
     return button;
   }));
 }
 
 // The page keeps the keyboard, for the arrows, until a terminal is clicked or asked for: `focus` gives it the keys.
 function selectTab(id, focus = false) {
-  // A command sent to "runs2" (up to "runs9") opens that tab the first time it is used.
+  // A command sent to "runs2" (up to "runs9") opens that tab the first time it is used, and a shell opened with +
+  // on one page appears on the other.
   if (/^runs[2-9]$/.test(id) && !ui.tabs.some((tab) => tab.id === id)) {
     const after = ui.tabs.findLastIndex((tab) => tab.id.startsWith("runs"));
     ui.tabs.splice(after + 1, 0, { id, label: "Runs " + id.slice(4), hint: "Another shell at this step, for a second long command" });
+  }
+  if (/^extra-\d$/.test(id) && !ui.tabs.some((tab) => tab.id === id)) {
+    ui.tabs.push({ id, label: "Shell " + id.slice(6), hint: "Another shell at this step" });
   }
   if (!ui.tabs.some((tab) => tab.id === id)) return;
   ui.active = id;
@@ -360,7 +377,8 @@ function startTerminal(id) {
   term.open(el);
   const ws = socket("/ws/term/" + id);
   ws.binaryType = "arraybuffer";
-  const sendSize = () => ws.readyState === WebSocket.OPEN && ws.send(JSON.stringify({ type: "resize", rows: term.rows, cols: term.cols }));
+  // The projector sets the shell's size. The presenter page shows the same shell and leaves its size alone.
+  const sendSize = () => !PRESENTER && ws.readyState === WebSocket.OPEN && ws.send(JSON.stringify({ type: "resize", rows: term.rows, cols: term.cols }));
   ws.onopen = () => { fit.fit(); sendSize(); };
   ws.onmessage = (event) => {
     term.write(typeof event.data === "string" ? event.data : new Uint8Array(event.data));
@@ -428,18 +446,16 @@ function wireControls() {
   $("only-changed").onchange = drawTree;
   $("slide-prev").onclick = () => showSlide(ui.state.slide - 1);
   $("slide-next").onclick = () => showSlide(ui.state.slide + 1);
-  for (const button of $("layouts").querySelectorAll("button")) button.onclick = () => setLayout(button.dataset.layout);
-  $("view-file").onclick = () => ui.open && openFile(ui.open, "file");
-  $("view-diff").onclick = () => ui.open && openFile(ui.open, "diff");
-  $("view-edits").onclick = () => ui.open && openFile(ui.open, "edits");
+  for (const button of $("layouts").querySelectorAll("button")) button.onclick = () => show({ layout: button.dataset.layout });
+  for (const view of ["file", "diff", "edits"]) $("view-" + view).onclick = () => ui.open && show({ path: ui.open, view });
   $("theme").onclick = () => { ui.theme = ui.theme === "dark" ? "light" : "dark"; applyAppearance(); restartTerminals(); };
   $("larger").onclick = () => { ui.size = Math.min(ui.size + 1, 26); applyAppearance(); resizeTerminalText(); };
   $("smaller").onclick = () => { ui.size = Math.max(ui.size - 1, 10); applyAppearance(); resizeTerminalText(); };
   $("add-tab").onclick = () => {
     const n = ui.tabs.filter((tab) => tab.id.startsWith("extra-")).length + 1;
     if (n > 9) return;
-    ui.tabs.push({ id: "extra-" + n, label: "Shell " + n, hint: "Another shell at this step" });
     selectTab("extra-" + n, true);
+    show({ track: "extra-" + n });
   };
   document.addEventListener("keydown", (event) => {
     if (event.metaKey || event.ctrlKey || event.shiftKey) return;
@@ -474,12 +490,85 @@ function wireControls() {
 
 // ---------- start ----------
 
+// ---------- the presenter page: notes and the clock ----------
+
+async function loadNotes() {
+  const notes = await api("/api/notes");
+  ui.notes = notes.notes;
+  ui.notesPath = notes.path;
+}
+
+function clockText(seconds) {
+  const s = Math.max(0, Math.round(seconds));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+function drawNotes() {
+  const { steps, current } = ui.state;
+  const here = current === null ? null : steps[current];
+  const mine = here ? ui.notes[here.name] : null;
+  $("notes-title").textContent = here ? `${here.name} · ${mine?.title || here.subject}` : "between steps";
+  if (mine?.text) $("notes").innerHTML = renderMarkdown(mine.text);
+  else $("notes").innerHTML = `<p class="p-empty">${ui.notesPath
+    ? `No notes for ${escapeHtml(here?.name || "this step")} in ${escapeHtml(ui.notesPath)}. Add a section headed "## ${escapeHtml(here?.name || "step-name")}".`
+    : "No notes file. Start timewalk with --notes notes.md, with one \"## step-name\" section per step."}</p>`;
+  const commands = $("commands");
+  commands.replaceChildren();
+  for (const command of mine?.commands || []) {
+    const button = document.createElement("button");
+    const text = document.createElement("span");
+    text.textContent = command.text;
+    const track = document.createElement("span");
+    track.className = "track";
+    const extra = /^runs([2-9])$/.exec(command.track);
+    track.textContent = extra ? `Runs ${extra[1]}` : { main: "Main", runs: "Runs" }[command.track] || "at this step";
+    button.append(text, track);
+    button.title = "Types this into that terminal and runs it, on both pages";
+    button.onclick = () => api("/api/type", { track: command.track, text: command.text }).catch((error) => showNotice(error.message, true));
+    commands.append(button);
+  }
+  if (!commands.children.length) commands.innerHTML = `<span class="p-empty">None. In the notes, "$ " starts a command at this step, "runs$ " one for the Runs tab, "main$ " one in Main.</span>`;
+}
+
+function drawBand() {
+  if (!ui.state) return;
+  const { steps, current, clock: started } = ui.state;
+  const here = current === null ? null : steps[current];
+  const next = current === null ? null : steps[current + 1];
+  const elapsed = started ? Date.now() / 1000 + ui.skew - started : 0;
+  $("elapsed").textContent = clockText(elapsed);
+  $("clock-start").textContent = started ? "Reset" : "Start the clock";
+  const planned = here ? ui.notes[here.name]?.time : null;
+  const nextPlanned = next ? ui.notes[next.name]?.time : null;
+  const plan = $("plan");
+  plan.className = "plan";
+  if (!started) plan.textContent = planned != null ? `this step is planned at ${clockText(planned)}` : "";
+  else if (nextPlanned != null && elapsed > nextPlanned) { plan.className = "plan late"; plan.textContent = `${clockText(elapsed - nextPlanned)} over`; }
+  else if (nextPlanned != null) plan.textContent = `${clockText(nextPlanned - elapsed)} left in this step`;
+  else plan.textContent = planned != null ? `started at ${clockText(planned)}` : "";
+  const nextNotes = next ? ui.notes[next.name] : null;
+  $("upcoming").innerHTML = next
+    ? `Next: <span class="step-name">${escapeHtml(next.name)}</span> ${escapeHtml(nextNotes?.title || next.subject)}` +
+      (nextNotes?.time != null ? `, at ${clockText(nextNotes.time)}` : "")
+    : "This is the last step.";
+}
+
+// ---------- start ----------
+
+if (PRESENTER) {
+  document.body.classList.add("presenter");
+  $("band").hidden = false;
+  $("notes-pane").hidden = false;
+  $("clock-start").onclick = () => api("/api/clock", { action: ui.state.clock ? "reset" : "start" });
+  setInterval(drawBand, 1000);
+}
 applyAppearance();
 guardKeys();
 wireControls();
 await init();
 await refresh();
-selectTab("replay");
+selectTab(ui.state.track || "replay");
+if (ui.state.path) await openFile(ui.state.path, ui.state.view);
 onEvents(async (event) => {
   if (event.type === "moved") { hideNotice(); await refresh(); }
   if (event.type === "edits") {
@@ -487,12 +576,11 @@ onEvents(async (event) => {
     if (ui.open) await openFile(ui.open, ui.view, false);
   }
   if (event.type === "slide") { ui.state = await api("/api/state"); drawSlides(); }
+  if (event.type === "clock" && PRESENTER) { ui.state = await api("/api/state"); ui.skew = ui.state.now - Date.now() / 1000; drawBand(); }
   if (event.type === "show") {
-    if (event.layout) setLayout(event.layout);
-    if (event.path) {
-      if (ui.layout === "slides") setLayout("split");
-      await openFile(event.path, event.view || "file");
-    }
-    if (event.track) selectTab(event.track, true);   // a command the presenter ran: its terminal takes the keys
+    if (event.layout && event.layout !== ui.layout) applyLayout(event.layout);
+    if (event.path) await openFile(event.path, event.view || "file");
+    // The page that asked keeps the keys it had. A command sent from the presenter page gives the projector's terminal the keys.
+    if (event.track) selectTab(event.track, event.from === PAGE || (event.focus === "audience" && !PRESENTER));
   }
 });

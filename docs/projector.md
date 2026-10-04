@@ -1,7 +1,8 @@
 # The projector page
 
 The page at the first address, for the room. Everything on it follows the step the replay copy stands
-on, and everything done on the presenter page happens here too.
+on. The [presenter page](presenter.md) is this same page with your notes beside it: the step, the slide,
+the layout, the open file and the terminal tab are shared, so a change on either page shows on both.
 
 ![The projector page: step bar, slides, files, reader, terminals](images/projector.png)
 
@@ -17,15 +18,16 @@ says "between steps". Choose a step to return.
 
 ## Three layouts
 
-**Slides**, **Both** and **Code**, at the top right, choose what fills the page. The choice is
-remembered in the browser. A step with no slides shows the code whatever is chosen.
+**Slides**, **Both** and **Code**, at the top right, choose what fills the page, on both pages at once.
+A step with no slides shows the code whatever is chosen.
 
 ![Slides: the slide fills the page](images/layout-slides.png)
 
 ![Code: the files and the reader fill the page](images/layout-code.png)
 
 **A−** and **A+** change the text size of everything, terminals included. **Dark** and **Light** switch
-the theme. Drag the bar above the terminals to give them more or less room.
+the theme. Drag the bar above the terminals to give them more or less room. These three are each page's
+own, remembered in its browser, so the projector and your screen can differ.
 
 ![The same step in the dark theme](images/projector-dark.png)
 

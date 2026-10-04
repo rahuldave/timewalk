@@ -8,7 +8,8 @@ A terminal in a web page is a way to run commands on your machine. timewalk keep
   paste the address once.
 - **Requests addressed to any other host name are refused.** That stops a hostile web page from reaching
   the server by pointing a name of its own at `127.0.0.1`.
-- **The notes are served only to the presenter page's route.** The projector page never receives them.
+- **The projector page never asks for the notes.** Only the presenter page requests them, through
+  `/api/notes`, which needs the token like everything else.
 - **Nothing writes files except the terminals.** The file view has no route that changes a file.
 
 ## What you should do

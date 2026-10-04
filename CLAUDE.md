@@ -3,7 +3,8 @@
 A step browser for teaching a project by replaying how it was built. Each step is a git tag (by default
 `step-*`), the tag's annotated message is the note the audience sees, and the projector page shows slides,
 the files at that step, what the step changed, and real terminals in the repository as it was then. The
-presenter page (`/presenter`) shows private notes, a clock, and buttons that drive the projector.
+presenter page (`/presenter`) is the same page with a clock band and the private notes beside it; what both
+show (step, slide, layout, open file, terminal tab) is kept by the server, so they always agree.
 
 The user documentation is the site in `docs/`, published to rahuldave.com/timewalk; the README is a
 short front page that links into it. Keep both true when behaviour changes, and retake the screenshots
@@ -44,7 +45,7 @@ These were set by Rahul. Each has tests; do not weaken them.
 - **An edit is never discarded.** Moving with edits asks first, then `git stash`es them with the step name.
 - **The file view cannot write.** No route changes a file.
 - **Localhost only, a fresh token per launch, other Host headers refused.** Every page, API call, socket
-  and static asset needs the token. Notes are served only to the presenter route.
+  and static asset needs the token. Only the presenter page asks for the notes.
 
 ## Layout
 
@@ -52,7 +53,7 @@ These were set by Rahul. Each has tests; do not weaken them.
 |---|---|
 | `timewalk.py` | The whole server, one file: `git()`, `Repo` (steps, worktree, moves, diffs, reads), notes and slides parsers, `Terminal` (a pty), `Hub` (events to pages), `make_app` (Starlette routes) |
 | `slides_pdf.py` | The PDF handout, drawn by headless Chrome or Edge |
-| `static/` | `index.html`/`app.js` (projector), `presenter.html`/`presenter.js`, `print.*` (for the PDF), `common.js`, `app.css` |
+| `static/` | `index.html`/`app.js` (the page, at `/` and, with notes and clock, at `/presenter`), `print.*` (for the PDF), `common.js`, `app.css` |
 | `static/vendor/` | ghostty-web, highlight.js, marked, each with its licence. Vendored: do not edit |
 | `tests/test_timewalk.py` | The git layer, notes and slides, the app's guards, a real terminal |
 | `demo/timewalk-demo` | A git submodule: the sample repository, five tagged steps, at github.com/rahuldave/timewalk-demo. Its replay copy, `demo/timewalk-demo-replay`, is ignored |

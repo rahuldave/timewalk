@@ -32,6 +32,7 @@ OUT = HERE / "_site"
 PAGES = [
     ("index.md", "Overview"),
     ("demo.md", "A tour of the demo"),
+    ("model.md", "How it works"),
     ("projector.md", "The projector page"),
     ("presenter.md", "The presenter page"),
     ("edits.md", "Live edits"),

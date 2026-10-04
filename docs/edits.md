@@ -11,7 +11,7 @@ Run a command that rewrites a tracked file in a terminal at this step. Within ab
 - The file is marked **edited** in the file list, and the count at the top says how many are.
 - The reader offers a third view, **Edits since the step**: the file's diff against the step's commit.
   Clicking an edited file opens it there.
-- The presenter page lists the file with an **Edits** button that opens it that way on the projector.
+- The presenter page shows the same, and a file opened there opens on the projector too.
 
 ![The file list after ruff format at step-02: one file edited](images/edits-tree.png)
 

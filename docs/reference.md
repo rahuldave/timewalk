@@ -67,11 +67,9 @@ Entries are listed in [Slides and documents](slides.md#the-manifest).
 
 | Page | Key | Does |
 |---|---|---|
-| Projector | Left, Right | Previous or next step |
-| Projector | Up, Down | Previous or next slide, when there is more than one |
-| Projector | Alt with an arrow | The same, even inside a terminal |
-| Presenter | Right, Left | Next or previous slide, then step |
-| Presenter | Shift with Right or Left | A whole step |
+| Both pages | Left, Right | Previous or next step |
+| Both pages | Up, Down | Previous or next slide, when there is more than one |
+| Both pages | Alt with an arrow | The same, even inside a terminal |
 
 ## Requirements
 

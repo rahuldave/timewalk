@@ -16,9 +16,9 @@ them that step added or changed, and terminal tabs built on Ghostty's terminal c
 that step, a second one there for commands that take a while, one in the repository you started from, one that
 starts an assistant (Claude Code by default) at that step so you can ask it what the code is at this commit, and
 as many extra shells as you open. Files can be read,
-not edited. The presenter page, for your own screen, shows your notes for the
-step, a clock against the planned times, the next step, and controls: moving, opening a file, or sending a
-command from there changes what the audience page shows.
+not edited. The presenter page, for your own screen, is the same page with a clock band on top and your notes
+for the step beside it. What the two show (the step, the slide, the layout, the open file, the terminal tab) is
+kept here, so whatever is done on either page happens on both.
 
 By default the stepping happens in a second working copy, `<repo>-replay`, made with `git worktree`, so the
 repository you point at is never moved. Moving never deletes an untracked file, so whatever a command wrote
@@ -548,7 +548,8 @@ def make_app(
         return terminals[name]
     hub = Hub()
     clock: dict[str, float | None] = {"started": None}
-    showing = {"slide": 0}  # which of the current step's slides is on screen
+    # What both pages show, kept here so the projector and the presenter page always agree.
+    showing: dict = {"slide": 0, "layout": "split", "path": None, "view": "file", "track": "replay"}
 
     def slides_now() -> list[str]:  # The slides of the step the working copy is at
         "Read the manifest afresh, so slides can be edited while presenting."
@@ -603,7 +604,8 @@ def make_app(
         deck = slides_now()
         showing["slide"] = min(showing["slide"], max(len(deck) - 1, 0))
         return {**repo.state(), "clock": clock["started"], "now": time.time(), "slides": deck, "slide": showing["slide"],
-                "has_slides": bool(load_slides(slides_path))}
+                "has_slides": bool(load_slides(slides_path)), "layout": showing["layout"], "path": showing["path"],
+                "view": showing["view"], "track": showing["track"]}
 
     @guarded
     async def tree(request: Request) -> dict:
@@ -649,9 +651,18 @@ def make_app(
 
     @guarded
     async def show(request: Request) -> dict:
-        "Ask the audience page to open a file or switch terminal."
+        "Change what both pages show: the layout, the open file and its view, the terminal tab in front."
         body = await request.json()
-        await hub.tell({"type": "show", **{k: body[k] for k in ("path", "view", "track", "layout") if k in body}})
+        if body.get("layout") in ("slides", "split", "code"):
+            showing["layout"] = body["layout"]
+        if body.get("path"):
+            showing["path"], showing["view"] = str(body["path"]), body.get("view") or "file"
+            if showing["layout"] == "slides":
+                showing["layout"] = "split"  # a file asked for must be seen
+        if body.get("track") and terminal_for(str(body["track"])) is not None:
+            showing["track"] = str(body["track"])
+        await hub.tell({"type": "show", **{k: body[k] for k in ("path", "view", "track", "layout", "from", "focus") if k in body},
+                        "layout": showing["layout"]})
         return {"ok": True}
 
     @guarded
@@ -663,7 +674,8 @@ def make_app(
         if term is None:
             raise GitError(f"there is no terminal called {track}")
         term.write(body["text"] + ("\r" if body.get("enter", True) else ""))
-        await hub.tell({"type": "show", "track": track})
+        showing["track"] = track
+        await hub.tell({"type": "show", "track": track, "focus": "audience", "layout": showing["layout"]})
         return {"ok": True}
 
     @guarded
@@ -727,7 +739,7 @@ def make_app(
 
     return Starlette(lifespan=lifespan, routes=[
         Route("/", page("index.html")),
-        Route("/presenter", page("presenter.html")),
+        Route("/presenter", page("index.html")),  # the same page, which adds the notes and the clock there
         Route("/api/state", state),
         Route("/api/tree", tree),
         Route("/api/file", file),

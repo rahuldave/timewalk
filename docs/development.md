@@ -7,7 +7,7 @@ reads its dependencies from the file itself; the pages are plain HTML, CSS and J
 |---|---|
 | `timewalk.py` | The server: the git layer (`Repo`), the notes and slides readers, the terminals, the edits watcher, the web application |
 | `slides_pdf.py` | The PDF export |
-| `static/` | The projector page (`index.html`, `app.js`), the presenter page (`presenter.html`, `presenter.js`), the print page, `common.js`, `app.css` |
+| `static/` | The page (`index.html`, `app.js`), served at `/` for the projector and at `/presenter` with the notes and clock; the print page; `common.js`; `app.css` |
 | `static/vendor/` | ghostty-web, highlight.js and marked, each with its licence |
 | `tests/test_timewalk.py` | The tests |
 | `demo/` | The demo submodule, its notes and slides |
