@@ -27,6 +27,7 @@ const ui = {
          { id: "main", label: "Main", hint: "A shell in the repository you started from" },
          { id: "assistant", label: "Claude", hint: "Starts Claude Code at this step. Ask it what the code is at this commit" }],
   active: "replay",
+  keysToTerminal: false,  // whether a terminal may hold the keyboard: after a click in it, or when asked for
   terms: new Map(),       // tab id -> { term, fit, ws, el }
   theme: settings.get("theme", "light"),
   size: settings.get("size", 14),
@@ -325,12 +326,13 @@ function drawTabs() {
     button.textContent = tab.label;
     if (tab.unseen) { button.classList.add("unseen"); button.setAttribute("aria-label", tab.label + ", new output"); }
     button.title = tab.hint;
-    button.onclick = () => selectTab(tab.id);
+    button.onclick = () => selectTab(tab.id, true);
     return button;
   }));
 }
 
-function selectTab(id) {
+// The page keeps the keyboard, for the arrows, until a terminal is clicked or asked for: `focus` gives it the keys.
+function selectTab(id, focus = false) {
   // A command sent to "runs2" (up to "runs9") opens that tab the first time it is used.
   if (/^runs[2-9]$/.test(id) && !ui.tabs.some((tab) => tab.id === id)) {
     const after = ui.tabs.findLastIndex((tab) => tab.id.startsWith("runs"));
@@ -343,7 +345,8 @@ function selectTab(id) {
   const entry = ui.terms.get(id) || startTerminal(id);
   for (const [other, { el }] of ui.terms) el.hidden = other !== id;
   drawRecipes();
-  requestAnimationFrame(() => { entry.fit.fit(); entry.term.focus(); });
+  if (focus) ui.keysToTerminal = true;
+  requestAnimationFrame(() => { entry.fit.fit(); if (focus) entry.term.focus(); });
 }
 
 function startTerminal(id) {
@@ -378,6 +381,7 @@ function startTerminal(id) {
 
 function typeInto(id, text) {
   const entry = ui.terms.get(id) || startTerminal(id);
+  ui.keysToTerminal = true;
   const send = () => entry.ws.send(JSON.stringify({ type: "input", data: text }));
   if (entry.ws.readyState === WebSocket.OPEN) send(); else entry.ws.addEventListener("open", send, { once: true });
   entry.term.focus();
@@ -407,6 +411,17 @@ function applyAppearance() {
   settings.set("size", ui.size);
 }
 
+// The terminal focuses itself when it opens and again a moment later. Unless a terminal was clicked or asked
+// for, the page takes the keys back, so the arrows move steps and slides.
+function guardKeys() {
+  document.addEventListener("mousedown", (event) => {
+    ui.keysToTerminal = event.target instanceof Element && !!event.target.closest(".term-pane");
+  }, true);
+  $("terms").addEventListener("focusin", () => {
+    if (!ui.keysToTerminal) requestAnimationFrame(() => document.activeElement?.closest(".term-pane") && document.activeElement.blur());
+  });
+}
+
 function wireControls() {
   $("prev").onclick = () => move((ui.state.current ?? 1) - 1);
   $("next").onclick = () => move((ui.state.current ?? -1) + 1);
@@ -424,15 +439,23 @@ function wireControls() {
     const n = ui.tabs.filter((tab) => tab.id.startsWith("extra-")).length + 1;
     if (n > 9) return;
     ui.tabs.push({ id: "extra-" + n, label: "Shell " + n, hint: "Another shell at this step" });
-    selectTab("extra-" + n);
+    selectTab("extra-" + n, true);
   };
   document.addEventListener("keydown", (event) => {
-    if (!event.altKey || event.metaKey || event.ctrlKey) return;
+    if (event.metaKey || event.ctrlKey || event.shiftKey) return;
+    // Alt+arrows work everywhere, a terminal included. Plain arrows work unless a terminal or a text field has the keys.
+    if (!event.altKey) {
+      const target = event.target instanceof Element ? event.target : document.body;
+      if (target.closest(".term-pane") || target.closest("textarea, select, [contenteditable], input:not([type=checkbox]):not([type=radio])")) return;
+    }
+    const manySlides = (ui.state?.slides?.length || 0) > 1;
     if (event.key === "ArrowRight") { event.preventDefault(); $("next").click(); }
     if (event.key === "ArrowLeft") { event.preventDefault(); $("prev").click(); }
-    if (event.key === "ArrowDown") { event.preventDefault(); $("slide-next").click(); }
-    if (event.key === "ArrowUp") { event.preventDefault(); $("slide-prev").click(); }
-  });
+    // With one slide or a document, plain Up and Down are left to scroll.
+    if (event.key === "ArrowDown" && (manySlides || event.altKey)) { event.preventDefault(); $("slide-next").click(); }
+    if (event.key === "ArrowUp" && (manySlides || event.altKey)) { event.preventDefault(); $("slide-prev").click(); }
+    if (event.defaultPrevented) event.stopPropagation();   // a key used here is not also typed into a terminal
+  }, true);   // capture: seen before the terminal, which keeps the keys it handles to itself
   // drag the bar between the reader and the terminal
   const divider = $("divider");
   divider.addEventListener("pointerdown", (down) => {
@@ -452,6 +475,7 @@ function wireControls() {
 // ---------- start ----------
 
 applyAppearance();
+guardKeys();
 wireControls();
 await init();
 await refresh();
@@ -469,6 +493,6 @@ onEvents(async (event) => {
       if (ui.layout === "slides") setLayout("split");
       await openFile(event.path, event.view || "file");
     }
-    if (event.track) selectTab(event.track);
+    if (event.track) selectTab(event.track, true);   // a command the presenter ran: its terminal takes the keys
   }
 });

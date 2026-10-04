@@ -27,12 +27,16 @@ they happen.
 
 | Part | What it shows |
 |---|---|
-| Step bar | One chip per step. Click one, or use the arrows, or Alt+Left and Alt+Right |
-| Slides | The slides for this step, to the left of the files. Alt+Up and Alt+Down change slide. A step can show one longer Markdown document here instead, which scrolls and has no slide arrows. The Slides, Both and Code buttons choose what is shown |
+| Step bar | One chip per step. Click one, or press Left and Right |
+| Slides | The slides for this step, to the left of the files. Up and Down change slide when the step has more than one. A step can show one longer Markdown document here instead, which scrolls and has no slide arrows. The Slides, Both and Code buttons choose what is shown |
 | Files | The tracked files at this step. Files the step added or changed are marked, and so are files edited since, for example by `just fmt` run in a terminal. Either kind can be listed alone |
-| Reader | A file as it is on disk, what this step changed in it, or what has been edited in it since the step's commit. It follows edits as they happen. Files cannot be edited here |
+| Reader | A file in one of three views: **File**, as it is on disk; **Changes in this step**, what the step's commit changed; **Edits since the step**, what has been edited since that commit, shown only when there are edits. It follows edits as they happen. Files cannot be edited here |
 | Terminals | Tabs, each a real shell built on Ghostty's terminal core. **At this step**: in the repository at this step. **Runs**: a second shell there, for commands that take a while. **Main**: in the repository you started from (see [The terminals](#the-terminals)). **Claude**: starts Claude Code at this step, to ask what the code is at this commit. **+** opens more |
 | Recipes | The `just` recipes that exist at this step, as buttons. Ones new at this step are highlighted |
+
+**The keyboard.** The page keeps the arrow keys until you click into a terminal, which then has them,
+shown by a blue edge. Click anywhere else to give them back. A command sent from the presenter page also
+gives its terminal the keys. Alt with an arrow moves steps and slides from anywhere, a terminal included.
 
 **The presenter page** (`/presenter`), for your screen only
 
@@ -192,6 +196,17 @@ Every tab is an ordinary login shell, your own `$SHELL`. They differ only in the
 | At this step, Runs, Runs 2 to 9, + | the replay copy | yes, live, as "edited" |
 | Claude | the replay copy, running `claude` | yes |
 | Main | the repository you started timewalk on, on its own branch | no: the page never shows that repository |
+
+**Runs** is for a command that takes a while, such as a training run, so it can keep going while you
+work in "At this step". A `runs$` line in the notes sends its command there; `runs2$` to `runs9$` open
+further Runs tabs for a second or third long command. A tab that prints while another is in front gets
+a dot, so a finished run is noticed.
+
+**A long command keeps running when you move to another step, and the files change under it.** What
+the program has already loaded stays as it was. What it reads later comes from the new step: a config, a
+module imported late, a script a recipe starts. Move on while a run is going only if it has read
+everything it needs. The Main tab's files do not move, but it runs the repository's current code, not
+the step's.
 
 The shells get your environment, less timewalk's own Python: `uv run timewalk.py` puts its script
 environment first on `PATH`, and the shells take it off, so `python` there is the project's or yours.
