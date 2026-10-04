@@ -95,8 +95,10 @@ through the socket.
 ## Checking a change
 
 1. `just test` and `just lint`.
-2. For anything in `static/`, drive both pages in headless Chrome through the demo: every step and slide,
-   and typing in a terminal. Playwright with `channel="chrome"` works. Safari and Firefox are not checked.
+2. For anything in `static/`, drive both pages in headless Chrome through a throwaway clone of the demo
+   (`git clone ~/Projects/timewalk-demo` into the scratchpad), not `demo/timewalk-demo-replay`, which may
+   hold Rahul's own edits. Go through every step and slide,
+   and type in a terminal. Playwright with `channel="chrome"` works. Safari and Firefox are not checked.
 
 ## Commits
 

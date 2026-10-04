@@ -1,6 +1,6 @@
 // The audience page: step bar, read-only file view, terminal tabs.
 import { init, Terminal, FitAddon } from "/static/vendor/ghostty-web/ghostty-web.js";
-import { api, socket, onEvents, escapeHtml, settings, stepLabel, drawSlide } from "/static/common.js";
+import { api, socket, onEvents, escapeHtml, settings, stepLabel, drawSlide, isDoc } from "/static/common.js";
 
 const $ = (id) => document.getElementById(id);
 const LANGUAGES = { py: "python", toml: "ini", cfg: "ini", ini: "ini", yaml: "yaml", yml: "yaml", json: "json", jsonl: "json", md: "markdown",
@@ -115,7 +115,10 @@ function drawSlides() {
   document.body.dataset.layout = hasSlides && slides.length ? ui.layout : "code";
   document.body.classList.toggle("no-slides-here", hasSlides && !slides.length);
   for (const button of $("layouts").querySelectorAll("button")) button.setAttribute("aria-pressed", String(button.dataset.layout === ui.layout));
-  $("slide-count").textContent = slides.length ? `Slide ${slide + 1} of ${slides.length}` : "No slides for this step";
+  const doc = isDoc(slides[slide]);
+  // A document scrolls instead of paging, so a step that is one document has no slide arrows.
+  $("slide-arrows").hidden = doc && slides.length === 1;
+  $("slide-count").textContent = doc ? slides[slide].replace(/#doc$/, "") : slides.length ? `Slide ${slide + 1} of ${slides.length}` : "No slides for this step";
   $("slide-prev").disabled = slide <= 0;
   $("slide-next").disabled = slide >= slides.length - 1;
   drawSlide($("slide"), slides[slide]);

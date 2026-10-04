@@ -1,5 +1,5 @@
 // The presenter page: private notes, a clock, and controls that change what the audience page shows.
-import { api, onEvents, escapeHtml, settings, renderMarkdown, drawSlide } from "/static/common.js";
+import { api, onEvents, escapeHtml, settings, renderMarkdown, drawSlide, isDoc } from "/static/common.js";
 
 const $ = (id) => document.getElementById(id);
 const ui = { state: null, notes: {}, notesPath: null, tree: null, skew: 0 };
@@ -92,7 +92,9 @@ function draw() {
 
   const { slides = [], slide = 0 } = ui.state;
   $("slides-card").hidden = !ui.state.has_slides;
-  $("slide-count").textContent = slides.length ? `${slide + 1} of ${slides.length}` : "none for this step";
+  const doc = isDoc(slides[slide]) && slides.length === 1;
+  $("slide-prev").hidden = $("slide-next").hidden = doc;
+  $("slide-count").textContent = doc ? "a document, scrolled on the projector" : slides.length ? `${slide + 1} of ${slides.length}` : "none for this step";
   $("slide-prev").disabled = slide <= 0;
   $("slide-next").disabled = slide >= slides.length - 1;
   $("slide-list").replaceChildren(...slides.map((entry, i) => {

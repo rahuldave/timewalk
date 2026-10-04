@@ -28,10 +28,10 @@ they happen.
 | Part | What it shows |
 |---|---|
 | Step bar | One chip per step. Click one, or use the arrows, or Alt+Left and Alt+Right |
-| Slides | The slides for this step, to the left of the files. Alt+Up and Alt+Down change slide. The Slides, Both and Code buttons choose what is shown |
+| Slides | The slides for this step, to the left of the files. Alt+Up and Alt+Down change slide. A step can show one longer Markdown document here instead, which scrolls and has no slide arrows. The Slides, Both and Code buttons choose what is shown |
 | Files | The tracked files at this step. Files the step added or changed are marked, and so are files edited since, for example by `just fmt` run in a terminal. Either kind can be listed alone |
 | Reader | A file as it is on disk, what this step changed in it, or what has been edited in it since the step's commit. It follows edits as they happen. Files cannot be edited here |
-| Terminals | Tabs, each a real shell built on Ghostty's terminal core. **At this step**: in the repository at this step. **Runs**: a second shell there, for commands that take a while. **Main**: in the repository you started from. **Claude**: starts Claude Code at this step, to ask what the code is at this commit. **+** opens more |
+| Terminals | Tabs, each a real shell built on Ghostty's terminal core. **At this step**: in the repository at this step. **Runs**: a second shell there, for commands that take a while. **Main**: in the repository you started from (see [The terminals](#the-terminals)). **Claude**: starts Claude Code at this step, to ask what the code is at this commit. **+** opens more |
 | Recipes | The `just` recipes that exist at this step, as buttons. Ones new at this step are highlighted |
 
 **The presenter page** (`/presenter`), for your screen only
@@ -68,6 +68,9 @@ Slides are Markdown. A manifest, a TOML file, says which slides go with which st
 step-00 = ["opening.md"]                       # every slide in that file
 step-01 = ["tools.md#1-3", "pictures/a.svg"]   # slides 1 to 3 of a file, then a picture
 step-02 = ["handout.pdf#page=2"]               # one page of a PDF
+
+[docs]
+step-03 = "walkthrough.md"                     # one whole Markdown document instead of slides
 ```
 
 | Entry | Means |
@@ -79,11 +82,19 @@ step-02 = ["handout.pdf#page=2"]               # one page of a PDF
 | `"deck.pdf#page=3"` | a page of a PDF |
 | `"deck.html#/3"` | a slide of an HTML deck, with whatever fragment that deck uses |
 | `7`, `"8-10"` | with `deck = "talk.md"` at the top of the manifest, those slides of that deck |
+| `"guide.md#doc"` | the whole file as one document, as under `[docs]` |
 
 In a Markdown file, **a line that is exactly `---` starts the next slide**. Everything else is ordinary
 Markdown: headings, lists, tables, links, bold, `code`, fenced code (highlighted when the fence names a
 language), and pictures as `![description](path)` with the path relative to the slide file. For a
 horizontal rule inside a slide, write `***`.
+
+### A document instead of slides
+
+A step listed under `[docs]` shows one Markdown file in the slide pane, whole. It is not split at `---`
+(there it is an ordinary rule), it keeps the slides' text size, and it scrolls instead of paging, so the
+slide arrows are hidden. It replaces any `[slides]` entry for that step. Use it for a walkthrough, a
+reading, or anything longer than a slide. The demo has one: `demo/slides/formatting.md`, at step-03.
 
 Paths in the manifest are relative to the manifest. The manifest and the slide files are read afresh
 whenever a slide is shown, so they can be edited while presenting. A step with no entry shows the code
@@ -95,7 +106,8 @@ alone.
 uv run slides_pdf.py slides/slides.toml -o handout.pdf --title "My talk" --notes notes.md
 ```
 
-writes every slide in the manifest's order, one per page, with a footer naming the step. Markdown slides
+writes every slide in step order, one per page, with a footer naming the step. A document runs over as
+many pages as it needs, headed by its step. Markdown slides
 and pictures are drawn as the browser draws them; pages of a PDF deck are copied from that PDF. A slide
 with too much on it is shrunk to fit its page. `--notes` is read only for each step's title. It needs
 Chrome or Edge, which it finds if installed; otherwise run `uvx playwright install chromium` once.
@@ -139,6 +151,51 @@ Notes are served only to the presenter page.
 - **The file view cannot write.** There is no route that changes a file. The terminals can, as any
   terminal can.
 
+### The replay copy is a git worktree
+
+`<repo>-replay` is neither a clone nor a branch. It is a **git worktree**: a second working folder
+attached to the same repository. Its `.git` is a one-line file pointing back into your repository's
+`.git`, and `git worktree list` in your repository shows it.
+
+- **It shares everything committed.** Commits, tags and objects are the repository's own, so nothing is
+  copied or fetched and every tag is there at once.
+- **It has its own HEAD, index and untracked files.** It stands on a step's commit with a detached HEAD.
+  Moving is `git checkout --detach` to the next step. Its `.venv`, outputs and stashes are its own.
+- **It is built from commits only.** Uncommitted edits, untracked files and an uncommitted `uv lock` in
+  your repository never reach it. Tags are read when timewalk starts, so restart it after re-tagging.
+- **It is made once and reused.** Remove it with `git worktree remove <repo>-replay`.
+
+### A Python project at each step
+
+`pyproject.toml` and `uv.lock` are tracked, so they change with every step. The `.venv` is untracked,
+so it does not: it is the replay copy's own, and moving never touches it.
+
+- **Through `uv run`, nothing more is needed going forward.** `uv run` (and a `just` recipe that calls
+  it) syncs the environment to the step's lockfile before it runs.
+- **Going backwards leaves later packages installed.** `uv run` adds and updates but does not remove,
+  so code at an early step can import a package that only a later step adds, and nobody notices.
+- **Bare commands do not sync.** `python`, `pytest` or anything run straight from `.venv/bin` uses
+  whatever was installed last.
+- **A lockfile out of step with `pyproject.toml` is rewritten** by a plain `uv run`, which is an edit to
+  a tracked file. `uv run --locked` stops with an error instead.
+
+To have each step's environment exactly, run `uv sync --locked` when you arrive at a step, for example
+as the first `$` line of each step in the notes. It installs what the step adds, removes what it does
+not list, and refuses a stale lockfile. On a warm cache it takes about a second.
+
+### The terminals
+
+Every tab is an ordinary login shell, your own `$SHELL`. They differ only in the folder they start in.
+
+| Tab | Starts in | Its edits show in the file view |
+|---|---|---|
+| At this step, Runs, Runs 2 to 9, + | the replay copy | yes, live, as "edited" |
+| Claude | the replay copy, running `claude` | yes |
+| Main | the repository you started timewalk on, on its own branch | no: the page never shows that repository |
+
+The shells get your environment, less timewalk's own Python: `uv run timewalk.py` puts its script
+environment first on `PATH`, and the shells take it off, so `python` there is the project's or yours.
+
 ## Safety
 
 A terminal in a web page is a way to run commands on your machine, so:
@@ -160,7 +217,7 @@ Claude tab (`--assistant ''` gives a plain shell there instead, `--assistant aid
 ## Development
 
 ```
-just test      # 49 tests: the git layer, notes and slides, the web application's guards, a real terminal
+just test      # 51 tests: the git layer, notes and slides, the web application's guards, a real terminal
 just lint
 ```
 

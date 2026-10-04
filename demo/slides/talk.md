@@ -41,15 +41,6 @@ Run them with `uvx pytest -q`.
 
 ---
 
-## A formatter decides the layout
-
-- `uvx ruff format` rewrites the files; `--check` only says whether it would
-- One quote style, standard spacing, one statement a line
-- The rules live in `pyproject.toml`, so everyone formats the same way
-- The tests pass before and after: only the layout changed
-
----
-
 ## The same function, explained by its signature
 
 - **Types** say what goes in and what comes out

@@ -79,6 +79,11 @@ export function splitSlides(text) {
   return kept.length ? kept : [""];
 }
 
+/** Whether a manifest entry is a whole Markdown document, scrolled, rather than one slide. */
+export function isDoc(entry) {
+  return /\.(md|markdown)#doc$/i.test(String(entry || ""));
+}
+
 /** Draw one slide into a container. An entry is a path beside the manifest, with an optional #fragment:
  *  `deck.md#3` is the third slide of a Markdown file, `deck.pdf#page=3` a page of a PDF. Resolves when it is drawn. */
 export async function drawSlide(container, entry) {
@@ -89,11 +94,19 @@ export async function drawSlide(container, entry) {
   const ext = path.split(".").pop().toLowerCase();
   if (ext === "md" || ext === "markdown") {
     const box = document.createElement("div");
-    box.className = "slide-md";
+    box.className = fragment === "doc" ? "slide-md slide-doc" : "slide-md";
     try {
       const response = await fetch(url, { cache: "no-store" });
       if (!response.ok) throw new Error(`${path} was not found beside the slides manifest`);
-      const slides = splitSlides(await response.text());
+      const text = await response.text();
+      if (fragment === "doc") {
+        // A document is shown whole, as ordinary Markdown: a --- line is a rule, not a new slide.
+        box.innerHTML = renderMarkdown(text, url.slice(0, url.lastIndexOf("/") + 1));
+        container.append(box);
+        await Promise.all([...box.querySelectorAll("img")].map((img) => img.decode().catch(() => {})));
+        return;
+      }
+      const slides = splitSlides(text);
       const number = fragment ? Number(fragment) : 1;
       if (!(number >= 1 && number <= slides.length)) throw new Error(`${path} has ${slides.length} slide${slides.length === 1 ? "" : "s"}; the manifest asks for number ${fragment}`);
       box.innerHTML = renderMarkdown(slides[number - 1], url.slice(0, url.lastIndexOf("/") + 1));

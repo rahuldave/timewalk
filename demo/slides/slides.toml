@@ -1,6 +1,6 @@
 # Which slides go with which step. Paths are beside this file.
 #
-# talk.md holds six slides, separated by lines that are exactly ---
+# talk.md holds five slides, separated by lines that are exactly ---
 #   "talk.md"       every slide in the file
 #   "talk.md#2"     its second slide
 #   "talk.md#2-3"   its second and third
@@ -10,5 +10,8 @@
 step-00 = ["talk.md#1"]
 step-01 = ["talk.md#2-3"]
 step-02 = ["talk.md#4"]
-step-03 = ["talk.md#5"]
-step-04 = ["talk.md#6"]
+step-04 = ["talk.md#5"]
+
+# A step under [docs] shows one whole Markdown file instead of slides. It scrolls, and has no slide arrows.
+[docs]
+step-03 = "formatting.md"

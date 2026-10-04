@@ -7,9 +7,11 @@
     uv run slides_pdf.py slides.toml                         writes slides.pdf beside the manifest
     uv run slides_pdf.py slides.toml -o handout.pdf --title "babykev" --notes notes.md
 
-Slides come out in the manifest's order, one per page, whatever they are written in: Markdown slides and
+Slides come out in step order, one per page, and in the manifest's order within a step, whatever they are written in: Markdown slides and
 pictures are drawn exactly as the step browser draws them, and pages of a PDF deck are copied from that PDF.
-Each drawn page has a footer with the deck title, the step it belongs to and a page number. With --notes, the
+A document (a step under the manifest's [docs], or an entry ending in `#doc`) is printed whole, over as many
+pages as it needs, headed by its step. Each drawn slide has a footer with the deck title, the step it belongs to
+and a page number. With --notes, the
 footer also carries each step's title from the notes file's `## step-name Title` headings; nothing else is read
 from the notes, which stay private.
 
@@ -23,6 +25,7 @@ import socket
 import threading
 import time
 from pathlib import Path
+from urllib.parse import quote
 
 import uvicorn
 from playwright.sync_api import Error as BrowserError
@@ -44,7 +47,8 @@ def deck_of(
 ) -> dict:  # The deck: its title and, per step, the step's title and slides
     "Describe the whole deck in the manifest's order."
     titles = {name: entry.get("title", "") for name, entry in parse_notes(notes.read_text(encoding="utf-8")).items()} if notes else {}
-    steps = [{"name": name, "title": titles.get(name, ""), "slides": slides} for name, slides in load_slides(manifest).items()]
+    # In step-name order, as timewalk orders the steps, so a step under [docs] falls among the [slides] steps.
+    steps = [{"name": name, "title": titles.get(name, ""), "slides": slides} for name, slides in sorted(load_slides(manifest).items())]
     return {"title": title, "steps": steps}
 
 
@@ -77,8 +81,9 @@ def serve(
 
 def draw(
     port: int,  # Where the print page is served
-) -> bytes:  # A PDF with one page for every slide that is not itself a PDF page
-    "Open the print page in a headless browser and print it."
+    docs: list[str],  # The document entries of the deck, each printed on its own
+) -> tuple[bytes, dict[str, bytes]]:  # A PDF with one page for every slide that is neither a PDF page nor a document; a PDF per document
+    "Open the print page in a headless browser and print it, then print each document over as many pages as it needs."
     with sync_playwright() as p:
         browser = None
         for channel in ("chrome", "msedge", None):
@@ -92,27 +97,37 @@ def draw(
         page = browser.new_page(viewport={"width": 1280, "height": 720})
         problems: list[str] = []
         page.on("pageerror", lambda error: problems.append(str(error)))
-        page.goto(f"http://127.0.0.1:{port}/print")
-        page.wait_for_selector("body[data-ready]", timeout=120_000)
-        if problems:
-            raise SystemExit("slides_pdf: the print page failed: " + "; ".join(problems))
-        pdf = page.pdf(width="13.333in", height="7.5in", print_background=True, prefer_css_page_size=True)
+
+        def printed(address: str) -> bytes:  # The PDF of one print page
+            page.goto(address)
+            page.wait_for_selector("body[data-ready]", timeout=120_000)
+            if problems:
+                raise SystemExit("slides_pdf: the print page failed: " + "; ".join(problems))
+            return page.pdf(width="13.333in", height="7.5in", print_background=True, prefer_css_page_size=True)
+
+        slides = printed(f"http://127.0.0.1:{port}/print")
+        documents = {doc: printed(f"http://127.0.0.1:{port}/print?doc={quote(doc)}") for doc in dict.fromkeys(docs)}
         browser.close()
-        return pdf
+        return slides, documents
 
 
 def assemble(
     deck: dict,  # What `deck_of` returned
-    drawn: bytes,  # The PDF from `draw`
+    drawn: bytes,  # The slides' PDF from `draw`
+    documents: dict[str, bytes],  # The documents' PDFs from `draw`
     folder: Path,  # The manifest's folder
 ) -> PdfWriter:  # The handout, with every slide in the manifest's order
-    "Interleave the drawn pages with pages copied from PDF decks."
+    "Interleave the drawn pages with the documents' pages and pages copied from PDF decks."
     pages = iter(PdfReader(io.BytesIO(drawn)).pages)
     out = PdfWriter()
     sources: dict[str, PdfReader] = {}
     for step in deck["steps"]:
         for entry in step["slides"]:
             path, _, fragment = entry.partition("#")
+            if entry in documents:
+                for page in PdfReader(io.BytesIO(documents[entry])).pages:
+                    out.add_page(page)
+                continue
             if not path.lower().endswith(".pdf"):
                 page = next(pages, None)
                 if page is None:
@@ -145,10 +160,11 @@ def main() -> None:
     deck = deck_of(manifest, args.notes, args.title)
     count = sum(len(step["slides"]) for step in deck["steps"])
     if not count:
-        raise SystemExit(f"slides_pdf: {manifest} lists no slides under [slides]")
+        raise SystemExit(f"slides_pdf: {manifest} lists no slides under [slides] or [docs]")
     server, port = serve(deck, manifest.parent)
     try:
-        handout = assemble(deck, draw(port), manifest.parent)
+        docs = [entry for step in deck["steps"] for entry in step["slides"] if entry.endswith("#doc")]
+        handout = assemble(deck, *draw(port, docs), manifest.parent)
     finally:
         server.should_exit = True
     output = (args.output or manifest.with_name("slides.pdf")).resolve()
