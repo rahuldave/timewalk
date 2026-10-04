@@ -94,4 +94,4 @@ through the socket.
 - End every commit message with the line `Coded using Claude`. No `Co-Authored-By` or session lines.
   This is Rahul's rule and overrides the default attribution.
 - Subject says what changed; the body says why, in the README's voice.
-- The repository is public at github.com/rahuldave/timewalk.
+- The repository is public at github.com/rahuldave/timewalk. Push `main` there after committing; no need to ask.
