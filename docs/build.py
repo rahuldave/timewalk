@@ -124,7 +124,7 @@ def build() -> int:  # How many pages were written
         after = PAGES[index + 1] if index + 1 < len(PAGES) else None
         pager = (f'<a class="prev" href="{before[0].replace(".md", ".html")}">&larr; {html.escape(before[1])}</a>' if before else "<span></span>") + \
                 (f'<a class="next" href="{after[0].replace(".md", ".html")}">{html.escape(after[1])} &rarr;</a>' if after else "<span></span>")
-        page_title = "timewalk" if name == "index.md" else f"{title} · timewalk"
+        page_title = "timewalk" if name == "index.md" else f"{title} | timewalk"
         (OUT / out).write_text(TEMPLATE.format(title=html.escape(page_title), nav=nav, body=body, pager=pager), encoding="utf-8")
     return len(PAGES)
 

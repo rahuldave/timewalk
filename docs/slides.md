@@ -1,7 +1,8 @@
 # Slides and documents
 
-Slides are Markdown files, pictures, pages of a PDF, or slides of an HTML deck. A manifest, a TOML file,
-says which go with which step. A step can show one longer Markdown document instead.
+A slide can be a Markdown file, a picture, a page of a PDF, or a slide of an HTML deck. A manifest is a
+TOML file that says which slides go with which step. A step can also show one longer Markdown document in
+place of slides.
 
 ## The manifest
 
@@ -18,27 +19,27 @@ step-04 = [7, "8-10"]                          # slides of the default deck
 step-03 = "walkthrough.md"                     # one whole Markdown document instead of slides
 ```
 
-Start timewalk with `--slides slides/slides.toml`. Paths are relative to the manifest.
+Start timewalk with `--slides slides/slides.toml`. Each path is relative to the manifest.
 
 | Entry | Means |
 |---|---|
 | `"talk.md"` | every slide in the file, in order |
-| `"talk.md#2"` | its second slide |
-| `"talk.md#2-4"` | its second to fourth |
+| `"talk.md#2"` | the second slide of the file |
+| `"talk.md#2-4"` | the second to the fourth slide of the file |
 | `"picture.svg"`, `.png`, `.jpg`, `.gif`, `.webp` | a picture as a slide |
 | `"deck.pdf#page=3"` | a page of a PDF |
-| `"deck.html#/3"` | a slide of an HTML deck, with whatever fragment that deck uses |
+| `"deck.html#/3"` | a slide of an HTML deck, with the fragment that the deck uses |
 | `7`, `"8-10"` | with `deck = "talk.md"`, those slides of that deck (pages, if the deck is a PDF) |
 | `"guide.md#doc"` | the whole file as one document, as under `[docs]` |
 
-A step with no entry shows the code alone.
+A step with no entry shows only the code.
 
-## Writing Markdown slides
+## How to write Markdown slides
 
-**A line that is exactly `---` starts the next slide.** Everything else is ordinary Markdown: headings,
-lists, tables, links, bold, `code`, fenced code (highlighted when the fence names a language), and
-pictures as `![description](path)`, with the path relative to the slide file. For a horizontal rule
-inside a slide, write `***`.
+**A line that is exactly `---` starts the next slide.** The rest is usual Markdown. For example, you can
+use headings, lists, tables, links, bold, `code` and fenced code. A fence that names a language gets
+colours for its syntax. A picture is `![description](path)`, with the path relative to the slide file. For a
+horizontal rule inside a slide, write `***`.
 
 ```markdown
 ## The title of the first slide
@@ -53,23 +54,23 @@ inside a slide, write `***`.
 ![What the picture shows](pictures/shape.svg)
 ```
 
-Keep a slide to about six bullets or one table. On the projector a long slide scrolls; in the PDF it is
-shrunk to fit its page.
+Keep a slide to about six bullets or one table. On the projector page, a long slide scrolls. In the PDF,
+the slide shrinks to fit its page.
 
-The manifest and the slide files are read afresh whenever a slide is shown, so you can edit them while
-presenting.
+The server reads the manifest and the slide files again each time it shows a slide. So you can edit them
+while you present.
 
 ## A document instead of slides
 
-A step listed under `[docs]` shows one Markdown file in the slide pane, whole:
+A step under `[docs]` shows one whole Markdown file in the slide pane:
 
-- It is not split at `---`; there, `---` is an ordinary rule.
-- It keeps the slides' text size, and the pane keeps its size: the document scrolls.
-- The slide arrows are hidden on both pages, and Up and Down scroll.
-- It replaces any `[slides]` entry for that step.
+- The document does not split at `---`. There, `---` is a usual horizontal rule.
+- The document keeps the text size of the slides, and the pane keeps its size. So the document scrolls.
+- Both pages hide the slide arrows, and the Up and Down keys scroll the document.
+- The document replaces any `[slides]` entry for that step.
 
-Use it for a walkthrough, a reading, a comparison, anything longer than a slide. The demo's step-03 is
-one: `demo/slides/formatting.md`.
+Use a document for a walkthrough, a reading, a comparison, or other text that is too long for a slide. For
+example, step-03 of the demo shows the document `demo/slides/formatting.md`.
 
 ![A document in the slide pane: it scrolls, and has no slide arrows](images/document.png)
 
@@ -79,13 +80,16 @@ one: `demo/slides/formatting.md`.
 uv run slides_pdf.py slides/slides.toml -o handout.pdf --title "My talk" --notes notes.md
 ```
 
-writes every slide in step order, one per page, with a footer naming the deck, the step and the page.
+The command writes every slide in step order, one slide per page. The footer of each page names the deck,
+the step and the page.
 
-- Markdown slides and pictures are drawn as the browser draws them.
-- A slide with too much on it is shrunk to fit its page.
-- Pages of a PDF deck are copied from that PDF.
-- A document runs over as many pages as it needs, headed by its step.
-- `--notes` is read only for each step's title, for the footer. Nothing else from the notes is used.
+- The PDF shows Markdown slides and pictures as the browser shows them.
+- A slide with too much content shrinks to fit its page.
+- The pages of a PDF deck come directly from that PDF.
+- A document continues over as many pages as it needs, under the name of its step.
+- The command reads `--notes` only for the title of each step, for the footer. It uses nothing else from
+  the notes file.
 
-It needs Chrome or Edge, which it finds if installed. Otherwise run `uvx playwright install chromium`
-once. From the timewalk folder, `just pdf slides/slides.toml -o handout.pdf` does the same.
+The command needs Chrome or Edge, and it finds either one on your machine. If you have neither, run
+`uvx playwright install chromium` one time. In the timewalk folder,
+`just pdf slides/slides.toml -o handout.pdf` does the same thing.

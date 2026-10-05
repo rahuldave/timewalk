@@ -1,65 +1,74 @@
 # The terminals
 
-Every tab is an ordinary login shell, your own `$SHELL`, running in a pseudo-terminal on your machine
-and drawn by ghostty-web, built on Ghostty's terminal core. The tabs differ only in the folder they
-start in.
+Each tab runs your own `$SHELL` as a login shell, which is a shell that runs your startup files. The shell
+runs on your machine in a pseudo-terminal. A pseudo-terminal is a terminal device that a program makes in
+place of a window. The ghostty-web library draws the terminal on the page, with the terminal core of
+Ghostty. The tabs differ only in the
+folder where the shell starts.
 
-| Tab | Starts in | Its edits show in the file view |
+| Tab | Starts in | Its edits show in the file list |
 |---|---|---|
 | **At this step** | the replay copy, at the current step | yes, live, as **edited** |
 | **Runs**, **Runs 2** to **Runs 9** | the replay copy | yes |
-| **Claude** | the replay copy, running `claude` | yes |
+| **Claude** | the replay copy, and runs `claude` | yes |
 | **+** (Shell 1 to 9) | the replay copy | yes |
-| **Main** | the repository you started timewalk on, on its own branch | no |
+| **Main** | your repository, on its own branch | no |
 
-A shell is started the first time its tab is opened, and keeps running while you move between steps and
-reload the page. A page that reconnects gets the shell's recent output again.
+A shell starts the first time you open its tab. The shell continues to run when you move between
+steps and when you reload the page. When a page connects again, it gets the recent output of the shell
+again.
 
-The presenter page shows the same shells, not copies: typing on either page types into the one shell,
-and both show its output. The tab in front is shared too. The projector sets each shell's size; the
-presenter page draws it in whatever room it has, so a long line can wrap differently there.
+The presenter page shows the same shells as the projector page, and not copies of them. When you type on
+either page, the keys go to the one shell, and both pages show its output. The two pages also share the
+tab in front. The projector page sets the size of each shell. The presenter page draws the shell in the
+space it has, so a long line can wrap at a different place there.
 
 ## At this step and Main
 
-The same command in the two tabs, with the replay copy at step-01:
+The two pictures show the same command in the two tabs, with the replay copy at step-01.
 
-![At this step: the replay copy at step-01, greet.py as first written](images/terminal-step.png)
+![At this step: the replay copy at step-01, with greet.py as you first wrote it](images/terminal-step.png)
 
-![Main: the repository you started from, at its latest commit](images/terminal-main.png)
+![Main: your repository, at its latest commit](images/terminal-main.png)
 
-**Main** is there to show the finished project while the walk stands earlier: its log, its tests, the
-file as it ends up. Anything you change in it changes your own repository, and the page never shows it.
+**Main** shows the finished project while the replay copy stands at an earlier step. For example, it can
+show the log, the tests, or the last form of a file. A change in **Main** changes your own repository, and
+the page never shows that change.
 
 ## Runs
 
-**Runs** is for a command that takes a while, such as a training run, so it keeps going while you work in
-**At this step**. A `runs$` line in the notes sends its command there. `runs2$` to `runs9$` open further
-Runs tabs, for a second or third long command at once.
+**Runs** is for a command that takes a long time, for example a training run. The command continues in
+**Runs** while you work in **At this step**. A `runs$` line in the notes file sends its command to **Runs**.
+The lines `runs2$` to `runs9$` open more Runs tabs, for a second or third long command at the same time.
 
-A tab that prints while another is in front gets a dot, so a finished run is noticed.
+When a tab prints output while another tab is in front, the tab gets a dot. The dot tells you that a run
+has finished.
 
-![Runs has printed since it was last in front](images/terminal-runs-dot.png)
+![Runs printed output after it was last in front](images/terminal-runs-dot.png)
 
 ### A long command and a move
 
-A command keeps running when you move to another step, and the files change under it. What the program
-has already loaded stays as it was. What it reads later comes from the new step: a config file, a module
-imported late, a script a recipe starts. Move on while a run is going only once it has read everything it
-needs. The Main tab's files do not move, but it runs the repository's current code, not the step's.
+A command continues when you move to another step, and the files change under it. The program keeps
+what it loaded before the move, but a file that it reads after the move comes from the new step. For
+example, a config file, a module that the program imports late, or a script that a recipe starts all come
+from the new step. During a run, move to another step only after the run has read all the files it needs.
+The files of the **Main** tab do not move. But **Main** runs the current code of your repository, and not
+the code of the step.
 
-### A long command and timewalk stopping
+### A long command when timewalk stops
 
-When timewalk stops, its shells end, and so does whatever runs in them in the ordinary way. A command
-started with `nohup` and `&` is the exception: it lets go of the shell and keeps running.
+When timewalk stops, its shells end, and the commands in them end in the usual way. The exception is a
+command that you start with `nohup` and `&`. `nohup` makes a program ignore the signal that a terminal
+sends when it closes, and `&` runs the program in the background. Such a command leaves the shell and continues.
 
 | Started in a timewalk tab as | When timewalk stops |
 |---|---|
 | `just train` | Stops |
 | `sleep 600 &` | Stops |
-| `nohup sleep 600 &` | Keeps running |
-| `nohup sleep 600 > run.log 2>&1 < /dev/null &` | Keeps running |
+| `nohup sleep 600 &` | Continues |
+| `nohup sleep 600 > run.log 2>&1 < /dev/null &` | Continues |
 
-To make a run that outlives the class, start it detached, from a recipe if you like:
+If a run must continue after the class, start it detached from the shell. A recipe can do it:
 
 ```just
 # Start training in the background; it keeps running if the terminal or timewalk goes away
@@ -67,27 +76,31 @@ train-detached config:
     nohup just train {{ config }} > runs/train.log 2>&1 < /dev/null &
 ```
 
-**Redirect all three streams.** Without them the recipe still returns at once in a timewalk tab, because
-a tab is a terminal. But wherever the recipe's output goes to a pipe, as in `just train-detached x | tee`,
-a script or CI, the background process holds that pipe open and the recipe waits for it to finish. With
-the redirects it returns at once everywhere. Follow the run with `tail -f runs/train.log`.
+**Redirect all three streams.** The three streams are the input, the output and the errors of the
+program.
 
-A detached run is no longer tied to any tab: no tab gets a dot when it finishes, and stopping it takes
-`kill`. Its files still come from the folder it started in, so moving steps changes them under it, as
-above.
+Without the redirects, the recipe still returns at once in a timewalk tab, because a tab is a
+terminal. But the output of the recipe can go to a pipe, for example in `just train-detached x | tee`, in a
+script, or in CI. Then the background process holds the pipe open, and the recipe waits until the process
+ends. With the redirects, the recipe returns at once in every case. Follow the run with
+`tail -f runs/train.log`.
+
+A detached run has no connection to a tab. No tab gets a dot when the run finishes, and you must stop the
+run with `kill`. The run still reads its files from the folder where it started. So a move to another step
+changes those files under it, as the section above says.
 
 ## Claude
 
-**Claude** starts [Claude Code](https://claude.com/claude-code) in the replay copy, so you can ask what
-the code is at this commit. `--assistant aider` starts another tool there; `--assistant ''` gives a plain
-shell.
+**Claude** starts [Claude Code](https://claude.com/claude-code) in the replay copy. You can then ask
+questions about the code at the current commit. `--assistant aider` starts a different tool in the tab.
+`--assistant ''` gives a plain shell.
 
 ## Which tab has the keyboard
 
-The page keeps the arrow keys, for steps and slides, until you click into a terminal. That terminal then
-has every key, and a blue edge says so. Click anywhere else to give the keys back. Switching tabs, or a
-command sent from the presenter page, also gives that terminal the keys. Alt with an arrow moves steps
-and slides even from inside a terminal.
+The page keeps the arrow keys, for steps and slides, until you click in a terminal. Then that terminal
+gets every key, and shows a blue edge. To give the keys back to the page, click anywhere else. A terminal
+also gets the keys when you change to its tab, or when a command comes to it from the presenter page. Alt
+with an arrow key moves the steps and slides, also from inside a terminal.
 
 ![No edge: the page has the keys](images/terminal-unfocused.png)
 
@@ -95,10 +108,11 @@ and slides even from inside a terminal.
 
 ## The shells' environment
 
-The shells get your environment, with `TERM=xterm-256color` and `TIMEWALK=1` added, and without
-timewalk's own Python. `uv run timewalk.py` puts the script's environment first on `PATH` and names it in
-`VIRTUAL_ENV`; the shells take both off, so `python`, `pytest` and the rest are the project's or yours,
-never timewalk's.
+The shells get your environment with two additions, `TERM=xterm-256color` and `TIMEWALK=1`. They do not get
+the Python of timewalk. `uv run timewalk.py` puts the environment of the script first on `PATH`, and names
+it in `VIRTUAL_ENV`. `PATH` is the list of folders where a shell looks for programs. The server of timewalk
+removes the two changes from the shells. So `python`, `pytest` and other tools come from the project or from you, and never from
+timewalk.
 
-A shell runs your startup files, so your prompt, aliases and tools are there. A tool that reads
-`TIMEWALK` can tell it is running inside timewalk.
+Each shell runs your startup files, so your prompt, aliases and tools are there. A tool can read
+`TIMEWALK` to find out that it runs inside timewalk.

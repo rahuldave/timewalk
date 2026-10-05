@@ -1,21 +1,21 @@
 # Safety
 
-A terminal in a web page is a way to run commands on your machine. timewalk keeps it to you.
+A terminal in a web page can run commands on your machine. timewalk lets only you use it.
 
 - **It listens on `127.0.0.1` only.** Nothing on your network can reach it.
-- **Every request needs the token** in the address it prints: every page, API call, socket, slide and
-  script. A new token is made at each start. The pages carry it in a cookie once opened, so you only
-  paste the address once.
-- **Requests addressed to any other host name are refused.** That stops a hostile web page from reaching
-  the server by pointing a name of its own at `127.0.0.1`.
-- **The projector page never asks for the notes.** Only the presenter page requests them, through
-  `/api/notes`, which needs the token like everything else.
-- **Nothing writes files except the terminals.** The file view has no route that changes a file.
+- **Every request needs the token.** The token is a secret string in the address that timewalk prints.
+  Every page, API call, socket, slide and script needs it. timewalk makes a new token at each start. After
+  you open the address, the pages keep the token in a cookie, so you paste the address only once.
+- **The server refuses requests addressed to any other host name.** So a hostile web page cannot point a
+  name of its own at `127.0.0.1` and reach the server.
+- **The projector page never asks for the notes.** Only the presenter page asks for them, through
+  `/api/notes`, and `/api/notes` needs the token as every other request does.
+- **Only the terminals write files.** The file view has no route that changes a file.
 
-## What you should do
+## What you must do
 
-- **Do not put the printed address on a slide or in a recording.** Anyone on your machine who has it
-  can run commands as you while the server is running.
-- **Stop timewalk when the class is over.** With it stopped, the address no longer answers.
-- **Share the projector by mirroring a screen,** not by opening the address on another machine. It is not
-  reachable from one, by design.
+- **Do not put the printed address on a slide or in a recording.** While the server runs, anyone
+  on your machine with the address can run commands as you.
+- **Stop timewalk at the end of the class.** When timewalk stops, the address does not answer.
+- **Mirror a screen to share the projector page.** Do not open the address on another machine. The
+  server does not let another machine reach it, and that is intentional.

@@ -1,7 +1,7 @@
 # The replay copy
 
-timewalk never moves the repository you point it at. It steps a second working copy, made beside it,
-called `<repo>-replay`.
+timewalk never moves the repository that you give it. It moves a second working copy instead. timewalk
+makes the copy beside your repository and names it `<repo>-replay`.
 
 ```
 timewalk: stepping in /home/you/code/project-replay
@@ -9,9 +9,9 @@ timewalk: stepping in /home/you/code/project-replay
 
 ## A git worktree
 
-The replay copy is neither a clone nor a branch. It is a **git worktree**: a second working folder
-attached to the same repository. Its `.git` is a one-line file pointing back into your repository's
-`.git`, and `git worktree list` in your repository shows it.
+The replay copy is not a clone and it is not a branch. It is a **git worktree**, a second working folder
+attached to the same git repository. Its `.git` is a file of one line that points back into the `.git` of
+your repository. Also, `git worktree list` in your repository shows it.
 
 ```
 $ git worktree list
@@ -19,34 +19,41 @@ $ git worktree list
 /home/you/code/project-replay   e6b4b02 (detached HEAD)
 ```
 
-- **It shares everything committed.** Commits, tags and objects are the repository's own, so nothing is
-  copied or fetched, and every tag is there at once.
-- **It has its own HEAD, index and untracked files.** It stands on a step's commit with a detached HEAD.
-  Moving is `git checkout --detach` to the next step's commit. Its `.venv`, outputs and stashes are its
-  own.
-- **It is built from commits only.** Uncommitted edits, untracked files, and an uncommitted `uv lock` in
-  your repository never reach it. Tags are read when timewalk starts, so restart it after re-tagging.
-- **It is made once and reused.** The next start finds it. Remove it with
+A commit is a saved state of the files, and a tag is a name for one commit. HEAD is the commit that a
+working copy stands on. A detached HEAD stands on a commit directly, and not on a branch.
+
+- **It shares everything committed.** The commits, tags and objects belong to your repository. So timewalk
+  copies and fetches nothing, and every tag is there at once.
+- **It has its own HEAD, index and untracked files.** It stands on the commit of a step, with a detached
+  HEAD. A move runs `git checkout --detach` with the commit of the next step. Its `.venv`, outputs and
+  stashes belong to it. A stash is a set of edits that git keeps aside, to bring back later.
+- **It gets only commits.** Edits, untracked files and a `uv lock` that you did not commit in your
+  repository never reach it. Restart timewalk after you tag again, because it reads the tags when it starts.
+- **timewalk makes it once and uses it again.** The next start finds it. To remove it, run
   `git worktree remove <repo>-replay`.
 
-`--in-place` steps your repository itself instead. Use it only on a copy you do not mind moving.
+With `--in-place`, timewalk moves your repository itself. Use `--in-place` only on a copy that you can
+let timewalk move.
 
-## What timewalk will and will not do
+## What timewalk does and does not do
 
-- **It never moves the repository you point it at.** Unless you pass `--in-place`.
-- **It never deletes an untracked file.** Whatever a command wrote at one step (an environment, a
-  database, a run's output) is still there at the next. If a later step has a tracked file where an
-  untracked one sits, the move is refused and the file is named.
-- **It never discards an edit.** Edits to tracked files are shown as they happen. Moving with edits asks
-  first, then sets them aside with `git stash`, labelled with the step they were made at. See
-  [Live edits](edits.md). The one exception is asked for by name: with `--discard-edits`, for a replay
-  copy where everything typed is throwaway, a move is `git checkout -f`: edits are dropped without
-  asking, and an untracked file is replaced only where the step has a file of that name.
-- **The file view cannot write.** There is no route that changes a file. The terminals can, as any
-  terminal can.
+- **It never moves the repository that you give it.** The exception is when you pass `--in-place`.
+- **It never deletes an untracked file.** A command at one step can write an environment, a database or
+  the output of a run. That file is still there at the next step. A later step can have a tracked file
+  where an untracked file is. Then timewalk refuses the move and names the file.
+- **It never discards an edit.** The page shows edits to tracked files as they happen. A move with edits
+  asks first. Then it keeps the edits aside with `git stash`, with a label that names their step. See
+  [Live edits](edits.md).
+- **The `--discard-edits` flag is the one exception, and you must ask for it by name.** Use it for a
+  replay copy where all that you type is for one use only. With the flag, a move runs `git checkout -f`.
+  It drops edits without a question. It replaces an untracked file only where the step has a file of the
+  same name.
+- **The file view cannot write.** No route of the server changes a file. The terminals can change files,
+  as any terminal can.
 
-## Things that live in the replay copy
+## Files that stay in the replay copy
 
-Because untracked files survive moves, the replay copy collects what the class's commands make: a
-`.venv`, caches, databases, run outputs. That is usually what you want: a training run's results are
-still there two steps later. To start clean, remove the worktree and let timewalk make a new one.
+Untracked files stay through moves. So the replay copy keeps what the commands of the class make, for
+example a `.venv`, caches, databases and the outputs of runs. You usually want these files. For example,
+the results of a training run are still there two steps later. To start clean, remove the worktree. Then
+timewalk makes a new one.

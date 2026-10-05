@@ -13,8 +13,8 @@ uv run timewalk.py [repo] [options]
 | `--slides FILE` | A TOML manifest of slides and documents |
 | `--tags GLOB` | The tags that mark steps. Default: `step-*` |
 | `--commits` | Step through the commits of the current branch instead of tags |
-| `--in-place` | Move the repository itself instead of a second working copy |
-| `--discard-edits` | A move throws edits to tracked files away instead of asking and stashing them. For a throwaway replay copy; refused with `--in-place`. See [Live edits](edits.md#with---discard-edits) |
+| `--in-place` | Move your repository itself instead of the replay copy |
+| `--discard-edits` | A move drops edits to tracked files, and does not ask or stash them first. Use it for a replay copy that you throw away. timewalk refuses it with `--in-place`. See [Live edits](edits.md#with---discard-edits) |
 | `--assistant CMD` | The command the Claude tab starts. Default: `claude`. `''` for a plain shell |
 | `--port N` | Default: 8765 |
 | `--no-open` | Do not open the browser |
@@ -30,7 +30,7 @@ uv run slides_pdf.py MANIFEST [-o OUT.pdf] [--title TEXT] [--notes FILE]
 | `MANIFEST` | The slides manifest |
 | `-o`, `--output` | The PDF to write. Default: `slides.pdf` beside the manifest |
 | `--title` | A title for the footer of every page |
-| `--notes` | A notes file, read only for each step's title |
+| `--notes` | A notes file. `slides_pdf` reads only the title of each step from it |
 
 ## Recipes
 
@@ -39,22 +39,23 @@ In the timewalk folder, `just` lists these:
 | Recipe | Does |
 |---|---|
 | `just demo` | Fetch the demo submodule if needed, and open it with its notes and slides, with `--discard-edits` |
-| `just walk REPO ...` | Run timewalk on a repository; extra arguments go to timewalk |
+| `just walk REPO ...` | Run timewalk on a repository. More arguments go to timewalk |
 | `just pdf MANIFEST ...` | Make a PDF of every slide in a manifest |
-| `just test ...` | Run the tests; extra arguments go to pytest |
+| `just test ...` | Run the tests. More arguments go to pytest |
 | `just lint` | Lint the Python |
 | `just screenshots` | Take the site's screenshots again, from the demo |
 | `just site` | Build this site into `docs/_site` and serve it locally |
+| `just style ...` | Check the pages of the site against the writing guide, `docs/style/GUIDE.md`. Add `-v` to also show the soft notes |
 
 ## The slides manifest
 
 | Key | Holds |
 |---|---|
-| `deck` | Optional. The deck bare numbers refer to |
+| `deck` | Optional. The deck that bare numbers refer to |
 | `[slides]` | `step-name = [entries]`: Markdown slides, pictures, PDF pages, HTML deck slides |
 | `[docs]` | `step-name = "file.md"`: one whole document instead of slides |
 
-Entries are listed in [Slides and documents](slides.md#the-manifest).
+[Slides and documents](slides.md#the-manifest) lists the entries.
 
 ## The notes file
 
@@ -74,6 +75,9 @@ Entries are listed in [Slides and documents](slides.md#the-manifest).
 
 ## Requirements
 
-`uv`, `git`, and a browser. `just` for the recipe buttons and the recipes above. `claude` on the path
-for the Claude tab. Chrome or Edge for the PDF export and the screenshots. Checked in Chrome; Safari and
-Firefox are not checked.
+- **`uv`, `git` and a browser** for timewalk itself.
+- **`just`** for the recipe buttons and the recipes above.
+- **`claude` on the path** for the Claude tab.
+- **Chrome or Edge** for the PDF export and the screenshots.
+
+The author checks timewalk in Chrome, and not in Safari or Firefox.

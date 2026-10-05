@@ -38,3 +38,7 @@ screenshots:
 # Build the site into docs/_site and serve it at http://127.0.0.1:8000
 site:
     uv run docs/build.py --serve
+
+# Check the site's pages against the writing guide (docs/style/GUIDE.md). -v also shows the soft notes
+style *args:
+    python3 docs/style/check.py docs/*.md {{ args }}

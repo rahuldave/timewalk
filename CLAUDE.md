@@ -6,6 +6,9 @@ the files at that step, what the step changed, and real terminals in the reposit
 presenter page (`/presenter`) is the same page with a clock band and the private notes beside it; what both
 show (step, slide, layout, open file, terminal tab) is kept by the server, so they always agree.
 
+Write every site page by the nossaifd writing guide, `docs/style/GUIDE.md`, with the glossary and the
+linked headings in `docs/style/README.md`. Check with `just style`. Define jargon where it first appears.
+
 The user documentation is the site in `docs/`, published to rahuldave.com/timewalk; the README is a
 short front page that links into it. Keep both true when behaviour changes, and retake the screenshots
 (`just screenshots`) when the pages look different.

@@ -1,7 +1,9 @@
 # Making the steps
 
-A step is a point in the history that timewalk can stand on. By default the steps are the tags matching
-`step-*`, in name order. Nothing else about the repository needs to change.
+A step is a point in the history of your repository where timewalk can stand. A commit is one saved
+state of the files, and a tag is a name that points at one commit. By default, the steps are the tags
+that match `step-*`, in the order of their names. You do not need to change anything else in your
+repository.
 
 ## Tags and their notes
 
@@ -9,50 +11,56 @@ A step is a point in the history that timewalk can stand on. By default the step
 git tag --annotate step-03 -m "The code after ruff format. Only its layout changed."
 ```
 
-An **annotated** tag's message is shown to the audience, in the band under the step bar, as the step's
-note. A lightweight tag (`git tag step-03`) works too, with no note. The commit's subject is shown beside
-the step's name.
+An annotated tag is a tag that stores a message. For an **annotated** tag, the audience sees the message
+as the note of the step, in the band under the step bar. A lightweight tag (`git tag step-03`) has no
+message. It also works as a step, with no note. The page shows the subject of the commit next to the name
+of the step.
 
 | Option | Steps are |
 |---|---|
-| (none) | tags matching `step-*`, in name order |
-| `--tags 'v*'` | tags matching another pattern |
-| `--commits` | every commit on the current branch's first-parent history, oldest first. The note is the rest of the commit message |
+| (none) | tags that match `step-*`, in the order of their names |
+| `--tags 'v*'` | tags that match a different pattern |
+| `--commits` | every commit in the first-parent history of the current branch, oldest first. The first-parent history leaves out the commits that a merge brought in. The note is the rest of the commit message |
 
-Name steps so they sort: `step-00` to `step-09`, then `step-10`. A step can carry a letter, `step-07a`
-and `step-07b`, and still sort in place.
+Give the steps names that sort in the correct order, for example `step-00` to `step-09`, and then
+`step-10`. A step name can have a letter at the end, as in `step-07a` and `step-07b`, and still sort in its
+place.
 
-## A history worth walking
+## A history for a class
 
-A history made for teaching is a history made on purpose. What works:
+Make the history for a class on purpose. These rules give a history that a class can follow:
 
-- **One commit per step, one idea per commit.** The file, then its tests, then the formatter, then
-  types. The step's diff is what the class reads, so keep it about one thing.
-- **Annotated tags with a sentence for the room.** The commit message is for developers; the tag's
-  message is what the audience sees.
-- **A straight line.** Steps on one branch, no merges.
-- **Steps that are unfinished on purpose.** Two failing tests at one step and their fix at the next is a
-  lesson. Say so in the tag's note.
-- **Run outputs never tracked.** Put `.venv`, databases, checkpoints and run folders in the first step's
-  `.gitignore`. Untracked files survive every move.
+- **One commit per step, one idea per commit.** For example, add the file, then its tests, then the
+  formatter, then the types. The class reads the diff of each step, so keep each diff about one thing.
+- **Annotated tags with a sentence for the room.** The commit message is for developers. The message of
+  the tag is what the audience sees.
+- **A straight line.** Put all the steps on one branch, with no merges.
+- **Steps that you leave unfinished on purpose.** Two tests that fail at one step and their fix at the next step
+  make a lesson. Say so in the note of the tag.
+- **No tracked run outputs.** Put `.venv`, databases, checkpoints and run folders in the `.gitignore` of
+  the first step. Untracked files, which git does not record, stay the same through every move.
 
-## Changing an earlier step
+## How to change an earlier step
 
-Before anyone has cloned, a history can be rewritten: fix an early file in its own step, rebase the later
-steps on it, and point the tags at the new commits. A tag keeps pointing at the old commit until you move
-it:
+Before anyone clones (copies) your repository, you can rewrite its history. Follow these steps:
+
+1. Fix the early file in a step of its own.
+2. Rebase the later steps on the new commit. A rebase copies the later commits on top of a different commit.
+3. Point the tags at the new commits.
+
+A tag continues to point at the old commit until you move it:
 
 ```
 git tag --annotate --force step-03 <new commit> -F step-03.tag.txt
 ```
 
-Keeping each tag's message in a file beside your notes makes this repeatable. timewalk reads the tags
-when it starts, so restart it after re-tagging.
+Keep the message of each tag in a file next to your notes. Then you can move the tags again later. The
+server of timewalk reads the tags when it starts. After you move a tag, restart timewalk.
 
-## Where the class material lives
+## Where the class material goes
 
-Keep the slides, notes and anything about the class outside the project, in a folder of their own with a
-`justfile` such as:
+Keep the slides, the notes and other material for the class outside the project. Put them in the class
+folder, with a `justfile` like this one:
 
 ```just
 timewalk := home_directory() / "code/timewalk"

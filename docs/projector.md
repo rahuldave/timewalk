@@ -1,84 +1,117 @@
 # The projector page
 
-The page at the first address, for the room. Everything on it follows the step the replay copy stands
-on. The [presenter page](presenter.md) is this same page with your notes beside it: the step, the slide,
-the layout, the open file and the terminal tab are shared, so a change on either page shows on both.
+The projector page is the page at the first address, and it is for the room. Everything on it follows the
+step of the replay copy. The replay copy is the second working copy that timewalk moves from step to step.
+The [presenter page](presenter.md) is the same page, with your notes beside it.
 
-![The projector page: step bar, slides, files, reader, terminals](images/projector.png)
+The two pages share the step, the slide, the layout, the open file and the terminal tab in front. So a
+change on either page shows on both pages.
+
+![The projector page with the step bar, the slides, the file list, the reader and the terminals](images/projector.png)
 
 ## The step bar
 
-One chip per step, numbered from 00. The current step is filled, earlier ones are shaded. Next to the
-chips are the step's name and the commit's subject; under them, in a band, is the tag's message, the
-note the audience sees. Click a chip to go to that step, or use the arrow buttons, or **Left** and
-**Right** on the keyboard.
+The step bar has one chip for each step, with numbers from 00. A step is a point in the history, and by
+default it is a git tag that matches `step-*`. The bar fills the chip of the current step, and shades the chips of
+earlier steps.
 
-If the replay copy is on a commit that is not a step (someone ran `git checkout` in a terminal), the bar
-says "between steps". Choose a step to return.
+Next to the chips, the bar shows the name of the step and the subject of its commit. Under them, a band
+shows the message of the tag, which is the note that the audience sees.
 
-Started with `--discard-edits`, the bar also says "Moves discard edits", and turns it into a red warning
-counting the edited files when there are any: the next move throws them away. See
-[Live edits](edits.md#with---discard-edits).
+To go to a step, do one of these:
 
-## Three layouts
+- Click its chip.
+- Click an arrow button.
+- Press **Left** or **Right** on the keyboard.
 
-**Slides**, **Both** and **Code**, at the top right, choose what fills the page, on both pages at once.
-A step with no slides shows the code whatever is chosen.
+Sometimes the replay copy is on a commit that is not a step, for example after someone runs `git checkout`
+in a terminal. Then the bar says "between steps". To go back, choose a step.
 
-![Slides: the slide fills the page](images/layout-slides.png)
+If you start timewalk with `--discard-edits`, the bar also says "Moves discard edits". When files have
+edits, the note becomes a red warning with a count of the edited files. The next move throws those
+edits away. See [Live edits](edits.md#with---discard-edits).
 
-![Code: the files and the reader fill the page](images/layout-code.png)
+## The layouts
 
-**A−** and **A+** change the text size of everything, terminals included. **Dark** and **Light** switch
-the theme. Drag the bar above the terminals to give them more or less room. These three are each page's
-own, remembered in its browser, so the projector and your screen can differ.
+The buttons **Slides**, **Both** and **Code**, at the top right, choose what fills the page. A choice
+changes both pages at once. If a step has no slides, the page shows the code in every layout.
+
+![The Slides layout, where the slide fills the page](images/layout-slides.png)
+
+![The Code layout, where the file list and the reader fill the page](images/layout-code.png)
+
+Some controls change only the page you use:
+
+- **A−** and **A+** change the size of all the text, and the terminals use the same size.
+- **Dark** and **Light** change the theme.
+- Drag the bar above the terminals to give them more or less room.
+
+Each page keeps these three settings in its own browser. So the projector and your screen can have
+different settings.
 
 ![The same step in the dark theme](images/projector-dark.png)
 
 ## Slides
 
-The slides for this step, from the slides manifest. The count and the arrows are at the top of the pane.
-**Up** and **Down** change slide when the step has more than one. A step can instead show one longer
-Markdown **document**, which scrolls and has no arrows. See [Slides and documents](slides.md).
+The slides pane shows the slides for the step, from the manifest. The manifest is the TOML file that says
+which slides go with which step. The top of the pane shows the number of slides and the arrows. If the step
+has more than one slide, **Up** and **Down** change the slide.
 
-## The files
+A step can show one longer Markdown **document** instead. A document scrolls and has no arrows. See
+[Slides and documents](slides.md).
 
-The tracked files of the replay copy, as a tree. Files the step added are marked **new**, files it
-modified **changed**, and files it removed are listed under the tree. Files edited since the step's
-commit, by a command run in a terminal, are marked **edited**. Hover over the count at the top for the
-step's size in lines.
+## The file list
 
-**changed or edited** lists only those files. On a large project, folders with nothing changed start
-closed.
+The file list shows the tracked files of the replay copy as a tree. A tracked file is a file that git
+records. The list marks the files that the step added as **new**, and the files that it modified as
+**changed**. The list shows the files that the step removed under the tree.
 
-![The files a step touched, listed alone](images/tree-changed.png)
+An edit is a change to a tracked file that nobody has committed yet. If a command in a terminal edited a
+file after the commit of the step, the list marks the file as **edited**. To see the size of the step in
+lines, hover over the count at the top.
+
+The **changed or edited** button shows only those files. On a large project, folders with no changes
+start closed.
+
+![The file list with only the files that the step changed](images/tree-changed.png)
 
 ## The reader
 
-Click a file to read it. It has up to three views:
+The reader is the pane that shows one file. To read a file, click it in the file list. The reader has up
+to three views:
 
 | View | Shows |
 |---|---|
-| **File** | The file as it is on disk now |
-| **Changes in this step** | What the step's commit changed in it, against the step before |
-| **Edits since the step** | What has been edited in it since the step's commit. Shown only when there are edits |
+| **File** | The file as it is on the disk now |
+| **Changes in this step** | What the commit of the step changed in the file, against the step before |
+| **Edits since the step** | The edits to the file since the commit of the step. The view shows only when the file has edits |
 
-Files cannot be edited here. The reader follows edits as they happen: see [Live edits](edits.md).
+You cannot edit a file in the reader. The reader shows new edits within about a second. See
+[Live edits](edits.md).
 
-![Changes in this step: step-04 adds types and comments](images/reader-changes.png)
+![The Changes in this step view, where step-04 adds types and comments](images/reader-changes.png)
 
 ## The terminals
 
-Along the bottom, a row of tabs, each a real shell. **At this step** and **Runs** are in the replay copy,
-**Main** is in the repository you started from, **Claude** starts Claude Code at this step, and **+**
-opens more. See [The terminals](terminals.md).
+A row of tabs goes along the bottom of the page. Each tab is a terminal with a real shell, the program
+that runs your commands.
+
+- **At this step** and **Runs** run in the replay copy.
+- **Main** runs in the repository that you gave to timewalk.
+- **Claude** starts Claude Code at this step.
+- **+** opens more terminals.
+
+See [The terminals](terminals.md).
 
 ## Recipes
 
-When the step has a `justfile`, its public recipes are buttons beside the tabs. A click types
-`just <recipe>` into the terminal in front and runs it; a recipe that needs an argument is typed and left
-for you to finish. Recipes that are new at this step are highlighted. With **Main** in front, the buttons
-are the main repository's recipes.
+A recipe is a task in a `justfile`, which you run with `just`. If the step has a `justfile`, its public
+recipes show as buttons beside the tabs. A click types `just <recipe>` into the terminal in front and runs
+it.
+
+If a recipe needs an argument, the click types the command but does not run it. You then finish the
+command. The page highlights the recipes that are new at this step. If **Main** is in front, the buttons
+show the recipes of your repository.
 
 ## The keyboard
 
@@ -88,8 +121,10 @@ are the main repository's recipes.
 | Up, Down | The previous or next slide, when the step has more than one. Otherwise they scroll |
 | Alt with an arrow | The same, from anywhere, a terminal included |
 
-The page keeps the arrow keys until you click into a terminal. The terminal then has them, shown by a
-blue edge around it, and the arrows move through your shell's history. Click anywhere else to give them
-back. A command sent from the presenter page also gives its terminal the keys.
+The page keeps the arrow keys until you click into a terminal. Then the terminal has the keys, and a blue
+edge around it shows this. The arrows then move through the history of your shell.
 
-![A terminal that has the keys has a blue edge](images/terminal-focused.png)
+To give the keys back to the page, click anywhere else. A command from the presenter page also gives its
+terminal the keys.
+
+![A terminal with the keys has a blue edge](images/terminal-focused.png)
