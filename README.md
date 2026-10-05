@@ -25,11 +25,14 @@ opens it. It prints one address. Open it on the projector and on your own screen
 [the tour of the demo](https://rahuldave.com/timewalk/demo.html). If port 8765 is in use, add
 `--port` with another number.
 
-On your own project:
+On your own project, run timewalk straight from GitHub with uv. uv downloads it once and keeps it:
 
 ```
-uv run timewalk.py ~/code/project --notes notes.md --slides slides/slides.toml
+uvx --from git+https://github.com/rahuldave/timewalk@v1.0.0 timewalk ~/code/project --notes notes.md --slides slides/slides.toml
 ```
+
+To install the commands `timewalk` and `timewalk-pdf` for good, run
+`uv tool install git+https://github.com/rahuldave/timewalk@v1.0.0`.
 
 By default, the steps are the tags that match `step-*`. The message of an annotated tag is the note that
 the audience sees. Keep the notes file outside the repository. timewalk refuses a notes file inside it.
@@ -39,7 +42,7 @@ the audience sees. Keep the notes file outside the repository. timewalk refuses 
 - **Slides and documents** for each step, from a TOML manifest of Markdown slides, pictures, PDF pages
   and longer documents that scroll.
 - **A PDF** of the slides, with the notes of each step after its slides. Make it with the **PDF** button
-  or with `slides_pdf.py`.
+  or with the command `timewalk-pdf`.
 - **The files at each step**, with what the step changed.
 - **Live edits.** Run `ruff format` at a step, and the page shows what it changed, as it happens.
 - **Terminals** at the step, for long runs, in your own repository, and with Claude Code.
@@ -86,5 +89,5 @@ in [`docs/`](docs/), published by a GitHub Action.
 
 ## Licence
 
-timewalk uses the MIT licence. See [`LICENSE`](LICENSE). The libraries in `static/vendor/` keep their own
+timewalk uses the MIT licence. See [`LICENSE`](LICENSE). The libraries in `src/timewalk/static/vendor/` keep their own
 licences, each in its folder. They are ghostty-web (MIT), highlight.js (BSD 3-Clause) and marked (MIT).

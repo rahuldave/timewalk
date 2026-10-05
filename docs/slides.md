@@ -92,10 +92,10 @@ The **PDF** button in the step bar makes a PDF of the slides, with the notes of 
 slides. The browser then downloads it. timewalk draws the PDF with the browser on your machine, through
 Playwright, so it takes a few seconds.
 
-To make the PDF from the command line, run `slides_pdf.py`:
+To make the PDF from the command line, run `timewalk-pdf`:
 
 ```
-uv run slides_pdf.py slides/slides.toml -o handout.pdf --title "My talk" --notes notes.md
+timewalk-pdf slides/slides.toml -o handout.pdf --title "My talk" --notes notes.md
 ```
 
 The command writes every slide in step order, one slide per page. The footer of each page names the deck,
@@ -112,7 +112,7 @@ the step and the page.
 Add `--with-notes` to put the notes of each step after its slides, as the **PDF** button does:
 
 ```
-uv run slides_pdf.py slides/slides.toml --notes notes.md --with-notes
+timewalk-pdf slides/slides.toml --notes notes.md --with-notes
 ```
 
 The notes show the prose, the cues in their own shade, and the commands in code blocks. The PDF leaves out
@@ -123,7 +123,7 @@ runbook. A runbook is a written script of each step, with its prose and commands
 `notes.pdf` beside the notes file:
 
 ```
-uv run slides_pdf.py --notes notes.md --with-notes
+timewalk-pdf --notes notes.md --with-notes
 ```
 
 ### What the command needs

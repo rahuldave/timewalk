@@ -1,6 +1,5 @@
 # timewalk: browse a repository one commit at a time. Run `just` to see this list.
 
-deps := '--with pytest --with httpx --with "starlette>=0.40" --with "uvicorn>=0.30" --with "websockets>=13" --with "playwright>=1.45" --with "pypdf>=5"'
 
 [private]
 default:
@@ -9,23 +8,23 @@ default:
 # Browse a repository. Extra arguments go to timewalk: just walk ~/code/project --notes notes.md --slides slides/slides.toml
 [positional-arguments]
 walk repo *args:
-    uv run timewalk.py "$@"
+    uv run timewalk "$@"
 
 # Browse the sample repository, the submodule demo/timewalk-demo, with its notes and slides. Fetches it the first time.
 # Its replay copy is throwaway, so a move discards edits instead of asking
 demo:
     git submodule update --init demo/timewalk-demo
-    uv run timewalk.py demo/timewalk-demo --notes demo/notes.md --slides demo/slides/slides.toml --discard-edits --clock
+    uv run timewalk demo/timewalk-demo --notes demo/notes.md --slides demo/slides/slides.toml --discard-edits --clock
 
 # Make a PDF of the slides, the notes, or both: just pdf slides/slides.toml --notes notes.md --with-notes
 [positional-arguments]
 pdf *args:
-    uv run slides_pdf.py "$@"
+    uv run timewalk-pdf "$@"
 
 # Run the tests. Extra arguments go to pytest: just test -k slides
 [positional-arguments]
 test *args:
-    uv run --no-project {{ deps }} pytest -q tests "$@"
+    uv run pytest -q tests "$@"
 
 # Lint the Python
 lint:

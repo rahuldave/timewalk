@@ -26,8 +26,8 @@ different, take the screenshots again with `just screenshots`.
 Rahul made timewalk for `~/Projects/babykev-class`, the class kit for `~/Projects/babykev`. The kit has
 two recipes:
 
-- `just present` runs `timewalk.py` on babykev with its `notes.md` and `slides/slides.toml`.
-- `just handout` runs `slides_pdf.py`.
+- `just present` runs `timewalk` on babykev with its `notes.md` and `slides/slides.toml`.
+- `just handout` runs `timewalk-pdf`.
 
 Keep these points:
 
@@ -81,18 +81,21 @@ Rahul set these rules. Each rule has tests. Do not weaken them.
 
 | File | What it is |
 |---|---|
-| `timewalk.py` | The whole server, one file: `git()`, `Repo` (steps, worktree, moves, diffs, reads), notes and slides parsers, `Terminal` (a pty), `Hub` (events to pages), `make_app` (Starlette routes) |
-| `slides_pdf.py` | The PDF of the slides and, with `--with-notes`, the notes, drawn by Chrome or Edge through Playwright. The **PDF** button calls it through `/api/pdf` |
-| `static/` | `index.html`/`app.js` (the page, at `/`), `print.*` (for the PDF), `common.js`, `app.css` |
-| `static/vendor/` | ghostty-web, highlight.js, marked, each with its licence. Vendored: do not edit |
+| `src/timewalk/__init__.py` | The whole server, one module: `git()`, `Repo` (steps, worktree, moves, diffs, reads), notes and slides parsers, `Terminal` (a pty), `Hub` (events to pages), `make_app` (Starlette routes) |
+| `src/timewalk/slides_pdf.py` | The command `timewalk-pdf`: the PDF of the slides and, with `--with-notes`, the notes, drawn by Chrome or Edge through Playwright. The **PDF** button calls it through `/api/pdf` |
+| `src/timewalk/static/` | `index.html`/`app.js` (the page, at `/`), `print.*` (for the PDF), `common.js`, `app.css` |
+| `src/timewalk/static/vendor/` | ghostty-web, highlight.js, marked, each with its licence. Vendored: do not edit |
 | `tests/test_timewalk.py` | The git layer, notes and slides, the guards of the app, a real terminal |
 | `demo/timewalk-demo` | A git submodule: the sample repository, five tagged steps, at github.com/rahuldave/timewalk-demo. Its replay copy, `demo/timewalk-demo-replay`, is ignored |
 | `docs/` | The site: one Markdown page per topic, `build.py` (the order is its `PAGES` list), `site.css`, `screenshots.py`, `images/`. `_site/` is built and ignored. `.github/workflows/pages.yml` publishes it |
 | `demo/notes.md`, `demo/slides/` | The notes and slides of the demo. They stay here, outside the sample, as in a class kit |
 
-There is no `pyproject.toml`. The scripts carry their dependencies as inline script metadata (PEP 723),
-and they run with `uv run`. The dependencies of `timewalk.py` are Starlette, uvicorn, websockets,
-Playwright and pypdf. The `justfile` lists the dependencies of the tests.
+timewalk is a package, `src/timewalk`, built with hatchling from `pyproject.toml`. It gives two commands,
+`timewalk` and `timewalk-pdf`. Its dependencies are Starlette, uvicorn, websockets, Playwright and pypdf;
+the tests use the `dev` group. In a clone, run `uv run timewalk`. Users run it from GitHub with
+`uvx --from git+https://github.com/rahuldave/timewalk@v1.0.0 timewalk`, so it is not on PyPI, by Rahul's choice. When a change must reach users,
+raise the version in `pyproject.toml`, tag the commit `vX.Y.Z`, push the tag, and update the pin in the
+docs and in the kits.
 
 ## Commands
 
@@ -135,7 +138,7 @@ socket.
 ## Checking a change
 
 1. Run `just test` and `just lint`.
-2. For anything in `static/`, drive the page in headless Chrome, in two windows, through a throwaway clone
+2. For anything in `src/timewalk/static/`, drive the page in headless Chrome, in two windows, through a throwaway clone
    of the demo. Run `git clone ~/Projects/timewalk-demo` into the scratchpad. Do not use
    `demo/timewalk-demo-replay`, which can hold edits of Rahul.
 3. Go through every step and slide, and type in a terminal. Playwright with `channel="chrome"` works.

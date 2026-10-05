@@ -1,19 +1,16 @@
-# /// script
-# requires-python = ">=3.11"
-# dependencies = ["starlette>=0.40", "uvicorn>=0.30", "websockets>=13", "playwright>=1.45", "pypdf>=5"]
-# ///
 """timewalk: browse a repository one commit at a time, with a terminal that runs in it.
 
-    uv run timewalk.py /path/to/repo                    steps are the tags matching step-*
-    uv run timewalk.py /path/to/repo --notes notes.md   add the notes, the script of each step, beside the page
-    uv run timewalk.py /path/to/repo --slides slides.toml   add slides, one or more per step
-    uv run timewalk.py /path/to/repo --tags 'v*'        steps are other tags
-    uv run timewalk.py /path/to/repo --commits          steps are the commits on the current branch
-    uv run timewalk.py /path/to/repo --in-place         step the repository itself, not a second copy
-    uv run timewalk.py /path/to/repo --discard-edits    a move throws edits away instead of asking; for a replay copy
-    uv run timewalk.py /path/to/repo --clock            show the clock band, for a class with planned times
-    uv run timewalk.py /path/to/repo --port 8800        listen on another port
-    uv run timewalk.py /path/to/repo --host 0.0.0.0     listen beyond this machine, for a cloud machine; see the warning
+    timewalk /path/to/repo                        steps are the tags matching step-*
+    timewalk /path/to/repo --notes notes.md       add the notes, the script of each step, beside the page
+    timewalk /path/to/repo --slides slides.toml   add slides, one or more per step
+    timewalk /path/to/repo --tags 'v*'            steps are other tags
+    timewalk /path/to/repo --commits              steps are the commits on the current branch
+    timewalk /path/to/repo --in-place             step the repository itself, not a second copy
+    timewalk repo --replay worktree               put the replay copy in ./worktree instead of beside the repository
+    timewalk /path/to/repo --discard-edits        a move throws edits away instead of asking; for a replay copy
+    timewalk /path/to/repo --clock                show the clock band, for a class with planned times
+    timewalk /path/to/repo --port 8800            listen on another port
+    timewalk /path/to/repo --host 0.0.0.0         listen beyond this machine, for a cloud machine; see the warning
 
 One page is served, at one address. It shows the slides for the step, the files as they are at that step, which
 of them that step added or changed, and terminal tabs built on Ghostty's terminal core: one in the repository at
@@ -103,11 +100,15 @@ class Repo:
         commits: bool = False,  # Step through commits instead of tags
         in_place: bool = False,  # Move `main` itself instead of a second working copy
         discard: bool = False,  # A move throws uncommitted edits away instead of asking and stashing
+        replay: Path | None = None,  # Where the replay copy goes, instead of `<repo>-replay` beside the repository
     ):
         if discard and in_place:
             # Discarding is for a throwaway replay copy. In place, it would throw away uncommitted work in the real repository.
             raise GitError("--discard-edits cannot be used with --in-place: it would throw away uncommitted work in the repository itself")
+        if replay is not None and in_place:
+            raise GitError("--replay cannot be used with --in-place: in place, there is no replay copy")
         self.discard = discard
+        self.replay = Path(replay).resolve() if replay is not None else None
         self.main = Path(git(main, "rev-parse", "--show-toplevel"))
         self.steps = self._commit_steps() if commits else self._tag_steps(tags)
         if not self.steps:
@@ -139,13 +140,16 @@ class Repo:
         return steps
 
     def _replay_copy(self) -> Path:  # The working copy that will be moved between steps
-        "Find or make a second working copy beside the repository, starting at the first step."
-        path = self.main.parent / f"{self.main.name}-replay"
+        "Find or make a second working copy, beside the repository or where --replay says, starting at the first step."
+        path = self.replay or self.main.parent / f"{self.main.name}-replay"
+        if path.resolve().is_relative_to(self.main.resolve()):
+            raise GitError(f"the replay copy {path} would be inside the repository. Put it outside, for example beside it.")
         known = [line.split(" ", 1)[1] for line in git(self.main, "worktree", "list", "--porcelain").splitlines() if line.startswith("worktree ")]
         if str(path) in known or str(path.resolve()) in known:
             return path
         if path.exists():
             raise GitError(f"{path} exists and is not a working copy of this repository. Remove it or use --in-place.")
+        path.parent.mkdir(parents=True, exist_ok=True)
         git(self.main, "worktree", "add", "--detach", str(path), self.steps[0].sha)
         return path
 
@@ -728,7 +732,7 @@ def make_app(
             return JSONResponse({"error": "missing or wrong token"}, status_code=403)
         if slides_path is None and notes_path is None:
             return JSONResponse({"error": "there are no slides and no notes to put in a PDF"}, status_code=404)
-        import slides_pdf  # imported here: slides_pdf imports this module
+        from timewalk import slides_pdf  # imported here: slides_pdf imports this module
 
         try:
             data = await asyncio.to_thread(slides_pdf.make_pdf, slides_path, notes_path, repo.main.name, True)
@@ -859,6 +863,7 @@ def main() -> None:
     parser.add_argument("--slides", type=Path, help="a TOML manifest of slides: [slides] step-name = [\"file.md\", \"deck.pdf#page=2\"]")
     parser.add_argument("--tags", default="step-*", help="glob for the tags that mark steps (default: step-*)")
     parser.add_argument("--commits", action="store_true", help="step through the commits of the current branch instead of tags")
+    parser.add_argument("--replay", type=Path, help="where to put the replay copy (default: <repo>-replay, beside the repository)")
     parser.add_argument("--in-place", action="store_true", help="move the repository itself instead of a second working copy")
     parser.add_argument("--discard-edits", action="store_true", help="a move throws uncommitted edits away instead of asking and stashing them; meant for a replay copy")
     parser.add_argument("--clock", action="store_true", help="show the clock band: the clock, the planned times and the next step")
@@ -870,7 +875,8 @@ def main() -> None:
     args = parser.parse_args()
 
     try:
-        repo = Repo(args.repo.resolve(), tags=args.tags, commits=args.commits, in_place=args.in_place, discard=args.discard_edits)
+        repo = Repo(args.repo.resolve(), tags=args.tags, commits=args.commits, in_place=args.in_place, discard=args.discard_edits,
+                    replay=args.replay)
     except GitError as exc:
         raise SystemExit(f"timewalk: {exc}") from None
     notes_path = args.notes.resolve() if args.notes else None

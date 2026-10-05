@@ -4,3 +4,5 @@ __pycache__/
 demo/timewalk-demo-replay/
 *.pdf
 docs/_site/
+.venv/
+dist/

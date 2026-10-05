@@ -40,7 +40,7 @@ run the commands of the recipe yourself:
 
 ```
 git submodule update --init demo/timewalk-demo
-uv run timewalk.py demo/timewalk-demo --notes demo/notes.md --slides demo/slides/slides.toml --discard-edits --clock
+uv run timewalk demo/timewalk-demo --notes demo/notes.md --slides demo/slides/slides.toml --discard-edits --clock
 ```
 
 timewalk prints the address of the page:
@@ -55,10 +55,21 @@ Open the address in a window on the projector, and in a second window on your ow
 [the tour of the demo](demo.md). If another program uses port 8765, timewalk stops and says so. Then
 start it again with `--port 8800`, or with another free port.
 
-To use timewalk on your own project, run this command:
+## Run timewalk on your own project
+
+You do not need a clone of timewalk for your own project. uv can run timewalk straight from GitHub. It
+downloads timewalk once, and keeps it in its cache:
 
 ```
-uv run timewalk.py ~/code/project --notes notes.md --slides slides/slides.toml
+uvx --from git+https://github.com/rahuldave/timewalk@v1.0.0 timewalk ~/code/project --notes notes.md --slides slides/slides.toml
+```
+
+The part after `@` pins a version, so every machine runs the same timewalk. To install the commands
+`timewalk` and `timewalk-pdf` on your machine for good, run this command once:
+
+```
+uv tool install git+https://github.com/rahuldave/timewalk@v1.0.0
+timewalk ~/code/project --notes notes.md --slides slides/slides.toml
 ```
 
 ## What is where

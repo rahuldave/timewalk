@@ -6,10 +6,10 @@ websockets, and Playwright and pypdf for the PDF. The pages are plain HTML, CSS 
 
 | File | What it is |
 |---|---|
-| `timewalk.py` | The server. It holds the git layer (`Repo`), the readers for notes and slides, the terminals, the edits watcher and the web application |
-| `slides_pdf.py` | The PDF export. The **PDF** button of the page uses it too |
-| `static/` | The page (`index.html`, `app.js`), served at `/`. The old address `/presenter` sends the browser on to `/`. Also the print page, `common.js` and `app.css` |
-| `static/vendor/` | ghostty-web, highlight.js and marked, each with its licence |
+| `src/timewalk/__init__.py` | The server. It holds the git layer (`Repo`), the readers for notes and slides, the terminals, the edits watcher and the web application |
+| `src/timewalk/slides_pdf.py` | The PDF export, the command `timewalk-pdf`. The **PDF** button of the page uses it too |
+| `src/timewalk/static/` | The page (`index.html`, `app.js`), served at `/`. The old address `/presenter` sends the browser on to `/`. Also the print page, `common.js` and `app.css` |
+| `src/timewalk/static/vendor/` | ghostty-web, highlight.js and marked, each with its licence |
 | `tests/test_timewalk.py` | The tests |
 | `demo/` | The demo submodule, with its notes and slides |
 | `docs/` | This site. It holds the pages, `build.py`, `screenshots.py`, `images/` and `style/` |
@@ -74,5 +74,5 @@ repository kept inside another one at a fixed commit. To change the demo, do the
 
 ## Licence
 
-timewalk uses the MIT licence. The libraries in `static/vendor/` keep their own licences. ghostty-web
+timewalk uses the MIT licence. The libraries in `src/timewalk/static/vendor/` keep their own licences. ghostty-web
 uses MIT, highlight.js uses BSD 3-Clause and marked uses MIT.

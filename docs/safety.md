@@ -47,7 +47,7 @@ of the machine, and it prints a warning. Then open the port in the firewall of t
 address only:
 
 ```
-uv run timewalk.py ~/code/project --notes notes.md --host 0.0.0.0 --port 8765
+timewalk ~/code/project --notes notes.md --host 0.0.0.0 --port 8765
 gcloud compute firewall-rules create timewalk --allow tcp:8765 --source-ranges <your-ip>/32
 ```
 

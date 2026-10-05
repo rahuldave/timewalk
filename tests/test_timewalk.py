@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 from starlette.testclient import TestClient
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 import timewalk
 
 TOKEN = "test-token"
@@ -124,6 +124,18 @@ def test_a_foreign_folder_in_the_way_is_refused(sample: Path) -> None:
     (sample.parent / "sample-replay").mkdir()
     with pytest.raises(timewalk.GitError, match="not a working copy"):
         timewalk.Repo(sample)
+
+
+def test_the_replay_copy_can_go_where_asked(sample: Path, tmp_path: Path) -> None:
+    "--replay puts the replay copy in a folder you name, made if missing, and reuses it the next time."
+    target = tmp_path / "kit" / "worktree"
+    repo = timewalk.Repo(sample, replay=target)
+    assert repo.work == target and repo.current() == 0
+    assert timewalk.Repo(sample, replay=target).work == target
+    with pytest.raises(timewalk.GitError, match="inside the repository"):
+        timewalk.Repo(sample, replay=sample / "replay")
+    with pytest.raises(timewalk.GitError, match="cannot be used with --in-place"):
+        timewalk.Repo(sample, replay=target, in_place=True)
 
 
 def test_in_place_moves_the_repository_itself(sample: Path) -> None:
@@ -659,7 +671,7 @@ def test_recipes_come_only_from_the_folders_own_justfile(tmp_path: Path) -> None
 
 def test_the_pdf_has_each_steps_notes_after_its_slides(tmp_path: Path) -> None:
     "With notes, a step's notes follow its slides, commands in code blocks and the planned time left out."
-    import slides_pdf
+    from timewalk import slides_pdf
 
     notes = tmp_path / "notes.md"
     notes.write_text("## step-00 Start\ntime: 0:00\n\n> Say: hello\n\nRead this.\n\n$ ls\nruns$ just train\n\n## step-02 Later\n\nOnly notes.\n")

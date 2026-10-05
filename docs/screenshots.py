@@ -25,7 +25,7 @@ from playwright.sync_api import sync_playwright
 
 DOCS = Path(__file__).resolve().parent
 ROOT = DOCS.parent
-sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "src"))
 import timewalk  # noqa: E402
 
 OUT = DOCS / "images"

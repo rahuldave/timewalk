@@ -1,9 +1,21 @@
 # Reference
 
+## Install
+
+Run timewalk from GitHub with uv, with no clone and no install:
+
+```
+uvx --from git+https://github.com/rahuldave/timewalk@v1.0.0 timewalk [repo] [options]
+uvx --from git+https://github.com/rahuldave/timewalk@v1.0.0 timewalk-pdf [options]
+```
+
+Or install the two commands once with `uv tool install git+https://github.com/rahuldave/timewalk@v1.0.0`. In a clone of timewalk, run them with
+`uv run timewalk` and `uv run timewalk-pdf`.
+
 ## timewalk
 
 ```
-uv run timewalk.py [repo] [options]
+timewalk [repo] [options]
 ```
 
 | Option | Does |
@@ -13,18 +25,19 @@ uv run timewalk.py [repo] [options]
 | `--slides FILE` | A TOML manifest of slides and documents |
 | `--tags GLOB` | The tags that mark steps. Default: `step-*` |
 | `--commits` | Step through the commits of the current branch instead of tags |
+| `--replay PATH` | Put the replay copy at `PATH`, for example `worktree`, instead of `<repo>-replay` beside the repository. timewalk refuses a path inside the repository |
 | `--in-place` | Move your repository itself instead of the replay copy |
 | `--host ADDRESS` | The address to listen on. Default: `127.0.0.1`, this machine only. `0.0.0.0` listens on every network, for a cloud machine; timewalk then prints a warning, and accepts every host name. See [Safety](safety.md#run-timewalk-on-a-cloud-machine) |
 | `--clock` | Show the clock band on the page, in every window. The band shows the clock, the planned times and the next step. Off by default |
 | `--discard-edits` | A move drops edits to tracked files, and does not ask or stash them first. Use it for a replay copy that you throw away. timewalk refuses it with `--in-place`. See [Live edits](edits.md#with---discard-edits) |
 | `--assistant CMD` | The command the Claude tab starts. Default: `claude`. `''` for a plain shell |
-| `--port N` | The port to listen on, on `127.0.0.1`. Default: 8765. If the port is in use, timewalk stops and says so. Then give another port |
+| `--port N` | The port to listen on. Default: 8765. If the port is in use, timewalk stops and says so. Then give another port |
 | `--no-open` | Do not open the browser |
 
-## slides_pdf
+## timewalk-pdf
 
 ```
-uv run slides_pdf.py [MANIFEST] [-o OUT.pdf] [--title TEXT] [--notes FILE] [--with-notes]
+timewalk-pdf [MANIFEST] [-o OUT.pdf] [--title TEXT] [--notes FILE] [--with-notes]
 ```
 
 | Option | Does |

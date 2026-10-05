@@ -1,13 +1,9 @@
-# /// script
-# requires-python = ">=3.11"
-# dependencies = ["starlette>=0.40", "uvicorn>=0.30", "websockets>=13", "playwright>=1.45", "pypdf>=5"]
-# ///
 """Make one PDF of the slides and, if asked, the notes of every step, to hand out.
 
-    uv run slides_pdf.py slides.toml                                    writes slides.pdf beside the manifest
-    uv run slides_pdf.py slides.toml -o handout.pdf --title "babykev" --notes notes.md
-    uv run slides_pdf.py slides.toml --notes notes.md --with-notes      each step's notes after its slides
-    uv run slides_pdf.py --notes notes.md --with-notes                  the notes alone, as a runbook
+    timewalk-pdf slides.toml                                    writes slides.pdf beside the manifest
+    timewalk-pdf slides.toml -o handout.pdf --title "babykev" --notes notes.md
+    timewalk-pdf slides.toml --notes notes.md --with-notes      each step's notes after its slides
+    timewalk-pdf --notes notes.md --with-notes                  the notes alone, as a runbook
 
 Steps come out in step order. Within a step, the slides come in the manifest's order, one per page, whatever they
 are written in: Markdown slides and pictures are drawn as the page draws them, and pages of a PDF deck are copied

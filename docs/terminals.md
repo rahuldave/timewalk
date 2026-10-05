@@ -112,7 +112,7 @@ from inside a terminal.
 ## The shells' environment
 
 The shells get your environment with two additions, `TERM=xterm-256color` and `TIMEWALK=1`. They do not get
-the Python of timewalk. `uv run timewalk.py` puts the environment of the script first on `PATH`, and names
+the Python of timewalk. When uv runs timewalk, it puts the environment of timewalk first on `PATH`, and names
 it in `VIRTUAL_ENV`. `PATH` is the list of folders where a shell looks for programs. The server of timewalk
 removes the two changes from the shells. So `python`, `pytest` and other tools come from the project or from you, and never from
 timewalk.

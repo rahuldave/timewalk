@@ -42,7 +42,7 @@ The `.git` of the replay copy is a file of one line that points there. See [The 
   every tab, Main too, is in it. The server refuses `--discard-edits` with `--in-place`, so a move cannot
   drop your real work.
 - **Your class folder** is never a working copy of anything.
-- **The PDF export**, `slides_pdf.py` or the **PDF** button, uses no git. It reads the manifest, the slide
+- **The PDF export**, `timewalk-pdf` or the **PDF** button, uses no git. It reads the manifest, the slide
   files and the notes file.
 
 **The demo** adds one layer. `demo/timewalk-demo` is a git submodule of timewalk. A submodule is a

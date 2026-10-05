@@ -60,18 +60,28 @@ server of timewalk reads the tags when it starts. After you move a tag, restart 
 ## Where the class material goes
 
 Keep the slides, the notes and other material for the class outside the project. timewalk refuses a
-notes file inside the project or its replay copy. Put the material in the class folder, with a `justfile`
-like this one:
+notes file inside the project or its replay copy. Put the material in a folder of its own, a kit, with
+two folders that git ignores:
+
+```
+my-walk/
+├── notes.md       the notes, tracked in the kit
+├── slides/        the slides and the manifest, tracked in the kit
+├── repo/          ignored: a clone of the project
+└── worktree/      ignored: the replay copy
+```
+
+The `.gitignore` of the kit lists `repo/` and `worktree/`, so the names never change from kit to kit. A
+`justfile` like this one runs timewalk from GitHub on the clone:
 
 ```just
-timewalk := home_directory() / "code/timewalk"
-repo := home_directory() / "code/project"
+timewalk := "uvx --from git+https://github.com/rahuldave/timewalk@v1.0.0"
 
-# Open the step browser on the project with these notes and slides
+# Open the page on the project, with these notes and slides
 present *args:
-    uv run {{ timewalk }}/timewalk.py {{ repo }} --notes notes.md --slides slides/slides.toml {{ args }}
+    {{ timewalk }} timewalk repo --replay worktree --notes notes.md --slides slides/slides.toml {{ args }}
 
-# Make the handout: every slide, one per page
+# Make the handout: every slide, with the notes of each step
 handout:
-    uv run {{ timewalk }}/slides_pdf.py slides/slides.toml -o handout.pdf --title "My class" --notes notes.md
+    {{ timewalk }} timewalk-pdf slides/slides.toml --notes notes.md --with-notes -o handout.pdf
 ```
