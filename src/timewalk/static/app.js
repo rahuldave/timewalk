@@ -491,6 +491,28 @@ function wireControls() {
     if (event.defaultPrevented) event.stopPropagation();   // a key used here is not also typed into a terminal
   }, true);   // capture: seen before the terminal, which keeps the keys it handles to itself
   // drag the bar between the reader and the terminal
+  // drag the handles between the slides, the file list and the reader. Each browser keeps the widths.
+  const panes = document.querySelector(".panes");
+  for (const [id, pane, name] of [["resize-slides", "slide-pane", "slides-width"], ["resize-files", "tree-pane", "files-width"]]) {
+    const handle = $(id);
+    const saved = settings.get(name, null);
+    if (saved) panes.style.setProperty("--" + name, saved + "px");
+    handle.addEventListener("pointerdown", (down) => {
+      down.preventDefault();
+      handle.setPointerCapture(down.pointerId);
+      handle.classList.add("dragging");
+      const left = $(pane).getBoundingClientRect().left;
+      const onMove = (e) => {
+        const width = Math.round(Math.min(Math.max(e.clientX - left, 120), panes.clientWidth - 260));
+        panes.style.setProperty("--" + name, width + "px");
+        settings.set(name, width);
+      };
+      handle.addEventListener("pointermove", onMove);
+      handle.addEventListener("pointerup", () => { handle.removeEventListener("pointermove", onMove); handle.classList.remove("dragging"); }, { once: true });
+    });
+    handle.addEventListener("dblclick", () => { panes.style.removeProperty("--" + name); settings.set(name, null); });
+  }
+
   const divider = $("divider");
   divider.addEventListener("pointerdown", (down) => {
     divider.setPointerCapture(down.pointerId);

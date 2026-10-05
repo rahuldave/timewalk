@@ -17,6 +17,7 @@ keeps the shared state, and it sends each change to every window.
 | The slide | The scroll position of a file or slide | The text size |
 | Slides, Both or Code | Which terminal has the keyboard | The height of the terminals |
 | The open file, and its view | | If a click on a command runs it |
+| | | The widths of the slides and of the file list |
 | The terminal tab in front | | |
 | The terminals themselves: the same shells | | |
 
@@ -67,6 +68,20 @@ step. The export uses the browser on your machine, so it can take a few seconds.
 ![The Code layout, where the file list and the reader fill the page](images/layout-code.png)
 
 ![The same step in the dark theme](images/page-dark.png)
+
+## The widths of the panes
+
+Thin handles sit between the panes. Drag a handle to change how much room each pane gets.
+
+- **The handle between the slides and the file list** changes the width of the slides. Make the slides
+  narrow to show more code, and wide again for the next slide.
+- **The handle between the file list and the reader** changes the width of the file list.
+- **The bar above the terminals** changes the height of the terminals.
+
+To put a handle back to its default width, double-click it. The browser remembers the widths. The
+handle of the slides shows only in the **Both** layout.
+
+![The handles between the slides, the file list and the reader](images/handles.png)
 
 ## Slides
 

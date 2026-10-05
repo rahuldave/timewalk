@@ -143,6 +143,17 @@ def shoot(browser, base: str, repo: timewalk.Repo) -> None:
     typed("clear; git log --oneline --decorate")
     save("page")
 
+    # The handles between the panes: the slides made narrow, to show more of the code.
+    box = page.locator("#resize-slides").bounding_box()
+    page.mouse.move(box["x"] + 2, box["y"] + box["height"] / 2)
+    page.mouse.down()
+    page.mouse.move(box["x"] - 120, box["y"] + box["height"] / 2, steps=8)
+    page.mouse.up()
+    page.wait_for_timeout(300)
+    save("handles", ".panes")
+    page.locator("#resize-slides").dblclick()
+    page.wait_for_timeout(300)
+
     # The three layouts.
     layout("slides")
     save("layout-slides")

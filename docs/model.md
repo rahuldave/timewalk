@@ -89,6 +89,7 @@ then happen, in this order:
 | A move, with `--discard-edits` | Moves and does not ask. Edits to tracked files are lost | `git checkout --force --detach <step>`, in the replay copy |
 | **Up**, **Down**, the slide arrows | Changes the shared slide number. On a document, **Up** and **Down** scroll it, and Alt with **Up** or **Down** changes the slide | None |
 | **Slides**, **Both**, **Code** | Changes the shared layout, in every window | None |
+| The handles between the panes | Change the width of the slides or the file list, or the height of the terminals, in this browser. A double-click resets a width | None |
 | A file in the file list, **File** | Reads the file from disk, and refuses paths outside the copy | None. It reads a file in the replay copy |
 | **Changes in this step** | The diff of the step for that file | `git diff <step before> <step> -- <file>`, in the replay copy |
 | **Edits since the step** | The edits since the commit of the step | `git diff HEAD -- <file>`, in the replay copy |

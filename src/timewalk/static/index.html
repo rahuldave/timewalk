@@ -59,13 +59,17 @@
       <div id="slide" class="slide"></div>
     </section>
 
-    <aside class="tree-pane">
+    <div class="col-resizer" id="resize-slides" role="separator" aria-orientation="vertical" title="Drag to change the width of the slides. Double-click to reset"></div>
+
+    <aside class="tree-pane" id="tree-pane">
       <div class="pane-head">
         <span id="tree-summary">Files</span>
         <label class="only"><input type="checkbox" id="only-changed"> changed or edited</label>
       </div>
       <nav id="tree" aria-label="Files"></nav>
     </aside>
+
+    <div class="col-resizer" id="resize-files" role="separator" aria-orientation="vertical" title="Drag to change the width of the file list. Double-click to reset"></div>
 
     <section class="file-pane">
       <div class="pane-head">

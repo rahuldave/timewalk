@@ -123,10 +123,16 @@ code, pre, .mono { font-family: var(--mono); }
 .notice.error { background: var(--removed-soft); }
 
 /* --- files and reader --- */
-.panes { display: grid; grid-template-columns: minmax(200px, 300px) 1fr; flex: 1; min-height: 0; }
+/* The panes and the handles between them. A handle sets --slides-width or --files-width; without one, the default. */
+.panes { display: grid; grid-template-columns: minmax(120px, var(--files-width, 300px)) 5px minmax(0, 1fr); flex: 1; min-height: 0; }
+.col-resizer { background: var(--rule); cursor: col-resize; min-height: 0; }
+.col-resizer:hover, .col-resizer.dragging { background: var(--accent); }
+#resize-slides { display: none; }
 .tree-pane, .file-pane, .slide-pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .slide-pane { display: none; border-right: 1px solid var(--rule); background: var(--surface); }
-body[data-layout="split"] .panes { grid-template-columns: minmax(0, 1fr) minmax(170px, 230px) minmax(0, 1.1fr); }
+body[data-layout="split"] .panes { grid-template-columns: minmax(160px, var(--slides-width, 1fr)) 5px minmax(120px, var(--files-width, 230px)) 5px minmax(0, 1.1fr); }
+body[data-layout="split"] #resize-slides { display: block; }
+body[data-layout="slides"] .col-resizer { display: none; }
 body[data-layout="split"] .slide-pane, body[data-layout="slides"] .slide-pane { display: flex; }
 body[data-layout="slides"] .panes { grid-template-columns: 1fr; }
 body[data-layout="slides"] .tree-pane, body[data-layout="slides"] .file-pane { display: none; }
@@ -231,6 +237,7 @@ body[data-layout="slides"] .tree-pane, body[data-layout="slides"] .file-pane { d
 
 @media (max-width: 760px) {
   .panes, body[data-layout="split"] .panes { grid-template-columns: 1fr; grid-template-rows: 32% 1fr; }
+  .col-resizer, body[data-layout="split"] #resize-slides { display: none; }
   body[data-layout="split"] .slide-pane { display: none; }
   .tree-pane { border-right: 0; border-bottom: 1px solid var(--rule); }
   .where { display: none; }
