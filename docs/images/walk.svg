@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 560" font-family="-apple-system, Segoe UI, system-ui, sans-serif" font-size="14">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#4d5969"/></marker>
+  </defs>
+  <rect width="960" height="560" fill="#ffffff"/>
+
+  <!-- the three repositories -->
+  <text x="30" y="34" font-weight="700" fill="#17202b">Three repositories on GitHub</text>
+
+  <rect x="30" y="50" width="270" height="150" rx="8" fill="#e3f4ea" stroke="#1d7a4c"/>
+  <text x="46" y="76" font-weight="700" fill="#17202b">bla</text>
+  <text x="46" y="96" fill="#6f7b8b" font-size="12.5">the project, public</text>
+  <text x="46" y="122" fill="#4d5969">one commit and one tag per step,</text>
+  <text x="46" y="141" fill="#4d5969">step-00, step-01, ...</text>
+  <text x="46" y="167" fill="#4d5969">nothing about the class in it</text>
+  <text x="46" y="186" fill="#4d5969">students may fork it, to push work</text>
+
+  <rect x="345" y="50" width="270" height="150" rx="8" fill="#fbefdd" stroke="#a85b00"/>
+  <text x="361" y="76" font-weight="700" fill="#17202b">bla-class</text>
+  <text x="361" y="96" fill="#6f7b8b" font-size="12.5">your class material, private</text>
+  <text x="361" y="122" fill="#4d5969">the plan, the full notes with private</text>
+  <text x="361" y="141" fill="#4d5969">cues, the slides, rehearsal output</text>
+  <text x="361" y="167" fill="#4d5969">a command that writes bla-walk</text>
+  <text x="361" y="186" fill="#4d5969">from it</text>
+
+  <rect x="660" y="50" width="270" height="150" rx="8" fill="#e4ebf9" stroke="#2456b5"/>
+  <text x="676" y="76" font-weight="700" fill="#17202b">bla-walk</text>
+  <text x="676" y="96" fill="#6f7b8b" font-size="12.5">the kit, public; each student forks it</text>
+  <text x="676" y="122" fill="#4d5969">walk.md, the notes for students</text>
+  <text x="676" y="141" fill="#4d5969">slides/, if any</text>
+  <text x="676" y="160" fill="#4d5969">justfile: present, setup, pdf</text>
+  <text x="676" y="179" fill="#4d5969">.gitignore: repo/ and worktree/</text>
+
+  <line x1="615" y1="125" x2="658" y2="125" stroke="#a85b00" stroke-width="1.6" marker-end="url(#a)"/>
+  <text x="602" y="222" fill="#a85b00" font-size="12.5">you copy notes and slides, without private cues</text>
+
+  <!-- the kit on a machine -->
+  <text x="320" y="270" font-weight="700" fill="#17202b">A fork of bla-walk, cloned on the student's machine</text>
+  <rect x="30" y="286" width="900" height="250" rx="8" fill="#f6f7f9" stroke="#17202b" stroke-width="1.5"/>
+  <text x="50" y="316" font-family="ui-monospace, Menlo, monospace" fill="#17202b">bla-walk/</text>
+
+  <rect x="60" y="332" width="250" height="84" rx="6" fill="#e4ebf9" stroke="#2456b5"/>
+  <text x="74" y="356" font-family="ui-monospace, Menlo, monospace" fill="#17202b">walk.md, justfile</text>
+  <text x="74" y="378" fill="#4d5969">tracked in the student's fork</text>
+  <text x="74" y="398" fill="#4d5969">Edit saves the notes here</text>
+
+  <rect x="345" y="332" width="260" height="84" rx="6" fill="#e3f4ea" stroke="#1d7a4c"/>
+  <text x="359" y="356" font-family="ui-monospace, Menlo, monospace" fill="#17202b">repo/   (ignored)</text>
+  <text x="359" y="378" fill="#4d5969">just setup clones bla here</text>
+  <text x="359" y="398" fill="#4d5969">the Main tab works here, on main</text>
+
+  <rect x="640" y="332" width="270" height="84" rx="6" fill="#e3f4ea" stroke="#1d7a4c" stroke-dasharray="6 4"/>
+  <text x="654" y="356" font-family="ui-monospace, Menlo, monospace" fill="#17202b">worktree/   (ignored)</text>
+  <text x="654" y="378" fill="#4d5969">timewalk's replay copy of repo/</text>
+  <text x="654" y="398" fill="#4d5969">moves from step to step</text>
+
+  <line x1="605" y1="374" x2="638" y2="374" stroke="#1d7a4c" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#a)"/>
+
+  <text x="60" y="452" font-weight="600" fill="#17202b">just present</text>
+  <text x="160" y="452" fill="#4d5969">runs just setup, then timewalk from GitHub with uvx:</text>
+  <text x="60" y="478" font-family="ui-monospace, Menlo, monospace" font-size="13" fill="#17202b">uvx --from git+https://github.com/rahuldave/timewalk@vX.Y.Z timewalk repo --replay worktree --notes walk.md</text>
+  <text x="60" y="510" fill="#4d5969">The student opens the printed address. The page shows the steps, the files, the terminals and walk.md.</text>
+
+  <path d="M165,200 C165,250 300,240 300,260 L300,300 C300,318 470,310 470,330" fill="none" stroke="#1d7a4c" stroke-width="1.4" marker-end="url(#a)"/>
+  <text x="176" y="228" fill="#1d7a4c" font-size="12.5">just setup clones the student's fork of bla, or bla</text>
+  <line x1="795" y1="200" x2="795" y2="284" stroke="#2456b5" stroke-width="1.4" marker-end="url(#a)"/>
+  <text x="805" y="250" fill="#2456b5" font-size="12.5">fork, clone</text>
+</svg>

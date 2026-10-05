@@ -110,6 +110,7 @@ def draw(
     port: int,  # Where the print page is served
     docs: list[str],  # The document entries of the deck, each printed on its own
     notes: list[str] = (),  # The steps whose notes are printed, each on its own
+    draws_slides: bool = True,  # Whether any slide needs drawing; with none, the empty print is skipped
 ) -> tuple[bytes, dict[str, bytes], dict[str, bytes]]:  # The slides' PDF, a PDF per document, a PDF per step's notes
     "Open the print page in a headless browser and print it, then each document and each step's notes over as many pages as they need."
     with sync_playwright() as p:
@@ -128,12 +129,13 @@ def draw(
 
         def printed(address: str) -> bytes:  # The PDF of one print page
             page.goto(address)
-            page.wait_for_selector("body[data-ready]", timeout=120_000)
+            # "attached", not visible: a print page with nothing on it, notes alone, has an empty body.
+            page.wait_for_selector("body[data-ready]", state="attached", timeout=120_000)
             if problems:
                 raise SystemExit("slides_pdf: the print page failed: " + "; ".join(problems))
             return page.pdf(width="13.333in", height="7.5in", print_background=True, prefer_css_page_size=True)
 
-        slides = printed(f"http://127.0.0.1:{port}/print")
+        slides = printed(f"http://127.0.0.1:{port}/print") if draws_slides else b""
         documents = {doc: printed(f"http://127.0.0.1:{port}/print?doc={quote(doc)}") for doc in dict.fromkeys(docs)}
         written = {step: printed(f"http://127.0.0.1:{port}/print?notes={quote(step)}") for step in notes}
         browser.close()
@@ -148,7 +150,7 @@ def assemble(
     folder: Path | None,  # The manifest's folder
 ) -> PdfWriter:  # The handout: each step's slides in the manifest's order, then its notes
     "Interleave the drawn pages with the documents' pages, pages copied from PDF decks, and each step's notes."
-    pages = iter(PdfReader(io.BytesIO(drawn)).pages)
+    pages = iter(PdfReader(io.BytesIO(drawn)).pages if drawn else [])
     out = PdfWriter()
     sources: dict[str, PdfReader] = {}
     for step in deck["steps"]:
@@ -191,7 +193,9 @@ def make_pdf(
     server, port = serve(deck, folder)
     try:
         docs = [entry for step in deck["steps"] for entry in step["slides"] if entry.endswith("#doc")]
-        drawn, documents, written = draw(port, docs, [step["name"] for step in deck["steps"] if step["notes"]])
+        drawn_entries = [entry for step in deck["steps"] for entry in step["slides"]
+                         if not entry.split("#")[0].lower().endswith(".pdf") and not entry.endswith("#doc")]
+        drawn, documents, written = draw(port, docs, [step["name"] for step in deck["steps"] if step["notes"]], bool(drawn_entries))
         handout = assemble(deck, drawn, documents, written, folder)
     finally:
         server.should_exit = True

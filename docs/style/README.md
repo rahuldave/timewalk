@@ -63,3 +63,7 @@ only that page could not know it.
 | recipe | A task in a `justfile`, run with `just` |
 | the demo | The sample project, timewalk-demo |
 | the edits watcher | The part of the server that looks for edits each second |
+| walk | A replay of the history of a project, with notes and slides, that students work through |
+| kit, walk kit | The repository of a walk, for example `bla-walk`: notes, slides, `justfile` and `.gitignore` |
+| `repo/`, `worktree/` | The two folders of a kit that git ignores: the clone of the project, and the replay copy |
+| class repository | Your own material for a class, for example `bla-class`, kept private |

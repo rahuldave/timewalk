@@ -21,13 +21,21 @@ then types.
 timewalk shows the project at one step of that history at a time. When you move to a step, the files,
 the slides and the terminals all go to that step. Run the commands of the step live, and then move on.
 
-## Quick start
+## Get started
 
-You need these programs:
+Choose the path that fits what you want to do.
 
-- `uv`
-- `git`
-- Chrome, Edge or another recent browser
+| You want to | Do this |
+|---|---|
+| Work through a walk that somebody made | Fork the walk on GitHub, clone your fork, and run `just present` in it. See [What a student does](walk.md#what-a-student-does) |
+| See what timewalk does | Run the demo, as below. Then take [the tour of the demo](demo.md) |
+| Make a walk for your own project | Read [Make a walk](walk.md) |
+| Run timewalk on a repository now | Run it from GitHub with uv, as below |
+
+For each path you need `uv`, `git` and Chrome, Edge or another recent browser. Install `just` for the
+recipes.
+
+## Run the demo
 
 ```
 git clone https://github.com/rahuldave/timewalk
@@ -35,8 +43,8 @@ cd timewalk
 just demo
 ```
 
-`just demo` gets the sample project and opens it. The sample project is a git submodule. If you do not have `just`,
-run the commands of the recipe yourself:
+`just demo` gets the sample project and opens it. The sample project is a git submodule. If you do not
+have `just`, run the commands of the recipe yourself:
 
 ```
 git submodule update --init demo/timewalk-demo
@@ -55,28 +63,31 @@ Open the address in a window on the projector, and in a second window on your ow
 [the tour of the demo](demo.md). If another program uses port 8765, timewalk stops and says so. Then
 start it again with `--port 8800`, or with another free port.
 
-## Run timewalk on your own project
+## Run timewalk on a repository
 
-You do not need a clone of timewalk for your own project. uv can run timewalk straight from GitHub. It
-downloads timewalk once, and keeps it in its cache:
+You do not need a clone of timewalk. uv can run timewalk straight from GitHub. It downloads timewalk
+once, and keeps it in its cache:
 
 ```
-uvx --from git+https://github.com/rahuldave/timewalk@v1.0.0 timewalk ~/code/project --notes notes.md --slides slides/slides.toml
+uvx --from git+https://github.com/rahuldave/timewalk@v1.0.1 timewalk ~/code/project --notes notes.md --slides slides/slides.toml
 ```
 
 The part after `@` pins a version, so every machine runs the same timewalk. To install the commands
 `timewalk` and `timewalk-pdf` on your machine for good, run this command once:
 
 ```
-uv tool install git+https://github.com/rahuldave/timewalk@v1.0.0
+uv tool install git+https://github.com/rahuldave/timewalk@v1.0.1
 timewalk ~/code/project --notes notes.md --slides slides/slides.toml
 ```
+
+For a class, put the notes and the slides in a kit of their own, as [Make a walk](walk.md) shows.
 
 ## What is where
 
 | Page | What it covers |
 |---|---|
 | [A tour of the demo](demo.md) | The sample project, one step at a time, with what to try at each step |
+| [Make a walk](walk.md) | The project, your class material and the kit as three repositories, how to make a kit, and what a student does with it |
 | [How it works](model.md) | The folders, the worktree, what each button does in which folder, and where timewalk keeps each thing |
 | [The page](page.md) | Several windows, steps, slides, files, the three views of the reader, recipes and the keyboard |
 | [Live edits](edits.md) | A command changes files at a step, and the page shows each change when it occurs |
@@ -92,13 +103,7 @@ timewalk ~/code/project --notes notes.md --slides slides/slides.toml
 
 ## Keep your class material out of the project
 
-Keep the material that you present with outside the repository that your students clone. The material
-is the slides, the notes and timewalk itself. The repository holds only the project. The author made
-timewalk for a class with this layout:
-
-- one repository, whose history is the lesson
-- one class folder beside it, with the notes, the slides and a `justfile`
-- a `present` recipe in that `justfile`, which starts timewalk
-
-The demo has the same layout. Its history is its own repository, and its notes and slides are in the
-`demo/` folder of timewalk.
+Keep the material that you present with outside the repository that your students clone. The project
+holds only the project. Your plan and your private notes stay in a class repository of your own. The
+notes for students and the slides go in a kit, which students fork. [Make a walk](walk.md) shows the
+three repositories and how they fit together.

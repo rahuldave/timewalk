@@ -45,6 +45,9 @@ The `.git` of the replay copy is a file of one line that points there. See [The 
 - **The PDF export**, `timewalk-pdf` or the **PDF** button, uses no git. It reads the manifest, the slide
   files and the notes file.
 
+**With `--replay PATH`**, the replay copy goes where you say, and not beside your repository. A walk kit
+uses `--replay worktree`, so the replay copy is the folder `worktree/` of the kit.
+
 **The demo** adds one layer. `demo/timewalk-demo` is a git submodule of timewalk. A submodule is a
 repository of its own inside another repository. Git keeps the data of this submodule in
 `.git/modules/demo/timewalk-demo` of timewalk. The replay copy of the demo, `demo/timewalk-demo-replay`, is
@@ -53,6 +56,29 @@ a worktree of the submodule, and the git of timewalk ignores it.
 **The tests and the screenshots** never touch your repositories or the replay copy of the demo. The
 tests make small repositories in temporary folders. `docs/screenshots.py` clones the demo into a
 temporary folder, and timewalk makes the replay copy of that clone beside it there.
+
+## A walk kit, in order
+
+A walk kit is a repository that holds the notes and the slides of a walk, and a `justfile`. A student
+forks the kit and runs `just present` in it. [Make a walk](walk.md) shows how to make one. These things
+then happen, in this order:
+
+1. `just present` runs the recipe `setup` first.
+2. If the folder `repo/` does not exist, `setup` clones the project into it. It clones the fork of the
+   student, if the student has a fork of the project, and else the upstream project.
+3. `setup` adds the upstream project as the remote `upstream`, and fetches its tags. The tags mark the
+   steps.
+4. `just present` runs timewalk from GitHub with uvx, on `repo/`, with `--replay worktree`. uv downloads
+   timewalk the first time, and keeps it in its cache.
+5. timewalk makes the replay copy in `worktree/`, if it does not exist. The replay copy is a worktree of
+   `repo/`.
+6. timewalk prints the address of the page. The student opens it.
+
+| Folder of the kit | What it is | What works in it |
+|---|---|---|
+| The top of the kit | The notes, `walk.md`, the slides and the `justfile`. Tracked in the fork of the student | **Save** in the notes column writes `walk.md` |
+| `repo/` | A clone of the project. Git ignores the folder | The **Main** tab. The student commits here, and pushes to their fork of the project |
+| `worktree/` | The replay copy of `repo/`. Git ignores the folder | **At this step**, **Runs**, **Claude** and **+**. A move throws away edits here |
 
 ## What each control does
 

@@ -738,6 +738,8 @@ def make_app(
             data = await asyncio.to_thread(slides_pdf.make_pdf, slides_path, notes_path, repo.main.name, True)
         except SystemExit as exc:
             return JSONResponse({"error": str(exc)}, status_code=500)
+        except Exception as exc:  # a browser that fails to start, a page that fails to draw: say what happened
+            return JSONResponse({"error": f"{type(exc).__name__}: {str(exc).splitlines()[0] if str(exc) else ''}"}, status_code=500)
         return Response(data, media_type="application/pdf",
                         headers={"content-disposition": f'attachment; filename="{repo.main.name}.pdf"', "cache-control": "no-store"})
 
