@@ -47,7 +47,7 @@ def serve(
     port: int,  # Where to listen
 ) -> uvicorn.Server:  # The running server
     "Serve the demo with its notes and slides, as `just demo` does, in a thread."
-    app = timewalk.make_app(repo, TOKEN, port, ROOT / "demo" / "notes.md", "", ROOT / "demo" / "slides" / "slides.toml")
+    app = timewalk.make_app(repo, TOKEN, port, ROOT / "demo" / "notes.md", "", ROOT / "demo" / "slides" / "slides.toml", show_clock=True)
     server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
     threading.Thread(target=server.run, daemon=True).start()
     while not server.started:

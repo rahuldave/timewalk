@@ -14,6 +14,7 @@ uv run timewalk.py [repo] [options]
 | `--tags GLOB` | The tags that mark steps. Default: `step-*` |
 | `--commits` | Step through the commits of the current branch instead of tags |
 | `--in-place` | Move your repository itself instead of the replay copy |
+| `--clock` | Show the clock band on the presenter page: the clock, the planned times and the next step. Off by default |
 | `--discard-edits` | A move drops edits to tracked files, and does not ask or stash them first. Use it for a replay copy that you throw away. timewalk refuses it with `--in-place`. See [Live edits](edits.md#with---discard-edits) |
 | `--assistant CMD` | The command the Claude tab starts. Default: `claude`. `''` for a plain shell |
 | `--port N` | Default: 8765 |
@@ -38,7 +39,7 @@ In the timewalk folder, `just` lists these:
 
 | Recipe | Does |
 |---|---|
-| `just demo` | Fetch the demo submodule if needed, and open it with its notes and slides, with `--discard-edits` |
+| `just demo` | Fetch the demo submodule if needed, and open it with its notes and slides, with `--discard-edits` and `--clock` |
 | `just walk REPO ...` | Run timewalk on a repository. More arguments go to timewalk |
 | `just pdf MANIFEST ...` | Make a PDF of every slide in a manifest |
 | `just test ...` | Run the tests. More arguments go to pytest |
@@ -62,7 +63,8 @@ In the timewalk folder, `just` lists these:
 | Line | Does |
 |---|---|
 | `## step-name Title` | Starts a step's section |
-| `time: m:ss` | The planned start |
+| `time: m:ss` | The planned start, for the clock band |
+| `> text` | A cue for the presenter alone |
 | `$ cmd`, `runs$ cmd`, `runs2$ cmd` to `runs9$ cmd`, `main$ cmd` | A command for that tab |
 
 ## Keys

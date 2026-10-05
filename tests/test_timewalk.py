@@ -586,6 +586,14 @@ def test_both_pages_share_what_is_shown(served: TestClient) -> None:
     assert (state["layout"], state["track"]) == ("split", "main"), "unknown layouts and tabs are ignored"
 
 
+def test_the_clock_band_is_off_unless_asked_for(served: TestClient, repo: timewalk.Repo) -> None:
+    "The state says whether the presenter page shows the clock band: not by default, and yes when make_app is given --clock."
+    auth = {"t": TOKEN}
+    assert served.get("/api/state", params=auth).json()["show_clock"] is False
+    with_clock = TestClient(timewalk.make_app(repo, TOKEN, PORT, assistant="", show_clock=True), headers=HOST)
+    assert with_clock.get("/api/state", params=auth).json()["show_clock"] is True
+
+
 def test_the_presenter_page_is_the_projector_page(served: TestClient) -> None:
     "/presenter serves the same page; the script adds the notes and the clock there."
     auth = {"t": TOKEN}

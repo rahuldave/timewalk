@@ -68,7 +68,7 @@ temporary folder, and timewalk makes the replay copy of that clone beside it the
 | **Main** | A login shell | Starts in your repository |
 | A recipe button | Types `just <recipe>` into the tab in front | `just --dump` lists the recipes, in the replay copy, or in your repository when Main is in front |
 | A command in the notes | Types the command into its tab and presses Enter. That tab comes to the front on both pages | The work of the command, in the folder of that tab |
-| **Start the clock** | Records the start time | None |
+| **Start the clock**, with `--clock` | Records the start time | None |
 | (no control, each second) | The edits watcher looks for edits, and tells both pages when they change | `git status`, in the replay copy |
 
 Each shell starts in its folder. A `cd` in one shell moves that shell and nothing else. The file list
@@ -113,7 +113,7 @@ it. See [The terminals](terminals.md#a-long-command-and-a-move).
 ## The two pages
 
 The projector page and the presenter page use the same HTML and script. At `/presenter`, the script adds
-the clock band and the notes column. Each page keeps a socket to the server for events. A socket is an
+the notes column, and with `--clock` the clock band. Each page keeps a socket to the server for events. A socket is an
 open connection between the page and the server, which carries messages both ways.
 
 When a page changes what it shows, it

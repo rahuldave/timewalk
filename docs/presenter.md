@@ -3,8 +3,9 @@
 The presenter page is the page at the second address, which ends in `/presenter`. It is for your own
 screen. The page is the [projector page](projector.md) with two additions:
 
-- **The clock band** goes across the top. It shows the clock and the next step.
 - **The notes column** is on the right. It shows your notes for the step and their commands.
+- **The clock band** goes across the top, if you start timewalk with `--clock`. It shows the clock and
+  the next step.
 
 ![The presenter page, which is the projector page with the clock band on top and the notes column on the right](images/presenter.png)
 
@@ -32,6 +33,16 @@ The room sees what you see, and you also see your notes.
 
 ## The clock band
 
+The clock band is off unless you start timewalk with `--clock`. Without the flag, the presenter page has
+no clock, no planned times and no next step.
+
+## For a student who works alone
+
+A student who works alone needs only one address, the presenter page. It has the slides, the files, the
+terminals, and the notes column. Give the student a notes file without your cues, the lines that start
+with `> `. The notes then work as a runbook, which is the script of each step. A runbook holds the
+prose and the commands of each step. Start timewalk without `--clock`, so the page has no clock band.
+
 | Part | Shows |
 |---|---|
 | The clock | Time since you pressed **Start the clock**. **Reset** stops it |
@@ -50,6 +61,10 @@ A click on a button does these things:
 - It types the command into its terminal and runs it.
 - It brings that tab to the front on both pages.
 - It gives the keyboard to the terminal on the projector page.
+
+A line in your notes that starts with `> ` is a cue for you alone, for example `> Say: ...`. The notes
+column shows a cue on a soft background with a grey left border. You can then tell a cue from the script
+of the step.
 
 See [Presenter notes](notes.md).
 

@@ -15,7 +15,7 @@ walk repo *args:
 # Its replay copy is throwaway, so a move discards edits instead of asking
 demo:
     git submodule update --init demo/timewalk-demo
-    uv run timewalk.py demo/timewalk-demo --notes demo/notes.md --slides demo/slides/slides.toml --discard-edits
+    uv run timewalk.py demo/timewalk-demo --notes demo/notes.md --slides demo/slides/slides.toml --discard-edits --clock
 
 # Make one PDF of every slide in a manifest: just pdf slides/slides.toml -o handout.pdf --title "My talk"
 [positional-arguments]

@@ -1,4 +1,5 @@
-// The projector page, and the presenter page: the same page, which on /presenter adds a clock band and the notes.
+// The projector page, and the presenter page: the same page, which on /presenter adds the notes, and the clock band
+// when timewalk was started with --clock.
 // What both show (step, slide, layout, open file and view, terminal tab) is kept by the server, so they agree.
 import { init, Terminal, FitAddon } from "/static/vendor/ghostty-web/ghostty-web.js";
 import { api, socket, onEvents, escapeHtml, settings, stepLabel, drawSlide, isDoc, renderMarkdown } from "/static/common.js";
@@ -545,6 +546,9 @@ function drawNotes() {
 
 function drawBand() {
   if (!ui.state) return;
+  // The clock band shows only when timewalk was started with --clock.
+  $("band").hidden = !ui.state.show_clock;
+  if ($("band").hidden) return;
   const { steps, current, clock: started } = ui.state;
   const here = current === null ? null : steps[current];
   const next = current === null ? null : steps[current + 1];
@@ -570,7 +574,6 @@ function drawBand() {
 
 if (PRESENTER) {
   document.body.classList.add("presenter");
-  $("band").hidden = false;
   $("notes-pane").hidden = false;
   $("clock-start").onclick = () => api("/api/clock", { action: ui.state.clock ? "reset" : "start" });
   setInterval(drawBand, 1000);

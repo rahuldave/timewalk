@@ -6,7 +6,7 @@ step. It also shows the files as they were then, the changes that the step made,
 the repository at that step.
 
 A second page, the presenter page, goes on your own screen. It is the projector page with your private
-notes beside it and a clock across the top. What you do on the presenter page happens on the projector
+notes beside it. With `--clock`, it also has a clock across the top. What you do on the presenter page happens on the projector
 page too.
 
 ![The projector page at the second step of the demo, with a slide, the files, the file that the step added, and a terminal at that step](images/projector.png)

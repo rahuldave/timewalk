@@ -3,7 +3,7 @@
 Teach a project by replaying how it was built. timewalk steps through a repository's tags one at a time,
 and for each step shows your slides, the files as they were, what the step changed, and real terminals in
 the repository at that step. A second page, on your own screen, is the same page with your private notes
-beside it and a clock across the top; whatever you do there happens on the projector too.
+beside it, and with `--clock`, a clock across the top. Whatever you do there happens on the projector too.
 
 **Documentation, with screenshots: [rahuldave.com/timewalk](https://rahuldave.com/timewalk/)**
 

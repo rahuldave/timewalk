@@ -11,6 +11,7 @@
     uv run timewalk.py /path/to/repo --commits          steps are the commits on the current branch
     uv run timewalk.py /path/to/repo --in-place         step the repository itself, not a second copy
     uv run timewalk.py /path/to/repo --discard-edits    a move throws edits away instead of asking; for a replay copy
+    uv run timewalk.py /path/to/repo --clock            show the clock band on the presenter page
 
 Two pages are served. The audience page, for the projector, shows slides for the step, the files as they are at that step, which of
 them that step added or changed, and terminal tabs built on Ghostty's terminal core: one in the repository at
@@ -547,6 +548,7 @@ def make_app(
     assistant: str = "claude",  # Command started in the assistant tab; empty for a plain shell
     slides_path: Path | None = None,  # The slides manifest, if there is one
     watch_every: float = 1.0,  # Seconds between looks for edits in the working copy
+    show_clock: bool = False,  # Show the clock band on the presenter page
 ) -> Starlette:  # The web application
     "Build the web application: the two pages, the read-only repository API, the terminals, and the event hub."
     terminals: dict[str, Terminal] = {}
@@ -618,7 +620,7 @@ def make_app(
         deck = slides_now()
         showing["slide"] = min(showing["slide"], max(len(deck) - 1, 0))
         return {**repo.state(), "clock": clock["started"], "now": time.time(), "slides": deck, "slide": showing["slide"],
-                "has_slides": bool(load_slides(slides_path)), "layout": showing["layout"], "path": showing["path"],
+                "has_slides": bool(load_slides(slides_path)), "show_clock": show_clock, "layout": showing["layout"], "path": showing["path"],
                 "view": showing["view"], "track": showing["track"]}
 
     @guarded
@@ -780,6 +782,7 @@ def main() -> None:
     parser.add_argument("--commits", action="store_true", help="step through the commits of the current branch instead of tags")
     parser.add_argument("--in-place", action="store_true", help="move the repository itself instead of a second working copy")
     parser.add_argument("--discard-edits", action="store_true", help="a move throws uncommitted edits away instead of asking and stashing them; meant for a replay copy")
+    parser.add_argument("--clock", action="store_true", help="show the clock band on the presenter page: the clock, planned times and the next step")
     parser.add_argument("--assistant", default="claude", help="command started in the assistant terminal tab (default: claude)")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--no-open", action="store_true", help="do not open the browser")
@@ -799,7 +802,8 @@ def main() -> None:
         webbrowser.open(f"{base}/?t={token}")
     notes_path = args.notes.resolve() if args.notes else None
     slides_path = args.slides.resolve() if args.slides else None
-    uvicorn.run(make_app(repo, token, args.port, notes_path, args.assistant, slides_path), host="127.0.0.1", port=args.port, log_level="warning")
+    uvicorn.run(make_app(repo, token, args.port, notes_path, args.assistant, slides_path, show_clock=args.clock),
+                host="127.0.0.1", port=args.port, log_level="warning")
 
 
 if __name__ == "__main__":

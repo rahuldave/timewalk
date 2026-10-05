@@ -19,7 +19,8 @@ main$ git log --oneline
 | Line | Does |
 |---|---|
 | `## step-name Title` | Starts the section of a step. The title replaces the subject of the commit on the presenter page. The PDF also uses the title in its footer |
-| `time: 0:37` | The planned start of the step, in minutes and seconds from the start of the session, for the clock |
+| `time: 0:37` | The planned start of the step, in minutes and seconds from the start of the session. The clock band uses it, and shows only with `--clock` |
+| `> text` | A cue for you alone, for example `> Say: ...` or `> Note: ...`. The notes column shows it apart from the script |
 | `$ command` | A command for the **At this step** tab |
 | `runs$ command` | The same, in the **Runs** tab |
 | `runs2$ command` to `runs9$ command` | The same, in one more Runs tab, which opens the first time a line uses it. Use it for a second long command while the first command still runs |
@@ -36,8 +37,8 @@ projector page then gets the keyboard, so you can type the next command there.
 - **Put the commands in the order you will run them.** Also put in commands that undo changes. For
   example, after a command that changes files, add `git restore .`. Then the next move does not need to
   ask about edits. With `--discard-edits`, the move discards the edits, and you need no undo command.
-- **Give every step a time** when the plan for the session is clear. Then the clock tells you at every step
-  if you are early or late.
+- **Give every step a time** when the plan for the session is clear. Then, with `--clock`, the clock band
+  tells you at every step if you are early or late.
 - **Try every command at its step before the class.** A command that worked at the last step can fail at
   this step, because the files are different.
 
