@@ -259,6 +259,12 @@ def test_discard_throws_edits_away_and_replaces_only_the_files_the_step_has(samp
     assert run_git(repo.work, "stash", "list") == ""
 
 
+def test_discarding_is_refused_in_place(sample: Path) -> None:
+    "Discarding edits is only for a replay copy: in place it would throw away work in the real repository."
+    with pytest.raises(timewalk.GitError, match="cannot be used with --in-place"):
+        timewalk.Repo(sample, in_place=True, discard=True)
+
+
 def test_untracked_files_survive_every_move(repo: timewalk.Repo) -> None:
     "What a command wrote (a database, a run folder, an environment) is left alone, ignored or not."
     (repo.work / "runs").mkdir()

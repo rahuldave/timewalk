@@ -34,10 +34,8 @@ $ uvx ruff format
 $ uvx pytest -q
 runs$ for epoch in 1 2 3 4 5; do echo "epoch $epoch"; sleep 2; done
 
-Moving on asks to set the edits aside: they are stashed, not lost. The last command below undoes them
-instead.
-
-$ git restore .
+The demo runs with `--discard-edits`, so the step bar warns that the edit will be discarded, and moving
+on throws it away without asking. Without that flag a move asks first and stashes the edits.
 
 ## step-03 Formatting, committed
 time: 0:07

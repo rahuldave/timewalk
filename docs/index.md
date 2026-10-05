@@ -29,7 +29,7 @@ just demo
 
 ```
 git submodule update --init demo/timewalk-demo
-uv run timewalk.py demo/timewalk-demo --notes demo/notes.md --slides demo/slides/slides.toml
+uv run timewalk.py demo/timewalk-demo --notes demo/notes.md --slides demo/slides/slides.toml --discard-edits
 ```
 
 timewalk prints two addresses:

@@ -9,7 +9,8 @@ slides in `demo/slides/`.
 just demo
 ```
 
-Open the presenter address on your own screen as well as the projector address. Each step below says
+`just demo` starts timewalk with `--discard-edits`, so nothing typed during the tour needs undoing. Open
+the presenter address on your own screen as well as the projector address. Each step below says
 what to look at and what to try.
 
 ## step-00: an empty project
@@ -35,8 +36,10 @@ Four tests and a `pyproject.toml` that tells pytest where the code is. The code 
 - On the presenter page, click `uvx pytest -q`: it runs on the projector's terminal.
 - Click `uvx ruff format`. Within a second `src/greet.py` is marked **edited**, and the reader offers
   **Edits since the step**: exactly what ruff changed. See [Live edits](edits.md).
-- Press **Right**. timewalk asks first, because there are edits. **Stay here**, then click the last
-  command, `git restore .`, to undo them, or let the move set them aside.
+- Look at the step bar: it warns that the edited file will be discarded on the next move. The demo runs
+  with `--discard-edits`, because its replay copy is throwaway.
+- Press **Right**. The move drops the edit without asking. Without the flag, timewalk would ask first and
+  stash it. See [Live edits](edits.md#moving-with-edits).
 
 ![What ruff changed at step-02, shown live in the reader](images/edits.png)
 

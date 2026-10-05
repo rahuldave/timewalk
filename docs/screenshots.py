@@ -175,6 +175,21 @@ def shoot(browser, base: str, repo: timewalk.Repo) -> None:
     page.locator("#terms .term:not([hidden])").click()
     typed("git restore .", 1500)
 
+    # From here on, as `just demo` runs: --discard-edits. The step bar warns, and a move drops the edits without asking.
+    repo.discard = True
+    page.reload()
+    page.wait_for_selector("#step-list button")
+    page.wait_for_timeout(1500)
+    page.locator("#terms .term:not([hidden])").click()
+    typed("clear; uvx ruff format", 4000)
+    page.wait_for_selector("#mode.warn")
+    save("discard-warning", ".bar")
+    page.locator("#file-body").click()
+    page.keyboard.press("ArrowRight")
+    page.wait_for_function(f"document.getElementById('step-name').textContent === {repo.steps[3].name!r}")
+    page.wait_for_timeout(1200)
+    save("discard-moved", ".bar")
+
     # A document instead of slides.
     at(3)
     layout("slides")

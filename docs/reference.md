@@ -14,6 +14,7 @@ uv run timewalk.py [repo] [options]
 | `--tags GLOB` | The tags that mark steps. Default: `step-*` |
 | `--commits` | Step through the commits of the current branch instead of tags |
 | `--in-place` | Move the repository itself instead of a second working copy |
+| `--discard-edits` | A move throws edits to tracked files away instead of asking and stashing them. For a throwaway replay copy; refused with `--in-place`. See [Live edits](edits.md#with---discard-edits) |
 | `--assistant CMD` | The command the Claude tab starts. Default: `claude`. `''` for a plain shell |
 | `--port N` | Default: 8765 |
 | `--no-open` | Do not open the browser |
@@ -37,7 +38,7 @@ In the timewalk folder, `just` lists these:
 
 | Recipe | Does |
 |---|---|
-| `just demo` | Fetch the demo submodule if needed, and open it with its notes and slides |
+| `just demo` | Fetch the demo submodule if needed, and open it with its notes and slides, with `--discard-edits` |
 | `just walk REPO ...` | Run timewalk on a repository; extra arguments go to timewalk |
 | `just pdf MANIFEST ...` | Make a PDF of every slide in a manifest |
 | `just test ...` | Run the tests; extra arguments go to pytest |

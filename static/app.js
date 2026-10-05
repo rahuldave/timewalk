@@ -217,7 +217,7 @@ function drawTree() {
         const badge = document.createElement("span");
         badge.className = "badge E";
         badge.textContent = "edited";
-        badge.title = "Edited since the step's commit, by a command run here";
+        badge.title = "Edited since the step's commit, by a command run here" + (ui.state?.discard ? ". Discarded on the next move" : "");
         button.append(badge);
       }
       button.onclick = () => show({ path: file.path, view: edited.has(file.path) ? "edits" : file.status === "M" && ui.view === "diff" ? "diff" : "file" });
@@ -229,12 +229,25 @@ function drawTree() {
 
   const tree = $("tree");
   tree.replaceChildren(build(root, "", 0));
+  drawMode();
   if (ui.tree.deleted.length) {
     const gone = document.createElement("p");
     gone.className = "gone";
     gone.textContent = "Removed in this step: " + ui.tree.deleted.join(", ");
     tree.append(gone);
   }
+}
+
+// With --discard-edits a move throws edits away. Both pages say so in the step bar, and warn when there are some.
+function drawMode() {
+  const mode = $("mode");
+  $("view-edits").title = "What commands run here, such as a formatter, have changed in this file since the step's commit. Not committed" +
+    (ui.state?.discard ? ". Discarded on the next move" : "");
+  mode.hidden = !ui.state?.discard;
+  if (mode.hidden) return;
+  const count = ui.tree?.edits?.length || 0;
+  mode.textContent = count ? `${count} edited file${count === 1 ? "" : "s"}, discarded on the next move` : "Moves discard edits";
+  mode.classList.toggle("warn", count > 0);
 }
 
 async function openFile(path, view = "file", scrollTop = true) {

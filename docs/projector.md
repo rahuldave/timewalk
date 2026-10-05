@@ -16,6 +16,10 @@ note the audience sees. Click a chip to go to that step, or use the arrow button
 If the replay copy is on a commit that is not a step (someone ran `git checkout` in a terminal), the bar
 says "between steps". Choose a step to return.
 
+Started with `--discard-edits`, the bar also says "Moves discard edits", and turns it into a red warning
+counting the edited files when there are any: the next move throws them away. See
+[Live edits](edits.md#with---discard-edits).
+
 ## Three layouts
 
 **Slides**, **Both** and **Code**, at the top right, choose what fills the page, on both pages at once.

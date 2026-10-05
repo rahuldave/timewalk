@@ -43,6 +43,8 @@ These were set by Rahul. Each has tests; do not weaken them.
 - **An untracked file is never deleted or overwritten.** Run outputs (`.venv`, `mlflow.db`, `runs/`) must
   survive moving between steps. If a later step has a tracked file where an untracked one sits, refuse.
 - **An edit is never discarded.** Moving with edits asks first, then `git stash`es them with the step name.
+  The one exception is asked for by name: `--discard-edits`, for a throwaway replay copy, makes a move
+  `git checkout --force`, and both pages warn in the step bar. It is refused with `--in-place`.
 - **The file view cannot write.** No route changes a file.
 - **Localhost only, a fresh token per launch, other Host headers refused.** Every page, API call, socket
   and static asset needs the token. Only the presenter page asks for the notes.

@@ -11,10 +11,11 @@ default:
 walk repo *args:
     uv run timewalk.py "$@"
 
-# Browse the sample repository, the submodule demo/timewalk-demo, with its notes and slides. Fetches it the first time
+# Browse the sample repository, the submodule demo/timewalk-demo, with its notes and slides. Fetches it the first time.
+# Its replay copy is throwaway, so a move discards edits instead of asking
 demo:
     git submodule update --init demo/timewalk-demo
-    uv run timewalk.py demo/timewalk-demo --notes demo/notes.md --slides demo/slides/slides.toml
+    uv run timewalk.py demo/timewalk-demo --notes demo/notes.md --slides demo/slides/slides.toml --discard-edits
 
 # Make one PDF of every slide in a manifest: just pdf slides/slides.toml -o handout.pdf --title "My talk"
 [positional-arguments]

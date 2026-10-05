@@ -32,7 +32,8 @@ so you can type a follow-up there.
 
 - **Write what to say, not what is on the slide.** The audience reads the slide; the notes are for you.
 - **Put the commands in the order you will run them.** Undo commands too: `git restore .` after a
-  command that changed files, so the next move does not have to ask.
+  command that changed files, so the next move does not have to ask. With `--discard-edits` the move
+  drops them anyway, and no undo is needed.
 - **Give every step a time** once the session has a shape. The clock then tells you, at every step,
   whether you are early or late.
 - **Rehearse every command at its step.** A command that worked at the last step can fail at this one:

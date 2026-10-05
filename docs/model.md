@@ -32,7 +32,7 @@ file pointing there. See [The replay copy](replay.md).
 - **Your repository** is the main working copy. timewalk reads its tags and adds the replay copy's record
   to its `.git`, and does nothing else to it.
 - **With `--in-place`** there is no replay copy. Moves check out steps in your repository, and every tab,
-  Main included, is in it.
+  Main included, is in it. `--discard-edits` is refused in place, so a move can never drop your real work.
 - **Your class folder** is never a working copy of anything.
 - **The PDF export**, `slides_pdf.py`, uses no git at all: it reads the manifest and the slide files.
 
@@ -50,6 +50,7 @@ folder, and timewalk makes that clone's replay copy beside it there.
 |---|---|---|
 | A step chip, **Left**, **Right**, the step arrows | Checks for edits, refuses if an untracked file is in the way, moves, tells both pages | `git status`, `git ls-files --others`, `git ls-tree`, then `git checkout --detach <step>`, in the replay copy |
 | **Set the edits aside and move** | Stashes the edits, labelled with the step, then moves | `git stash push -m "timewalk: edits made at step-NN"`, in the replay copy |
+| A move, with `--discard-edits` | Moves without asking; edits to tracked files are thrown away | `git checkout --force --detach <step>`, in the replay copy |
 | **Up**, **Down**, the slide arrows | Changes the shared slide number | None |
 | **Slides**, **Both**, **Code** | Changes the shared layout, on both pages | None |
 | A file in the tree, **File** | Reads the file from disk, refusing paths outside the copy | None: a file read, in the replay copy |
@@ -76,7 +77,7 @@ on the replay copy.
 | Slide, layout, open file, view, tab in front, clock | The server's memory, shared by both pages | timewalk stops |
 | Each shell, and its last 256 KB of output | The server: one process per tab, on a pseudo-terminal | timewalk stops: the shells end, and so does what runs in them, unless it was started with `nohup` and `&` |
 | Theme, text size, terminal height | Each browser's local storage | You clear it |
-| Edits to tracked files | On disk in the replay copy, or in a stash | You discard them |
+| Edits to tracked files | On disk in the replay copy, or in a stash | You discard them, or the next move does, with `--discard-edits` |
 | Untracked files: `.venv`, outputs, databases | On disk in the replay copy | You delete them, or remove the replay copy |
 | Notes and slides | Your class folder, read afresh | Never written by timewalk |
 
@@ -85,7 +86,8 @@ If a terminal checks out another commit, the replay copy is no longer at a step 
 
 ## One move, in order
 
-1. A page asks the server to move to a step.
+1. A page asks the server to move to a step. With `--discard-edits`, the server runs
+   `git checkout --force --detach` to the step's commit and goes straight to step 6.
 2. The server asks git for edits to tracked files in the replay copy. If there are some, and the page did
    not say to set them aside, it refuses and names them. The page asks you.
 3. Asked to set them aside, it runs `git stash push` with the step's name.

@@ -94,7 +94,10 @@ code, pre, .mono { font-family: var(--mono); }
 .where { display: flex; align-items: baseline; gap: 10px; min-width: 0; flex: 1; }
 .step-name { font-family: var(--mono); font-weight: 600; white-space: nowrap; }
 .step-subject { color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.tools { display: flex; gap: 4px; flex: none; }
+.tools { display: flex; gap: 4px; flex: none; align-items: center; }
+/* --discard-edits: say so, and warn when there are edits a move will throw away */
+.mode { font-size: 0.85em; padding: 2px 8px; border-radius: 3px; border: 1px solid var(--rule); color: var(--ink-2); margin-right: 8px; white-space: nowrap; }
+.mode.warn { background: var(--removed-soft); border-color: var(--removed); color: var(--removed); font-weight: 600; }
 
 .note {
   margin: 0;

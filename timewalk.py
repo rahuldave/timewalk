@@ -100,6 +100,9 @@ class Repo:
         in_place: bool = False,  # Move `main` itself instead of a second working copy
         discard: bool = False,  # A move throws uncommitted edits away instead of asking and stashing
     ):
+        if discard and in_place:
+            # Discarding is for a throwaway replay copy. In place, it would throw away uncommitted work in the real repository.
+            raise GitError("--discard-edits cannot be used with --in-place: it would throw away uncommitted work in the repository itself")
         self.discard = discard
         self.main = Path(git(main, "rev-parse", "--show-toplevel"))
         self.steps = self._commit_steps() if commits else self._tag_steps(tags)

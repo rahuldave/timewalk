@@ -44,6 +44,25 @@ Edits belong to the step where they were made, so moving asks first.
 
 Nothing is discarded unless you discard it, for example with `git restore .` in a terminal.
 
+### With `--discard-edits`
+
+Started with `--discard-edits`, timewalk never asks. A move is `git checkout --force` to the step: edits
+to tracked files are thrown away, and an untracked file is replaced only where the new step tracks a
+file of the same name. Every other untracked file stays. Use it when the replay copy is throwaway and
+nothing typed in class needs keeping. `just demo` runs this way.
+
+Both pages say so in the step bar. With no edits it is a quiet note:
+
+![With --discard-edits and no edits: a note in the step bar](images/discard-moved.png)
+
+With edits it is a warning that counts them, and the **edited** badge and the **Edits since the step**
+view say the same when you hover over them:
+
+![With --discard-edits and an edit: the step bar warns it will go on the next move](images/discard-warning.png)
+
+timewalk refuses to start with both `--discard-edits` and `--in-place`: in place, the edits would be
+your real uncommitted work.
+
 ## What counts as an edit
 
 A change to a **tracked** file: one the step's commit has. New files a command writes, such as a
