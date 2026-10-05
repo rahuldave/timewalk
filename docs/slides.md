@@ -60,6 +60,31 @@ the slide shrinks to fit its page.
 The server reads the manifest and the slide files again each time it shows a slide. So you can edit them
 while you present.
 
+## Commands on a slide
+
+A Markdown slide, or a document, can hold commands that the reader runs from the page. Write each command
+on a line of its own, in the same form as in the notes:
+
+```markdown
+## Its tests
+
+Click the command to type it into the terminal, then press Enter.
+
+$ uvx pytest -q
+runs$ just train configs/cheese.yaml
+main$ git log --oneline
+```
+
+Each command is a button at its place on the slide. A click types the command into its terminal, and
+**run on click** in the notes column also presses Enter. The prefix chooses the tab, as in
+[Notes](notes.md#what-a-notes-file-holds). Use `$ ` for **At this step**, `runs$ ` for **Runs**, and
+`main$ ` for **Main**.
+
+![A slide with a command as a button](images/slide-command.png)
+
+A `$ ` line inside a fenced code block stays code, so a slide can show a command without a button. In
+the PDF, each command prints as code.
+
 ## A document instead of slides
 
 A step under `[docs]` shows one whole Markdown file in the slide pane:

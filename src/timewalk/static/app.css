@@ -282,6 +282,8 @@ body.with-notes .notes-pane { grid-area: notes; }
 .p-notes blockquote p { margin: 0 0 0.4em; }
 .p-notes blockquote p:last-child { margin-bottom: 0; }
 .p-commands { display: flex; flex-direction: column; gap: 6px; margin: 0.2em 0 0.9em; }
+.slide-commands { max-width: 34em; }
+.slide-commands button { font-size: 0.72em; }
 .p-commands button { text-align: left; font-family: var(--mono); font-size: 0.9em; padding: 6px 10px; display: flex; gap: 8px; align-items: baseline; }
 .p-commands .track { font: 0.8em var(--sans); color: var(--ink-3); flex: none; margin-left: auto; }
 .p-empty { color: var(--ink-3); }

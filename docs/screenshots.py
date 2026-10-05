@@ -221,6 +221,7 @@ def shoot(browser, base: str, repo: timewalk.Repo) -> None:
     # The notes column at step-02: cues in their own shade, the prose, and the commands.
     at(2)
     save("notes", "#notes-pane")
+    save("slide-command", "#slide-pane")
     save("band", "#band")
     # Editing the notes of the step.
     page.locator("#notes-edit").click()

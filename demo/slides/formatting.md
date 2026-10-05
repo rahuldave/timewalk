@@ -37,10 +37,10 @@ their editor does.
 
 ## Try it
 
-```
-uvx ruff format --check
-uvx ruff format --diff
-```
+Click a command to type it into the terminal at this step.
+
+$ uvx ruff format --check
+$ uvx ruff format --diff
 
 The first prints nothing to fix. The second shows the changes ruff would make: none, at this step.
 

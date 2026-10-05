@@ -75,7 +75,8 @@ which slides go with which step. The top of the pane shows the number of slides 
 has more than one slide, **Up** and **Down** change the slide.
 
 A step can show one longer Markdown **document** instead, or a document among its slides. A document
-scrolls, and **Up** and **Down** scroll it. See [Slides and documents](slides.md).
+scrolls, and **Up** and **Down** scroll it. A line such as `$ uvx pytest -q` on a slide or in a document
+is a command button, as in the notes. See [Slides and documents](slides.md#commands-on-a-slide).
 
 ## The file list
 

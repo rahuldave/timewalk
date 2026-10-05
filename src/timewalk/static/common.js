@@ -84,9 +84,62 @@ export function isDoc(entry) {
   return /\.(md|markdown)#doc$/i.test(String(entry || ""));
 }
 
+const COMMAND = /^\s*(main|runs[2-9]?)?\$\s+(.+)$/;
+
+/** Split Markdown into prose and commands, in order. A line such as `$ ls`, `runs$ ...` or `main$ ...` is a
+ *  command, except inside a fenced code block, where it is code to read. The same rule as the notes. */
+export function commandParts(text) {
+  const parts = [];
+  let fence = null;
+  for (const line of text.split("\n")) {
+    const mark = line.match(/^\s*(```+|~~~+)/);
+    const command = fence === null && !mark ? line.match(COMMAND) : null;
+    if (mark) fence = fence === null ? mark[1][0] : (mark[1][0] === fence ? null : fence);
+    if (command) parts.push({ kind: "command", track: command[1] || "replay", text: command[2].trim() });
+    else if (parts.length && parts.at(-1).kind === "text") parts.at(-1).text += "\n" + line;
+    else parts.push({ kind: "text", text: line });
+  }
+  return parts.filter((part) => part.kind === "command" || part.text.trim());
+}
+
+/** Render Markdown into a box. With a `command` function, each command becomes what that function makes, a
+ *  button on the page, in its place. Without one, as in print, each run of commands becomes a code block. */
+function renderWithCommands(box, text, base, command) {
+  const parts = commandParts(text);
+  if (!command) {
+    const markdown = [];
+    for (const [i, part] of parts.entries()) {
+      if (part.kind === "text") { markdown.push(part.text); continue; }
+      const prefix = part.track === "replay" ? "$ " : `${part.track}$ `;
+      if (parts[i - 1]?.kind !== "command") markdown.push("```");
+      markdown.push(prefix + part.text);
+      if (parts[i + 1]?.kind !== "command") markdown.push("```");
+    }
+    box.innerHTML = renderMarkdown(markdown.join("\n"), base);
+    return;
+  }
+  box.replaceChildren();
+  let group = null;
+  for (const part of parts) {
+    if (part.kind === "text") {
+      const prose = document.createElement("div");
+      prose.innerHTML = renderMarkdown(part.text, base);
+      box.append(...prose.childNodes);
+      group = null;
+      continue;
+    }
+    if (!group) {
+      group = document.createElement("div");
+      group.className = "p-commands slide-commands";
+      box.append(group);
+    }
+    group.append(command(part));
+  }
+}
+
 /** Draw one slide into a container. An entry is a path beside the manifest, with an optional #fragment:
  *  `deck.md#3` is the third slide of a Markdown file, `deck.pdf#page=3` a page of a PDF. Resolves when it is drawn. */
-export async function drawSlide(container, entry) {
+export async function drawSlide(container, entry, { command = null } = {}) {
   container.replaceChildren();
   if (!entry) return;
   const [path, fragment] = String(entry).split("#");
@@ -101,7 +154,7 @@ export async function drawSlide(container, entry) {
       const text = await response.text();
       if (fragment === "doc") {
         // A document is shown whole, as ordinary Markdown: a --- line is a rule, not a new slide.
-        box.innerHTML = renderMarkdown(text, url.slice(0, url.lastIndexOf("/") + 1));
+        renderWithCommands(box, text, url.slice(0, url.lastIndexOf("/") + 1), command);
         container.append(box);
         await Promise.all([...box.querySelectorAll("img")].map((img) => img.decode().catch(() => {})));
         return;
@@ -109,7 +162,7 @@ export async function drawSlide(container, entry) {
       const slides = splitSlides(text);
       const number = fragment ? Number(fragment) : 1;
       if (!(number >= 1 && number <= slides.length)) throw new Error(`${path} has ${slides.length} slide${slides.length === 1 ? "" : "s"}; the manifest asks for number ${fragment}`);
-      box.innerHTML = renderMarkdown(slides[number - 1], url.slice(0, url.lastIndexOf("/") + 1));
+      renderWithCommands(box, slides[number - 1], url.slice(0, url.lastIndexOf("/") + 1), command);
     } catch (error) { box.innerHTML = `<p class="empty">${escapeHtml(error.message)}</p>`; }
     container.append(box);
     await Promise.all([...box.querySelectorAll("img")].map((img) => img.decode().catch(() => {})));

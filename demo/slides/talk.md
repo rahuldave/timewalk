@@ -37,7 +37,9 @@ def greet( name,excited = False ):
 | `test_empty_name` | What happens with no name at all? |
 | `test_shout` | Is the loud greeting in capitals? |
 
-Run them with `uvx pytest -q`.
+Click the command to type it into the terminal, then press Enter.
+
+$ uvx pytest -q
 
 ---
 

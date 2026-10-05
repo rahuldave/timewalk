@@ -139,7 +139,7 @@ function drawSlides() {
   $("slide-count").textContent = doc ? slides[slide].replace(/#doc$/, "") : slides.length ? `Slide ${slide + 1} of ${slides.length}` : "No slides for this step";
   $("slide-prev").disabled = slide <= 0;
   $("slide-next").disabled = slide >= slides.length - 1;
-  drawSlide($("slide"), slides[slide]);
+  drawSlide($("slide"), slides[slide], { command: commandButton });   // a $ line on a slide is a button, as in the notes
   for (const entry of ui.terms.values()) if (!entry.el.hidden) requestAnimationFrame(() => entry.fit.fit());
 }
 
