@@ -434,6 +434,7 @@ function restartTerminals() {
 function applyAppearance() {
   document.documentElement.dataset.theme = ui.theme;
   document.documentElement.style.setProperty("--size", ui.size + "px");
+  document.documentElement.style.setProperty("--scale", String(ui.size / 14));   // 14px is the default size: the slides scale from it
   $("hl-light").disabled = ui.theme === "dark";
   $("hl-dark").disabled = ui.theme !== "dark";
   $("theme").textContent = ui.theme === "dark" ? "Light" : "Dark";

@@ -135,7 +135,8 @@ body[data-layout="slides"] .tree-pane, body[data-layout="slides"] .file-pane { d
 .slide { flex: 1; min-height: 0; overflow: auto; display: flex; }
 .slide iframe { flex: 1; width: 100%; border: 0; background: var(--surface); }
 .slide img { max-width: 100%; max-height: 100%; object-fit: contain; margin: auto; }
-.slide-md { padding: 4% 6%; font-size: clamp(17px, 1.9vw, 34px); line-height: 1.38; width: 100%; }
+/* The slide text grows with the width of the window, and A- and A+ scale it, as they scale the rest of the page. */
+.slide-md { padding: 4% 6%; font-size: calc(clamp(17px, 1.9vw, 34px) * var(--scale, 1)); line-height: 1.38; width: 100%; }
 .slide-md h1 { font-size: 1.7em; line-height: 1.15; margin: 0 0 0.6em; text-wrap: balance; }
 .slide-md h2 { font-size: 1.3em; line-height: 1.2; margin: 0 0 0.6em; text-wrap: balance; }
 .slide-md h3 { font-size: 1.05em; margin: 0.8em 0 0.3em; color: var(--ink-2); }
