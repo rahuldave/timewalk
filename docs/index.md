@@ -5,11 +5,12 @@ tag, a name that git keeps for one commit. At every step, timewalk shows the sli
 step. It also shows the files as they were then, the changes that the step made, and real terminals in
 the repository at that step.
 
-A second page, the presenter page, goes on your own screen. It is the projector page with your private
-notes beside it. With `--clock`, it also has a clock across the top. What you do on the presenter page happens on the projector
-page too.
+timewalk serves one page. You can open it in several windows, for example one on the projector and one
+on your own screen. Every window shows the same step, so what you do on your screen happens on the
+projector too. With `--notes`, the page shows the notes of each step beside it. With `--clock`, it also has
+a clock across the top.
 
-![The projector page at the second step of the demo, with a slide, the files, the file that the step added, and a terminal at that step](images/projector.png)
+![The page at the second step of the demo, with a slide, the files, the file that the step added, and a terminal at that step](images/page.png)
 
 ## Why replay a history
 
@@ -39,20 +40,20 @@ run the commands of the recipe yourself:
 
 ```
 git submodule update --init demo/timewalk-demo
-uv run timewalk.py demo/timewalk-demo --notes demo/notes.md --slides demo/slides/slides.toml --discard-edits
+uv run timewalk.py demo/timewalk-demo --notes demo/notes.md --slides demo/slides/slides.toml --discard-edits --clock
 ```
 
-timewalk prints two addresses:
+timewalk prints the address of the page:
 
 ```
 timewalk: 5 steps in .../demo/timewalk-demo
 timewalk: stepping in .../demo/timewalk-demo-replay
-timewalk: audience   http://127.0.0.1:8765/?t=...
-timewalk: presenter  http://127.0.0.1:8765/presenter?t=...
+timewalk: open       http://127.0.0.1:8765/?t=...
 ```
 
-Open the first address on the projector. Open the second address on your own screen. Then take [the tour of the
-demo](demo.md).
+Open the address in a window on the projector, and in a second window on your own screen. Then take
+[the tour of the demo](demo.md). If another program uses port 8765, timewalk stops and says so. Then
+start it again with `--port 8800`, or with another free port.
 
 To use timewalk on your own project, run this command:
 
@@ -66,13 +67,12 @@ uv run timewalk.py ~/code/project --notes notes.md --slides slides/slides.toml
 |---|---|
 | [A tour of the demo](demo.md) | The sample project, one step at a time, with what to try at each step |
 | [How it works](model.md) | The folders, the worktree, what each button does in which folder, and where timewalk keeps each thing |
-| [The projector page](projector.md) | Steps, slides, files, the three views of the reader, recipes and the keyboard |
-| [The presenter page](presenter.md) | The projector page with your notes, the clock and commands that run with one click |
+| [The page](page.md) | Several windows, steps, slides, files, the three views of the reader, recipes and the keyboard |
 | [Live edits](edits.md) | A command changes files at a step, and the page shows each change when it occurs |
 | [The terminals](terminals.md) | What each tab is, where it starts, long runs and focus |
 | [Making the steps](steps.md) | Tags, their notes, and how to make a history that is good to walk through |
-| [Slides and documents](slides.md) | The manifest, Markdown slides, pictures, PDFs, documents and the PDF handout |
-| [Presenter notes](notes.md) | The notes file, with titles, planned times and commands |
+| [Slides and documents](slides.md) | The manifest, Markdown slides, pictures, PDFs, documents, and the PDF of the slides and notes |
+| [Notes](notes.md) | The notes file, the notes column, commands to click, how to edit the notes, and the clock band |
 | [The replay copy](replay.md) | The second working copy that timewalk moves, and what timewalk never does to your repository |
 | [Python projects](python.md) | Environments when each step has its own lockfile |
 | [Safety](safety.md) | A terminal in a web page, and how timewalk keeps it to you |

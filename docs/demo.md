@@ -9,9 +9,9 @@ demo are in `demo/notes.md`, and its slides are in `demo/slides/`.
 just demo
 ```
 
-`just demo` starts timewalk with `--discard-edits`, so you do not need to undo anything that you type in
-the tour. Open the presenter address on your own screen, and the projector address on the projector.
-Each step below says what to look at and what to try.
+`just demo` starts timewalk with `--discard-edits` and `--clock`. With `--discard-edits`, you do not need
+to undo anything that you type in the tour. Open the address in a window on the projector, and in a second
+window on your own screen. Each step below says what to look at and what to try.
 
 ## step-00: an empty project
 
@@ -38,8 +38,9 @@ file list marks it **new**.
 The step adds four tests and a `pyproject.toml`, which tells pytest where the code is. The code is still
 untidy.
 
-- On the presenter page, click `uvx pytest -q`. The command runs in the terminal on the projector.
-- Click `uvx ruff format`. Within one second, the file list marks `src/greet.py` **edited**.
+- In the notes column on your screen, click `uvx pytest -q`. The command appears in the terminal in
+  every window. Press Enter to run it.
+- Click `uvx ruff format`, and press Enter. Within one second, the file list marks `src/greet.py` **edited**.
 - Look at the reader. It now offers **Edits since the step**, which shows exactly what ruff changed. See
   [Live edits](edits.md).
 - Look at the step bar. It warns that the next move discards the edited file.
@@ -67,7 +68,8 @@ The changes match what the class saw ruff do at step-02.
 Each parameter gets a type and a comment. Each function gets a docstring of one line.
 
 - Open `greet.py`, and choose **Changes in this step**. The view shows how the signature grows.
-- On the presenter page, click `uvx pytest -q` again. The tests show that the behaviour did not change.
+- In the notes column, click `uvx pytest -q` again, and press Enter. The tests show that the behaviour
+  did not change.
 
 ## What the demo is made of
 
@@ -78,5 +80,5 @@ Each parameter gets a type and a comment. Each function gets a docstring of one 
 | The slides | `demo/slides/talk.md`, a picture, and `formatting.md`, which is the document at step-03 |
 | The manifest | `demo/slides/slides.toml`, which says which slides go with which step |
 
-The demo has no `justfile`, so the recipe buttons say "no justfile here". The commands of the demo use
+The demo has no `justfile`, so the page shows no recipe buttons. The commands of the demo use
 `uvx`. `uvx` runs ruff and pytest, and you do not need to install them.

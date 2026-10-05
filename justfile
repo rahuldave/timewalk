@@ -1,6 +1,6 @@
 # timewalk: browse a repository one commit at a time. Run `just` to see this list.
 
-deps := '--with pytest --with httpx --with "starlette>=0.40" --with "uvicorn>=0.30" --with "websockets>=13"'
+deps := '--with pytest --with httpx --with "starlette>=0.40" --with "uvicorn>=0.30" --with "websockets>=13" --with "playwright>=1.45" --with "pypdf>=5"'
 
 [private]
 default:
@@ -17,9 +17,9 @@ demo:
     git submodule update --init demo/timewalk-demo
     uv run timewalk.py demo/timewalk-demo --notes demo/notes.md --slides demo/slides/slides.toml --discard-edits --clock
 
-# Make one PDF of every slide in a manifest: just pdf slides/slides.toml -o handout.pdf --title "My talk"
+# Make a PDF of the slides, the notes, or both: just pdf slides/slides.toml --notes notes.md --with-notes
 [positional-arguments]
-pdf manifest *args:
+pdf *args:
     uv run slides_pdf.py "$@"
 
 # Run the tests. Extra arguments go to pytest: just test -k slides

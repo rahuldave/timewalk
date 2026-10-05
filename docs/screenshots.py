@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["starlette>=0.40", "uvicorn>=0.30", "websockets>=13", "playwright>=1.45"]
+# dependencies = ["starlette>=0.40", "uvicorn>=0.30", "websockets>=13", "playwright>=1.45", "pypdf>=5"]
 # ///
 """Take the site's screenshots from the demo, so they can be taken again whenever the pages change.
 
@@ -89,7 +89,7 @@ def main() -> None:
 
 
 def shoot(browser, base: str, repo: timewalk.Repo) -> None:
-    "Drive the projector and presenter pages through the demo, saving a picture at each point the docs show."
+    "Drive the page through the demo, saving a picture at each point the docs show."
     errors: list[str] = []
     page = browser.new_page(viewport=WIDE, device_scale_factor=1)
     page.on("pageerror", lambda error: errors.append(str(error)))
@@ -133,13 +133,15 @@ def shoot(browser, base: str, repo: timewalk.Repo) -> None:
         target = page.locator(clip) if clip else page
         target.screenshot(path=str(OUT / f"{name}.png"))
 
-    # The whole projector page: slides beside the code, a file open, the terminal at this step.
+    # The whole page, as `just demo` shows it: the clock band, slides beside the code, a file open, the terminal
+    # at this step, and the notes on the right. The clock runs, so the band shows real times.
+    page.locator("#clock-start").click()
     at(1)
     layout("split")
     open_file("greet.py")
     tab("At this step")
     typed("clear; git log --oneline --decorate")
-    save("projector")
+    save("page")
 
     # The three layouts.
     layout("slides")
@@ -216,29 +218,24 @@ def shoot(browser, base: str, repo: timewalk.Repo) -> None:
     page.wait_for_timeout(300)
     save("terminal-focused", ".term-pane", focused=True)
 
-    # The presenter page: the same page, with the clock band and the notes, at step-02 with the clock running.
-    presenter = browser.new_page(viewport={"width": 1600, "height": 1000}, device_scale_factor=1)
-    presenter.on("pageerror", lambda error: errors.append(str(error)))
+    # The notes column at step-02: cues in their own shade, the prose, and the commands.
     at(2)
-    layout("split")
-    open_file("test_greet.py")
-    tab("At this step")
-    typed("clear; uvx pytest -q", 5000)
-    presenter.goto(f"{base}/presenter?t={TOKEN}")
-    presenter.wait_for_selector("#commands button")
-    presenter.locator("#clock-start").click()
-    presenter.wait_for_timeout(2500)
-    presenter.evaluate("document.activeElement && document.activeElement.blur()")
-    presenter.mouse.move(2, 2)
-    presenter.screenshot(path=str(OUT / "presenter.png"))
-    presenter.close()
+    save("notes", "#notes-pane")
+    save("band", "#band")
+    # Editing the notes of the step.
+    page.locator("#notes-edit").click()
+    page.wait_for_selector("#notes-text")
+    page.locator("#notes-text").evaluate("e => e.setSelectionRange(0, 0)")
+    save("notes-edit", "#notes-pane", focused=True)
+    page.locator("#notes-cancel").click()
+    page.wait_for_timeout(300)
 
     # Dark, for the overview.
     at(1)
     page.locator("#theme").click()
     page.wait_for_timeout(1200)
     open_file("greet.py")
-    save("projector-dark")
+    save("page-dark")
     page.locator("#theme").click()
     page.wait_for_timeout(800)
     at(0)

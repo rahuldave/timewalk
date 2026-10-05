@@ -1,12 +1,14 @@
-# Presenter notes for the demo repository
+# Notes for the demo
 
-Private: only the presenter page shows these.
+The script of each step: what to read and which commands to run. Lines that start with "> " are cues for
+a presenter. timewalk shows them in their own shade.
 
 ## step-00 Where everything starts
 time: 0:00
 
-- Say what the project will become before showing any code.
-- Point at the step bar: five steps, we are at the first.
+> Say: what the project will become, before you show any code.
+
+The project starts with a README and nothing else. The step bar shows five steps, and this is the first.
 
 $ ls -la
 main$ git log --oneline --decorate
@@ -14,34 +16,35 @@ main$ git log --oneline --decorate
 ## step-01 A file arrives
 time: 0:02
 
-The functions work. **Nothing checks them**, nobody has tidied them, and nothing says what `name` is.
+The two functions work, but nothing checks them, and nobody has tidied them. Nothing says what `name` is.
+Open `src/greet.py` and read it.
 
-- Open `src/greet.py` on the projector.
-- Ask what bothers people about it.
+> Ask: what bothers you about this file?
 
 $ python3 -c "import sys; sys.path.insert(0, 'src'); from greet import shout; print(shout('class'))"
 
 ## step-02 Its tests
 time: 0:04
 
-Four tests. Ask: what would you test that is missing?
+Four tests arrive. Run them first. Then format the code with ruff. The file list marks `src/greet.py` as
+edited, and the reader's "Edits since the step" view shows what ruff changed. Run the tests again: they
+still pass.
 
-Then format the code **live**. The file list marks `src/greet.py` as edited, and the reader's
-"Edits since the step" view shows what ruff changed. The tests still pass.
+> Ask: what would you test that is missing?
 
 $ uvx pytest -q
 $ uvx ruff format
 $ uvx pytest -q
 runs$ for epoch in 1 2 3 4 5; do echo "epoch $epoch"; sleep 2; done
 
-The demo runs with `--discard-edits`, so the step bar warns that the edit will be discarded, and moving
-on throws it away without asking. Without that flag a move asks first and stashes the edits.
+> Note: the demo runs with `--discard-edits`, so the step bar warns about the edit, and the next move
+> throws it away without asking.
 
 ## step-03 Formatting, committed
 time: 0:07
 
-The same change ruff made live at the last step, now in the history, with its rule in `pyproject.toml`.
-Show the changes view for `src/greet.py` and compare it with what the class saw.
+The change that ruff made at the last step is now in the history, and its rule is in `pyproject.toml`.
+Open `src/greet.py` in "Changes in this step", and compare it with what ruff did.
 
 $ uvx ruff format --check
 $ uvx pytest -q
@@ -49,6 +52,9 @@ $ uvx pytest -q
 ## step-04 Its types and docs
 time: 0:09
 
-Show the changes view for `src/greet.py`. The behaviour is identical; the signature now explains itself.
+Each parameter now has a type and a comment, and each function has a docstring. Open `src/greet.py` in
+"Changes in this step". The behaviour is the same, and the signature now explains itself.
+
+> Say: run the tests once more, and point out that nothing broke.
 
 $ uvx pytest -q

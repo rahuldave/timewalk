@@ -59,8 +59,9 @@ server of timewalk reads the tags when it starts. After you move a tag, restart 
 
 ## Where the class material goes
 
-Keep the slides, the notes and other material for the class outside the project. Put them in the class
-folder, with a `justfile` like this one:
+Keep the slides, the notes and other material for the class outside the project. timewalk refuses a
+notes file inside the project or its replay copy. Put the material in the class folder, with a `justfile`
+like this one:
 
 ```just
 timewalk := home_directory() / "code/timewalk"

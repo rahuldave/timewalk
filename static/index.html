@@ -10,9 +10,9 @@
   <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
-  <!-- On the presenter page only: the clock and what comes next, across the top. -->
+  <!-- With --clock: the clock and what comes next, across the top. -->
   <div id="band" class="band" hidden>
-    <span class="band-label">Presenter</span>
+    <span class="band-label">Clock</span>
     <span id="elapsed" class="elapsed">0:00</span>
     <span id="plan" class="plan"></span>
     <button id="clock-start">Start the clock</button>
@@ -31,6 +31,8 @@
     </div>
     <div class="tools">
       <span id="mode" class="mode" hidden title="timewalk was started with --discard-edits: a move throws away edits to tracked files, without asking"></span>
+      <button id="notes-toggle" hidden aria-pressed="true" title="Show or hide the notes beside the page. Each window remembers its own choice">Notes</button>
+      <button id="pdf" hidden title="Make a PDF of the slides and the notes of every step, and download it">PDF</button>
       <span id="layouts" class="layouts" role="group" aria-label="What to show" hidden>
         <button data-layout="slides" title="Slides only">Slides</button>
         <button data-layout="split" title="Slides beside the code">Both</button>
@@ -89,10 +91,24 @@
     <div id="terms" class="terms"></div>
   </section>
 
-  <!-- On the presenter page only: your notes and their commands. The projector page never asks for them. -->
+  <!-- With --notes: the notes of the step and their commands, on the right. The Notes button hides them. -->
   <aside id="notes-pane" class="notes-pane" hidden>
-    <div class="pane-head"><span id="notes-title">Notes</span></div>
-    <div class="notes-body">
+    <div class="pane-head">
+      <span id="notes-title">Notes</span>
+      <span class="notes-tools">
+        <label class="only" title="When on, a click on a command also presses Enter. When off, it only types the command, for you to read and run"><input type="checkbox" id="run-on-click"> run on click</label>
+        <button id="notes-edit" title="Edit the notes of this step, in the notes file">Edit</button>
+      </span>
+    </div>
+    <div id="notes-editor" class="notes-editor" hidden>
+      <textarea id="notes-text" spellcheck="true" aria-label="The notes of this step, as Markdown"></textarea>
+      <div class="notes-editor-tools">
+        <button id="notes-save">Save</button>
+        <button id="notes-cancel">Cancel</button>
+        <span id="notes-file" class="p-empty"></span>
+      </div>
+    </div>
+    <div class="notes-body" id="notes-body">
       <div id="notes" class="p-notes"></div>
       <h2 class="notes-h">Commands</h2>
       <div id="commands" class="p-commands"></div>

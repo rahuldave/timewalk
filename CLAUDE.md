@@ -1,95 +1,124 @@
 # timewalk
 
-A step browser for teaching a project by replaying how it was built. Each step is a git tag (by default
-`step-*`), the tag's annotated message is the note the audience sees, and the projector page shows slides,
-the files at that step, what the step changed, and real terminals in the repository as it was then. The
-presenter page (`/presenter`) is the same page with a clock band and the private notes beside it; what both
-show (step, slide, layout, open file, terminal tab) is kept by the server, so they always agree.
+timewalk is a step browser. It teaches a project through a replay of how its authors built it. Each step
+is a git tag, by default `step-*`. The message of an annotated tag is the note that the audience sees.
 
-Write every site page by the nossaifd writing guide, `docs/style/GUIDE.md`, with the glossary and the
+timewalk serves one page, at `/`. The page shows slides, the files at the step, what the step changed,
+and real terminals in the repository as it was then. With `--notes`, it shows the notes of each step in a
+column on the right. With `--clock`, it shows a clock band across the top. The old address `/presenter`
+sends the browser on to `/`.
+
+The page can be open in several windows, for example one on the projector and one on the screen of the
+presenter. The server keeps the shared state, so every window shows the same step, slide, layout, open
+file, view and terminal tab. Each window keeps its scroll position, keyboard focus and whether the notes show
+(sessionStorage); the browser keeps theme, text size, terminal height and run on click (localStorage). A shell has one size, and the window that the
+presenter last typed in sets it.
+
+Write every site page by the nossaifd writing guide, `docs/style/GUIDE.md`. Use the glossary and the
 linked headings in `docs/style/README.md`. Check with `just style`. Define jargon where it first appears.
 
-The user documentation is the site in `docs/`, published to rahuldave.com/timewalk; the README is a
-short front page that links into it. Keep both true when behaviour changes, and retake the screenshots
-(`just screenshots`) when the pages look different.
+The user documentation is the site in `docs/`, published to rahuldave.com/timewalk. The README is a short
+front page that links into the site. Keep both true when the behaviour changes. When the page looks
+different, take the screenshots again with `just screenshots`.
 
 ## Who uses it, and why it is a separate repository
 
-It was built for `~/Projects/babykev-class`, the class kit for `~/Projects/babykev`. That kit's
-`just present` runs `timewalk.py` on babykev with its `notes.md` and `slides/slides.toml`, and its
-`just handout` runs `slides_pdf.py`.
+Rahul made timewalk for `~/Projects/babykev-class`, the class kit for `~/Projects/babykev`. The kit has
+two recipes:
 
-- **Teaching infrastructure never goes in the repository students read.** That is why timewalk, the
-  slides and the notes live outside babykev. Do not add anything here that a student repo would need.
-- **Keep timewalk generic.** Nothing babykev-specific in the code. A class need becomes a general feature
-  (the `runs2$` to `runs9$` tabs came from running an ablation beside a baseline).
-- The way a class history is made, in babykev-class: one commit per step on linear `main`, an annotated
-  tag `step-NN` per commit whose message is the teaching note, fixes folded back into earlier steps and
-  the tags re-pointed (`just retag` there). timewalk must keep working when tags move between sessions.
-- A possible future mode is in `babykev-class/NARRATIVE_IDEA.md` point 4: follow a branch being rebuilt
-  live instead of checking out tags. Not started.
+- `just present` runs `timewalk.py` on babykev with its `notes.md` and `slides/slides.toml`.
+- `just handout` runs `slides_pdf.py`.
+
+Keep these points:
+
+- **Teaching infrastructure never goes in the repository that students read.** So timewalk, the slides
+  and the notes live outside babykev. Do not add anything here that a student repository would need.
+- **The notes live outside the repository that the class walks through.** timewalk refuses a notes file
+  inside the repository or inside its replay copy. A move would change the file, or throw its edits away.
+  The notes belong in the class folder or in the repository of the class material.
+- **Keep timewalk generic.** Put nothing specific to babykev in the code. A need of a class becomes a
+  general feature. For example, the `runs2$` to `runs9$` tabs came from an ablation beside a baseline.
+- **Tags move between sessions, and timewalk must keep working.** In babykev-class, the history of a class
+  has one commit per step on a linear `main`. Each commit has an annotated tag `step-NN`, and its message
+  is the note for teaching. Fixes go back into earlier steps, and `just retag` there points the tags again.
+- **A possible future mode is in `babykev-class/NARRATIVE_IDEA.md`, point 4.** It would follow a branch
+  that the presenter rebuilds live, and not check out tags. Nobody has started it.
 
 ## The demo
 
-The demo is shaped like a real class: the history in its own repository, the notes and slides outside it.
-To change the sample's history, work in the submodule (or `~/Projects/timewalk-demo`), keep one commit per
-step with an annotated `step-NN` tag, and push its `main` and tags with `--force` only after asking. Then
-commit the new submodule pointer here, and check `demo/notes.md` and `demo/slides/slides.toml` against the
-steps.
+The demo has the shape of a real class. The history is in its own repository, and the notes and slides are
+outside it. To change the history of the sample, do these steps in order:
+
+1. Work in the submodule, or in `~/Projects/timewalk-demo`.
+2. Keep one commit per step, with an annotated `step-NN` tag.
+3. Ask first. Then push its `main` and its tags with `--force`.
+4. Commit the new submodule pointer here.
+5. Check `demo/notes.md` and `demo/slides/slides.toml` against the steps.
 
 ## Rules the tool must keep
 
-These were set by Rahul. Each has tests; do not weaken them.
+Rahul set these rules. Each rule has tests. Do not weaken them.
 
-- **The repository you point at is never moved.** Stepping happens in a `<repo>-replay` git worktree.
+- **The repository you point at never moves.** timewalk steps in a `<repo>-replay` git worktree.
   `--in-place` is the only exception.
-- **An untracked file is never deleted or overwritten.** Run outputs (`.venv`, `mlflow.db`, `runs/`) must
-  survive moving between steps. If a later step has a tracked file where an untracked one sits, refuse.
-- **An edit is never discarded.** Moving with edits asks first, then `git stash`es them with the step name.
-  The one exception is asked for by name: `--discard-edits`, for a throwaway replay copy, makes a move
-  `git checkout --force`, and both pages warn in the step bar. It is refused with `--in-place`.
-- **The file view cannot write.** No route changes a file.
-- **Localhost only, a fresh token per launch, other Host headers refused.** Every page, API call, socket
-  and static asset needs the token. Only the presenter page asks for the notes.
+- **timewalk never deletes or overwrites an untracked file.** Run outputs, for example `.venv`,
+  `mlflow.db` and `runs/`, must stay through every move. If a later step has a tracked file where an
+  untracked file sits, refuse.
+- **timewalk never discards an edit.** A move with edits asks first, and then runs `git stash` with the
+  step name. The one exception is the flag `--discard-edits`, for a replay copy that you throw away. With
+  it, a move runs `git checkout --force`, and the step bar of every window warns. timewalk refuses it with
+  `--in-place`.
+- **The file view cannot write.** No route changes a file in the repository or the replay copy. The one
+  file that the page writes is the notes file. **Save** in the notes column sends one section to
+  `POST /api/notes`. The server writes only that section, and refuses if the section changed in the file
+  since the page read it. The terminals write files as any terminal does.
+- **Localhost by default, a new token at each start, and other Host headers refused.** Every page, API
+  call, socket and static asset needs the token. `--host` (for a cloud machine) listens beyond this machine:
+  timewalk then warns at start and accepts any Host header, so the token is the only guard. Keep the
+  default, and keep recommending an SSH tunnel over `--host 0.0.0.0` in the docs.
 
 ## Layout
 
 | File | What it is |
 |---|---|
 | `timewalk.py` | The whole server, one file: `git()`, `Repo` (steps, worktree, moves, diffs, reads), notes and slides parsers, `Terminal` (a pty), `Hub` (events to pages), `make_app` (Starlette routes) |
-| `slides_pdf.py` | The PDF handout, drawn by headless Chrome or Edge |
-| `static/` | `index.html`/`app.js` (the page, at `/` and, with notes and clock, at `/presenter`), `print.*` (for the PDF), `common.js`, `app.css` |
+| `slides_pdf.py` | The PDF of the slides and, with `--with-notes`, the notes, drawn by Chrome or Edge through Playwright. The **PDF** button calls it through `/api/pdf` |
+| `static/` | `index.html`/`app.js` (the page, at `/`), `print.*` (for the PDF), `common.js`, `app.css` |
 | `static/vendor/` | ghostty-web, highlight.js, marked, each with its licence. Vendored: do not edit |
-| `tests/test_timewalk.py` | The git layer, notes and slides, the app's guards, a real terminal |
+| `tests/test_timewalk.py` | The git layer, notes and slides, the guards of the app, a real terminal |
 | `demo/timewalk-demo` | A git submodule: the sample repository, five tagged steps, at github.com/rahuldave/timewalk-demo. Its replay copy, `demo/timewalk-demo-replay`, is ignored |
 | `docs/` | The site: one Markdown page per topic, `build.py` (the order is its `PAGES` list), `site.css`, `screenshots.py`, `images/`. `_site/` is built and ignored. `.github/workflows/pages.yml` publishes it |
-| `demo/notes.md`, `demo/slides/` | The demo's presenter notes and slides. They stay here, outside the sample, as a class kit does |
+| `demo/notes.md`, `demo/slides/` | The notes and slides of the demo. They stay here, outside the sample, as in a class kit |
 
-There is no `pyproject.toml`. The scripts carry their dependencies as inline script metadata (PEP 723)
-and run with `uv run`. The test dependencies are listed in the `justfile`.
+There is no `pyproject.toml`. The scripts carry their dependencies as inline script metadata (PEP 723),
+and they run with `uv run`. The dependencies of `timewalk.py` are Starlette, uvicorn, websockets,
+Playwright and pypdf. The `justfile` lists the dependencies of the tests.
 
 ## Commands
 
-Use the recipes, not the commands behind them.
+Use the recipes, and not the commands behind them.
 
 ```
 just test            # all tests; extra arguments go to pytest: just test -k slides
 just lint            # ruff
-just demo            # fetch the sample submodule if needed, and open it
+just demo            # fetch the sample submodule if needed, and open it with --discard-edits and --clock
 just walk <repo> ... # run timewalk on a repository
 just pdf <manifest> -o out.pdf --title "..."
 just screenshots     # retake docs/images from a throwaway clone of the demo
 just site            # build docs/_site and serve it at http://127.0.0.1:8000
 ```
 
-The test that hung once was a terminal test waiting on output from `/api/type`. Terminal tests type
-through the socket.
+If port 8765 is in use, timewalk stops with a message. Give `--port` with another number.
+
+A terminal test once hung while it waited for output from `/api/type`. The terminal tests type through the
+socket.
 
 ## Conventions
 
-- Python 3.11+, ruff with line length 150 (`ruff.toml`). Plain stdlib plus Starlette and uvicorn.
-- Dataclass fields get the same trailing comment. Every function is typed and documented in the docments style: one comment per parameter and on the
-  return, and a one-line docstring.
+- Python 3.11+, ruff with line length 150 (`ruff.toml`). Plain stdlib, with Starlette, uvicorn, Playwright
+  and pypdf.
+- Dataclass fields get the same trailing comment. Type and document every function in the docments style.
+  Give one comment per parameter and one on the return, and a docstring of one line.
 
   ```python
   def git(
@@ -98,22 +127,24 @@ through the socket.
   ) -> str:  # What git printed, without the trailing newline
       "Run git and return its output, raising `GitError` with git's own message when it fails."
   ```
-- Prose (README, docstrings, commit messages, UI text) is plain: short sentences, concrete names, no
-  jargon. Match the README's voice.
-- A new notes-line kind or slide-entry kind needs: the parser, a test, the README table, and the
-  presenter or projector code that uses it.
+- Keep prose plain in the README, docstrings, commit messages and the text of the page. Write short
+  sentences and concrete names, with no jargon. Match the voice of the README.
+- A new kind of notes line or slide entry needs four things. They are the parser, a test, the table in the
+  site, and the code of the page that uses it.
 
 ## Checking a change
 
-1. `just test` and `just lint`.
-2. For anything in `static/`, drive both pages in headless Chrome through a throwaway clone of the demo
-   (`git clone ~/Projects/timewalk-demo` into the scratchpad), not `demo/timewalk-demo-replay`, which may
-   hold Rahul's own edits. Go through every step and slide,
-   and type in a terminal. Playwright with `channel="chrome"` works. Safari and Firefox are not checked.
+1. Run `just test` and `just lint`.
+2. For anything in `static/`, drive the page in headless Chrome, in two windows, through a throwaway clone
+   of the demo. Run `git clone ~/Projects/timewalk-demo` into the scratchpad. Do not use
+   `demo/timewalk-demo-replay`, which can hold edits of Rahul.
+3. Go through every step and slide, and type in a terminal. Playwright with `channel="chrome"` works.
+   Nobody checks Safari or Firefox.
 
 ## Commits
 
-- End every commit message with the line `Coded using Claude`. No `Co-Authored-By` or session lines.
-  This is Rahul's rule and overrides the default attribution.
-- Subject says what changed; the body says why, in the README's voice.
-- **Ask before every commit.** Once Rahul approves a commit, push `main` to github.com/rahuldave/timewalk without asking again.
+- End every commit message with the line `Coded using Claude`. Add no `Co-Authored-By` or session lines.
+  Rahul set this rule, and it overrides the default attribution.
+- The subject says what changed. The body says why, in the voice of the README.
+- **Ask before every commit.** After Rahul approves a commit, push `main` to github.com/rahuldave/timewalk
+  and do not ask again.

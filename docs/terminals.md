@@ -18,10 +18,12 @@ A shell starts the first time you open its tab. The shell continues to run when 
 steps and when you reload the page. When a page connects again, it gets the recent output of the shell
 again.
 
-The presenter page shows the same shells as the projector page, and not copies of them. When you type on
-either page, the keys go to the one shell, and both pages show its output. The two pages also share the
-tab in front. The projector page sets the size of each shell. The presenter page draws the shell in the
-space it has, so a long line can wrap at a different place there.
+Every window on the page shows the same shells, and not copies of them. For example, you can open one
+window on the projector and one on your own screen. When you type in either window, the keys go to the one
+shell, and every window shows its output. The windows also share the tab in front.
+
+A shell has one size. The window that you last typed in sets it. Another window draws the shell in the
+space that it has, so a long line can wrap at a different place there.
 
 ## At this step and Main
 
@@ -38,7 +40,7 @@ the page never shows that change.
 ## Runs
 
 **Runs** is for a command that takes a long time, for example a training run. The command continues in
-**Runs** while you work in **At this step**. A `runs$` line in the notes file sends its command to **Runs**.
+**Runs** while you work in **At this step**. A `runs$` line in the notes file types its command into **Runs**.
 The lines `runs2$` to `runs9$` open more Runs tabs, for a second or third long command at the same time.
 
 When a tab prints output while another tab is in front, the tab gets a dot. The dot tells you that a run
@@ -99,8 +101,9 @@ questions about the code at the current commit. `--assistant aider` starts a dif
 
 The page keeps the arrow keys, for steps and slides, until you click in a terminal. Then that terminal
 gets every key, and shows a blue edge. To give the keys back to the page, click anywhere else. A terminal
-also gets the keys when you change to its tab, or when a command comes to it from the presenter page. Alt
-with an arrow key moves the steps and slides, also from inside a terminal.
+also gets the keys when you change to its tab. A click on a command in the notes column also gives its
+terminal the keys, in the window where you clicked. Alt with an arrow key moves the steps and slides, also
+from inside a terminal.
 
 ![No edge: the page has the keys](images/terminal-unfocused.png)
 

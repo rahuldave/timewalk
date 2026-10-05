@@ -18,8 +18,8 @@ things happen:
 - The reader shows a third view, **Edits since the step**. The view shows the diff of the file against the
   commit of the step. A diff is the list of lines that changed.
 - A click on an edited file opens it in the **Edits since the step** view.
-- The presenter page shows the same. If you open a file on the presenter page, it also opens on the
-  projector.
+- Every window on the page shows the same. If you open a file in the window on your screen, it also
+  opens in the window on the projector.
 
 ![The file list after ruff format at step-02, with one edited file](images/edits-tree.png)
 
@@ -64,7 +64,7 @@ step tracks a file with the same name. Every other untracked file stays.
 Use the flag when you do not need to keep anything that the class typed in the replay copy. `just demo`
 uses the flag.
 
-Both pages show the flag in the step bar. With no edits, the step bar shows a quiet note:
+Every window shows the flag in the step bar. With no edits, the step bar shows a quiet note:
 
 ![The step bar with --discard-edits and no edits, which shows a note](images/discard-moved.png)
 
@@ -80,7 +80,7 @@ work that you have not committed, so the flag would throw that work away.
 
 An edit is a change to a **tracked** file, which is a file that the commit of the step has. A command can
 also write new files, for example a `.venv`, a database or the output of a run. Git does not track these
-new files. They are not edits, the pages do not show them, and a move never touches them. See
+new files. They are not edits, the page does not show them, and a move never touches them. See
 [The replay copy](replay.md).
 
 timewalk does not watch for edits in the repository of the **Main** tab, because the page never shows that
@@ -90,4 +90,4 @@ repository. See [The terminals](terminals.md).
 
 The edits watcher is the part of the server that looks for edits. It checks the replay copy once a second
 with `git status`, and it also checks the size and time of each edited file. When anything changes, the
-server tells both pages. The diff comes from `git diff HEAD -- <file>` in the replay copy.
+server tells every window. The diff comes from `git diff HEAD -- <file>` in the replay copy.

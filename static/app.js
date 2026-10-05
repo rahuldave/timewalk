@@ -1,12 +1,11 @@
-// The projector page, and the presenter page: the same page, which on /presenter adds the notes, and the clock band
-// when timewalk was started with --clock.
-// What both show (step, slide, layout, open file and view, terminal tab) is kept by the server, so they agree.
+// The page: step bar, slides, files, reader, terminals, and, with --notes, the notes beside them; with --clock, a clock
+// band on top. Every window that opens the page shows the same step, slide, layout, open file and terminal tab,
+// because the server keeps them. Each window keeps its own theme, text size, notes toggle and run-on-click setting.
 import { init, Terminal, FitAddon } from "/static/vendor/ghostty-web/ghostty-web.js";
 import { api, socket, onEvents, escapeHtml, settings, stepLabel, drawSlide, isDoc, renderMarkdown } from "/static/common.js";
 
 const $ = (id) => document.getElementById(id);
-const PRESENTER = location.pathname.startsWith("/presenter");
-const PAGE = Math.random().toString(36).slice(2);   // tells this page's own requests apart from the other page's
+const PAGE = Math.random().toString(36).slice(2);   // tells this window's own requests apart from another window's
 const LANGUAGES = { py: "python", toml: "ini", cfg: "ini", ini: "ini", yaml: "yaml", yml: "yaml", json: "json", jsonl: "json", md: "markdown",
   qmd: "markdown", sh: "bash", zsh: "bash", js: "javascript", ts: "typescript", html: "xml", css: "css", lua: "lua", lock: "ini" };
 const TERM_THEMES = {
@@ -36,7 +35,8 @@ const ui = {
   theme: settings.get("theme", "light"),
   size: settings.get("size", 14),
   layout: "split",        // "slides", "split" or "code", as the server says; only used when there are slides
-  notes: {},              // the presenter's notes, on the presenter page only
+  notes: {},              // the notes of every step, when timewalk has a notes file
+  editing: null,          // while the notes are edited: the step, and its section as it was read
   notesPath: null,
   skew: 0,                // the server's clock minus this one's
 };
@@ -49,9 +49,11 @@ async function refresh() {
   ui.skew = ui.state.now - Date.now() / 1000;
   drawSteps();
   drawSlides();
-  await Promise.all([loadTree(), loadRecipes(), PRESENTER ? loadNotes() : null]);
+  await Promise.all([loadTree(), loadRecipes(), ui.state.has_notes ? loadNotes() : null]);
   if (ui.open) await openFile(ui.open, ui.view, false);
-  if (PRESENTER) { drawNotes(); drawBand(); }
+  drawNotes();
+  drawBand();
+  drawTools();
 }
 
 /** Ask the server to change what both pages show. The change comes back to this page as an event too. */
@@ -80,7 +82,7 @@ function drawSteps() {
   $("note").textContent = here ? here.note : "";
   $("prev").disabled = current === null || current === 0;
   $("next").disabled = current !== null && current === steps.length - 1;
-  document.title = (here ? `${here.name} · ` : "") + (PRESENTER ? "timewalk presenter" : "timewalk");
+  document.title = (here ? `${here.name} | ` : "") + "timewalk";
   list.querySelector(".here")?.scrollIntoView({ block: "nearest", inline: "center" });
 }
 
@@ -321,13 +323,7 @@ function drawRecipes() {
   const list = ui.recipes[track] || [];
   const holder = $("recipes");
   holder.replaceChildren();
-  if (!list.length) {
-    const none = document.createElement("span");
-    none.className = "label";
-    none.textContent = "no justfile here";
-    holder.append(none);
-    return;
-  }
+  if (!list.length) return;   // no justfile in this folder: no recipe buttons, and no label
   const label = document.createElement("span");
   label.className = "label";
   label.textContent = "just";
@@ -377,7 +373,7 @@ function selectTab(id, focus = false) {
   for (const [other, { el }] of ui.terms) el.hidden = other !== id;
   drawRecipes();
   if (focus) ui.keysToTerminal = true;
-  requestAnimationFrame(() => { entry.fit.fit(); if (focus) entry.term.focus(); });
+  requestAnimationFrame(() => { entry.fit.fit(); if (focus) { entry.term.focus(); entry.sendSize(true); } });
 }
 
 function startTerminal(id) {
@@ -391,9 +387,11 @@ function startTerminal(id) {
   term.open(el);
   const ws = socket("/ws/term/" + id);
   ws.binaryType = "arraybuffer";
-  // The projector sets the shell's size. The presenter page shows the same shell and leaves its size alone.
-  const sendSize = () => !PRESENTER && ws.readyState === WebSocket.OPEN && ws.send(JSON.stringify({ type: "resize", rows: term.rows, cols: term.cols }));
-  ws.onopen = () => { fit.fit(); sendSize(); };
+  // A shell has one size. The window you last typed in sets it; a window that only shows the shell leaves it alone,
+  // so two windows of different sizes do not fight over it.
+  const sendSize = (force = false) => (force || ui.keysToTerminal) && ws.readyState === WebSocket.OPEN &&
+    ws.send(JSON.stringify({ type: "resize", rows: term.rows, cols: term.cols }));
+  ws.onopen = () => { fit.fit(); sendSize(true); };
   ws.onmessage = (event) => {
     term.write(typeof event.data === "string" ? event.data : new Uint8Array(event.data));
     // A tab that printed something while another was in front gets a dot, so a finished run is noticed.
@@ -406,7 +404,7 @@ function startTerminal(id) {
   term.onData((data) => ws.readyState === WebSocket.OPEN && ws.send(JSON.stringify({ type: "input", data })));
   term.onResize(sendSize);
   new ResizeObserver(() => { if (!el.hidden) fit.fit(); }).observe(el);
-  const entry = { term, fit, ws, el };
+  const entry = { term, fit, ws, el, sendSize };
   ui.terms.set(id, entry);
   return entry;
 }
@@ -448,6 +446,8 @@ function applyAppearance() {
 function guardKeys() {
   document.addEventListener("mousedown", (event) => {
     ui.keysToTerminal = event.target instanceof Element && !!event.target.closest(".term-pane");
+    // The window you type in sets the size of the shell, so a click in a terminal claims it.
+    if (ui.keysToTerminal) ui.terms.get(ui.active)?.sendSize(true);
   }, true);
   $("terms").addEventListener("focusin", () => {
     if (!ui.keysToTerminal) requestAnimationFrame(() => document.activeElement?.closest(".term-pane") && document.activeElement.blur());
@@ -482,8 +482,11 @@ function wireControls() {
     if (event.key === "ArrowRight") { event.preventDefault(); $("next").click(); }
     if (event.key === "ArrowLeft") { event.preventDefault(); $("prev").click(); }
     // With one slide or a document, plain Up and Down are left to scroll.
-    if (event.key === "ArrowDown" && (manySlides || event.altKey)) { event.preventDefault(); $("slide-next").click(); }
-    if (event.key === "ArrowUp" && (manySlides || event.altKey)) { event.preventDefault(); $("slide-prev").click(); }
+    // On a document, plain Up and Down scroll it, even when the step has other slides. Alt with them changes slide.
+    const onDoc = isDoc(ui.state?.slides?.[ui.state?.slide]);
+    const changeSlide = event.altKey || (manySlides && !onDoc);
+    if (event.key === "ArrowDown" && changeSlide) { event.preventDefault(); $("slide-next").click(); }
+    if (event.key === "ArrowUp" && changeSlide) { event.preventDefault(); $("slide-prev").click(); }
     if (event.defaultPrevented) event.stopPropagation();   // a key used here is not also typed into a terminal
   }, true);   // capture: seen before the terminal, which keeps the keys it handles to itself
   // drag the bar between the reader and the terminal
@@ -504,7 +507,80 @@ function wireControls() {
 
 // ---------- start ----------
 
-// ---------- the presenter page: notes and the clock ----------
+// ---------- the notes, the PDF button and the clock ----------
+
+/** Show the Notes and PDF buttons when there is something for them, and the notes column if this window wants it. */
+// Whether this window hides the notes. Kept per tab, not per browser, so a projector window and your own window
+// in the same browser can differ.
+const notesHidden = {
+  get() { try { return sessionStorage.getItem("timewalk.notes-hidden") === "1"; } catch { return false; } },
+  set(value) { try { sessionStorage.setItem("timewalk.notes-hidden", value ? "1" : "0"); } catch { /* not remembered */ } },
+};
+
+function drawTools() {
+  const { has_notes: hasNotes, has_slides: hasSlides } = ui.state;
+  const shown = hasNotes && !notesHidden.get();
+  $("notes-toggle").hidden = !hasNotes;
+  $("notes-toggle").setAttribute("aria-pressed", String(shown));
+  $("pdf").hidden = !(hasNotes || hasSlides);
+  $("notes-pane").hidden = !shown;
+  document.body.classList.toggle("with-notes", shown);
+  $("run-on-click").checked = settings.get("run-on-click", false);
+  for (const entry of ui.terms.values()) if (!entry.el.hidden) requestAnimationFrame(() => entry.fit.fit());
+}
+
+async function makePdf() {
+  const button = $("pdf");
+  button.disabled = true;
+  button.textContent = "Making the PDF...";
+  try {
+    const response = await fetch("/api/pdf", { cache: "no-store" });
+    if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || response.statusText);
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(await response.blob());
+    link.download = (response.headers.get("content-disposition") || "").match(/filename="([^"]+)"/)?.[1] || "timewalk.pdf";
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href), 60000);
+  } catch (error) {
+    showNotice("The PDF could not be made: " + error.message, true);
+  } finally {
+    button.disabled = false;
+    button.textContent = "PDF";
+  }
+}
+
+function startEditing() {
+  const here = ui.state.current === null ? null : ui.state.steps[ui.state.current];
+  if (!here) return;
+  ui.editing = { step: here.name, base: ui.notes[here.name]?.raw || "" };
+  $("notes-text").value = ui.editing.base;
+  $("notes-file").textContent = (ui.notesPath || "").split("/").pop();
+  $("notes-file").title = ui.notesPath || "";
+  $("notes-editor").hidden = false;
+  $("notes-body").hidden = true;
+  $("notes-edit").hidden = true;
+  $("notes-text").focus();
+}
+
+function stopEditing() {
+  ui.editing = null;
+  $("notes-editor").hidden = true;
+  $("notes-body").hidden = false;
+  $("notes-edit").hidden = false;
+}
+
+async function saveNotes() {
+  const { step, base } = ui.editing;
+  try {
+    await api("/api/notes", { step, base, text: $("notes-text").value });
+    stopEditing();
+    await loadNotes();
+    drawNotes();
+    drawBand();
+  } catch (error) {
+    showNotice(error.message, true);
+  }
+}
 
 async function loadNotes() {
   const notes = await api("/api/notes");
@@ -521,7 +597,8 @@ function drawNotes() {
   const { steps, current } = ui.state;
   const here = current === null ? null : steps[current];
   const mine = here ? ui.notes[here.name] : null;
-  $("notes-title").textContent = here ? `${here.name} · ${mine?.title || here.subject}` : "between steps";
+  $("notes-title").textContent = here ? `${here.name}, ${mine?.title || here.subject}` : "between steps";
+  $("notes-edit").hidden = !!ui.editing || !here;
   if (mine?.text) $("notes").innerHTML = renderMarkdown(mine.text);
   else $("notes").innerHTML = `<p class="p-empty">${ui.notesPath
     ? `No notes for ${escapeHtml(here?.name || "this step")} in ${escapeHtml(ui.notesPath)}. Add a section headed "## ${escapeHtml(here?.name || "step-name")}".`
@@ -537,8 +614,9 @@ function drawNotes() {
     const extra = /^runs([2-9])$/.exec(command.track);
     track.textContent = extra ? `Runs ${extra[1]}` : { main: "Main", runs: "Runs" }[command.track] || "at this step";
     button.append(text, track);
-    button.title = "Types this into that terminal and runs it, on both pages";
-    button.onclick = () => api("/api/type", { track: command.track, text: command.text }).catch((error) => showNotice(error.message, true));
+    button.title = "Types this into that terminal. With run on click, it also presses Enter";
+    button.onclick = () => api("/api/type", { track: command.track, text: command.text, enter: $("run-on-click").checked, from: PAGE })
+      .catch((error) => showNotice(error.message, true));
     commands.append(button);
   }
   if (!commands.children.length) commands.innerHTML = `<span class="p-empty">None. In the notes, "$ " starts a command at this step, "runs$ " one for the Runs tab, "main$ " one in Main.</span>`;
@@ -572,12 +650,14 @@ function drawBand() {
 
 // ---------- start ----------
 
-if (PRESENTER) {
-  document.body.classList.add("presenter");
-  $("notes-pane").hidden = false;
-  $("clock-start").onclick = () => api("/api/clock", { action: ui.state.clock ? "reset" : "start" });
-  setInterval(drawBand, 1000);
-}
+$("clock-start").onclick = () => api("/api/clock", { action: ui.state.clock ? "reset" : "start" });
+$("notes-toggle").onclick = () => { notesHidden.set(!notesHidden.get()); drawTools(); };
+$("pdf").onclick = makePdf;
+$("run-on-click").onchange = () => settings.set("run-on-click", $("run-on-click").checked);
+$("notes-edit").onclick = startEditing;
+$("notes-cancel").onclick = stopEditing;
+$("notes-save").onclick = saveNotes;
+setInterval(drawBand, 1000);
 applyAppearance();
 guardKeys();
 wireControls();
@@ -592,11 +672,12 @@ onEvents(async (event) => {
     if (ui.open) await openFile(ui.open, ui.view, false);
   }
   if (event.type === "slide") { ui.state = await api("/api/state"); drawSlides(); }
-  if (event.type === "clock" && PRESENTER) { ui.state = await api("/api/state"); ui.skew = ui.state.now - Date.now() / 1000; drawBand(); }
+  if (event.type === "notes" && !ui.editing) { await loadNotes(); drawNotes(); drawBand(); }
+  if (event.type === "clock") { ui.state = await api("/api/state"); ui.skew = ui.state.now - Date.now() / 1000; drawBand(); }
   if (event.type === "show") {
     if (event.layout && event.layout !== ui.layout) applyLayout(event.layout);
     if (event.path) await openFile(event.path, event.view || "file");
-    // The page that asked keeps the keys it had. A command sent from the presenter page gives the projector's terminal the keys.
-    if (event.track) selectTab(event.track, event.from === PAGE || (event.focus === "audience" && !PRESENTER));
+    // The window that asked gets the keys: a tab it clicked, or a command it typed from the notes.
+    if (event.track) selectTab(event.track, event.from === PAGE);
   }
 });

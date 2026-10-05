@@ -1,4 +1,4 @@
-// Shared by the audience page and the presenter page: the token, the API, and the event stream.
+// Shared by the page and the print page: the token, the API, the event stream, and drawing slides.
 import { marked } from "/static/vendor/marked/marked.esm.js";
 
 export const token = new URLSearchParams(location.search).get("t") || "";

@@ -48,8 +48,9 @@ let timewalk move.
   replay copy where all that you type is for one use only. With the flag, a move runs `git checkout -f`.
   It drops edits without a question. It replaces an untracked file only where the step has a file of the
   same name.
-- **The file view cannot write.** No route of the server changes a file. The terminals can change files,
-  as any terminal can.
+- **The file view cannot write.** No route of the server changes a file in your repository or the replay
+  copy. The one route that writes is **Save** in the notes column, and it writes only the notes file. The
+  notes file must be outside both copies. The terminals can change files, as any terminal can.
 
 ## Files that stay in the replay copy
 

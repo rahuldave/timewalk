@@ -1,33 +1,35 @@
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["starlette>=0.40", "uvicorn>=0.30", "websockets>=13"]
+# dependencies = ["starlette>=0.40", "uvicorn>=0.30", "websockets>=13", "playwright>=1.45", "pypdf>=5"]
 # ///
 """timewalk: browse a repository one commit at a time, with a terminal that runs in it.
 
     uv run timewalk.py /path/to/repo                    steps are the tags matching step-*
-    uv run timewalk.py /path/to/repo --notes notes.md   add private notes for a presenter view
+    uv run timewalk.py /path/to/repo --notes notes.md   add the notes, the script of each step, beside the page
     uv run timewalk.py /path/to/repo --slides slides.toml   add slides, one or more per step
     uv run timewalk.py /path/to/repo --tags 'v*'        steps are other tags
     uv run timewalk.py /path/to/repo --commits          steps are the commits on the current branch
     uv run timewalk.py /path/to/repo --in-place         step the repository itself, not a second copy
     uv run timewalk.py /path/to/repo --discard-edits    a move throws edits away instead of asking; for a replay copy
-    uv run timewalk.py /path/to/repo --clock            show the clock band on the presenter page
+    uv run timewalk.py /path/to/repo --clock            show the clock band, for a class with planned times
+    uv run timewalk.py /path/to/repo --port 8800        listen on another port
+    uv run timewalk.py /path/to/repo --host 0.0.0.0     listen beyond this machine, for a cloud machine; see the warning
 
-Two pages are served. The audience page, for the projector, shows slides for the step, the files as they are at that step, which of
-them that step added or changed, and terminal tabs built on Ghostty's terminal core: one in the repository at
+One page is served, at one address. It shows the slides for the step, the files as they are at that step, which
+of them that step added or changed, and terminal tabs built on Ghostty's terminal core: one in the repository at
 that step, a second one there for commands that take a while, one in the repository you started from, one that
-starts an assistant (Claude Code by default) at that step so you can ask it what the code is at this commit, and
-as many extra shells as you open. Files can be read,
-not edited. The presenter page, for your own screen, is the same page with a clock band on top and your notes
-for the step beside it. What the two show (the step, the slide, the layout, the open file, the terminal tab) is
-kept here, so whatever is done on either page happens on both.
+starts an assistant (Claude Code by default) at that step, and as many extra shells as you open. Files can be read,
+not edited. With --notes, a column beside them shows the notes, the script of each step, with its commands as
+buttons; a toggle there edits the step's section of the notes file. With --clock, a band across the top shows a
+clock against the planned times. Several windows can show the page at once: the step, slide, layout, open file
+and terminal tab are kept here, so they all agree.
 
 By default the stepping happens in a second working copy, `<repo>-replay`, made with `git worktree`, so the
 repository you point at is never moved. Moving never deletes an untracked file, so whatever a command wrote
 there (a virtual environment, a database, a run's output) stays where it is.
 
-The server listens on localhost only and every request needs the token in the address it prints, because a
-terminal in a web page is a way to run commands on this machine.
+The server listens on localhost only, unless --host says otherwise, and every request needs the token in the
+address it prints, because a terminal in a web page is a way to run commands on this machine.
 """
 
 import argparse
@@ -40,6 +42,7 @@ import pty
 import re
 import secrets
 import shutil
+import socket
 import struct
 import subprocess
 import sys
@@ -54,7 +57,7 @@ from pathlib import Path
 import uvicorn
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import FileResponse, JSONResponse, Response
+from starlette.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from starlette.routing import Mount, Route, WebSocketRoute
 from starlette.staticfiles import StaticFiles
 from starlette.websockets import WebSocket, WebSocketDisconnect
@@ -260,10 +263,16 @@ class Repo:
 def recipes(
     directory: Path,  # Where to look for a justfile
 ) -> list[dict]:  # Public recipes, in the order the justfile lists them
-    "List the `just` recipes available in a directory, or nothing when there is no justfile or no `just`."
-    if not shutil.which("just"):
+    """List the `just` recipes of the justfile in a directory, or nothing when it has none or there is no `just`.
+
+    Only a justfile in the directory itself counts. `just` on its own would search the parent directories too,
+    and list the recipes of some other project that happens to contain this one.
+    """
+    justfile = next((directory / name for name in ("justfile", "Justfile", ".justfile") if (directory / name).is_file()), None)
+    if justfile is None or not shutil.which("just"):
         return []
-    done = subprocess.run(["just", "--dump", "--dump-format", "json"], cwd=directory, capture_output=True, text=True)
+    done = subprocess.run(["just", "--justfile", str(justfile), "--working-directory", str(directory), "--dump", "--dump-format", "json"],
+                          cwd=directory, capture_output=True, text=True)
     if done.returncode != 0:
         return []
     out = []
@@ -277,9 +286,9 @@ def recipes(
 
 
 def parse_notes(
-    text: str,  # The presenter's notes file
-) -> dict[str, dict]:  # Step name to its notes: planned start, commands, and the prose
-    """Read presenter notes. They are private: only the presenter page asks for them.
+    text: str,  # The notes file
+) -> dict[str, dict]:  # Step name to its notes: planned start, commands, the prose, and the section as written
+    """Read the notes: the script of each step, shown on the page beside the step.
 
     The file is Markdown. `## step-name` starts the notes for a step. Inside a step:
 
@@ -290,21 +299,23 @@ def parse_notes(
         runs2$ just sweep     the same in a further Runs tab (runs2 to runs9), for a second long command while
                               the first is still going
         main$ git log         a command for the terminal in the repository you started from
+        > Say: ...            a cue; shown with the prose, set apart in its own shade
 
-    Every other line is prose, shown as written.
+    Every other line is prose, shown as written. `raw` keeps the section as written, below its heading, for editing.
     """
     notes: dict[str, dict] = {}
     current: dict | None = None
     for line in text.splitlines():
         heading = re.match(r"^##\s+(\S+)", line)
         if heading:
-            current = notes.setdefault(heading.group(1), {"time": None, "commands": [], "text": []})
+            current = notes.setdefault(heading.group(1), {"time": None, "commands": [], "text": [], "raw": []})
             title = line[heading.end():].strip()
             if title:
                 current["title"] = title
             continue
         if current is None:
             continue
+        current["raw"].append(line)
         planned = re.match(r"^time:\s*(\d+):(\d\d)\s*$", line.strip())
         command = re.match(r"^\s*(main|runs[2-9]?)?\$\s+(.+)$", line)
         if planned:
@@ -315,7 +326,33 @@ def parse_notes(
             current["text"].append(line)
     for entry in notes.values():
         entry["text"] = "\n".join(entry["text"]).strip()
+        entry["raw"] = "\n".join(entry["raw"]).strip("\n")
     return notes
+
+
+def replace_section(
+    text: str,  # The whole notes file
+    step: str,  # The step whose section to replace
+    body: str,  # The new section, below its heading
+) -> str:  # The notes file with that section replaced, or added at the end if the step had none
+    "Put a new body under one step's `## step` heading, leaving every other line of the file as it was."
+    lines = text.split("\n")
+    start = next((i for i, line in enumerate(lines) if re.match(rf"^##\s+{re.escape(step)}(\s|$)", line)), None)
+    new = body.strip("\n").split("\n") if body.strip() else []
+    if start is None:
+        return text.rstrip("\n") + f"\n\n## {step}\n\n" + "\n".join(new) + "\n"
+    end = next((i for i in range(start + 1, len(lines)) if re.match(r"^##\s", lines[i])), len(lines))
+    tail = lines[end:]
+    return "\n".join(lines[:start + 1] + new + ([""] if tail else []) + tail).rstrip("\n") + "\n"
+
+
+def notes_inside(
+    repo: "Repo",  # The repository being browsed
+    path: Path,  # A notes file
+) -> bool:  # Whether the file is inside the repository or its replay copy
+    "Notes belong outside the repository the class walks through: a move would change them, or throw them away."
+    path = path.resolve()
+    return any(path.is_relative_to(folder.resolve()) for folder in {repo.main, repo.work})
 
 
 def split_slides(
@@ -505,7 +542,7 @@ class Terminal:
 
 
 class Hub:
-    "Tells every open page when something changed, so the audience page follows the presenter."
+    "Tells every open window when something changed, so all of them show the same thing."
 
     def __init__(self) -> None:
         self.pages: set[WebSocket] = set()
@@ -544,11 +581,12 @@ def make_app(
     repo: Repo,  # The repository to browse
     token: str,  # Secret every request must carry
     port: int,  # Port the server listens on, for checking where requests come from
-    notes_path: Path | None = None,  # The presenter's notes file, if there is one
+    notes_path: Path | None = None,  # The notes file, the script of each step, if there is one
     assistant: str = "claude",  # Command started in the assistant tab; empty for a plain shell
     slides_path: Path | None = None,  # The slides manifest, if there is one
     watch_every: float = 1.0,  # Seconds between looks for edits in the working copy
-    show_clock: bool = False,  # Show the clock band on the presenter page
+    show_clock: bool = False,  # Show the clock band on the page
+    any_host: bool = False,  # Accept requests addressed to any host name, when timewalk listens beyond this machine
 ) -> Starlette:  # The web application
     "Build the web application: the two pages, the read-only repository API, the terminals, and the event hub."
     terminals: dict[str, Terminal] = {}
@@ -564,7 +602,7 @@ def make_app(
         return terminals[name]
     hub = Hub()
     clock: dict[str, float | None] = {"started": None}
-    # What both pages show, kept here so the projector and the presenter page always agree.
+    # What every window shows, kept here so that all the windows on the page agree.
     showing: dict = {"slide": 0, "layout": "split", "path": None, "view": "file", "track": "replay"}
 
     def slides_now() -> list[str]:  # The slides of the step the working copy is at
@@ -575,10 +613,14 @@ def make_app(
 
     def allowed(
         request: Request | WebSocket,  # Incoming request or socket
-    ) -> bool:  # Whether it carries the token and came to localhost
-        "Refuse anything that does not carry the token or was not addressed to this machine."
+    ) -> bool:  # Whether it carries the token and was addressed to this machine
+        """Refuse anything that does not carry the token, or, on this machine only, was addressed to another host name.
+
+        The host check stops a hostile web page that points a name of its own at 127.0.0.1. When timewalk listens
+        beyond this machine (--host), people reach it by an IP address or a DNS name, so only the token guards it.
+        """
         given = request.query_params.get("t") or request.headers.get("x-timewalk-token", "") or request.cookies.get("timewalk", "")
-        return secrets.compare_digest(given, token) and request.headers.get("host", "") in hosts
+        return secrets.compare_digest(given, token) and (any_host or request.headers.get("host", "") in hosts)
 
     def guarded(handler):
         async def wrapper(request: Request) -> Response:
@@ -620,7 +662,7 @@ def make_app(
         deck = slides_now()
         showing["slide"] = min(showing["slide"], max(len(deck) - 1, 0))
         return {**repo.state(), "clock": clock["started"], "now": time.time(), "slides": deck, "slide": showing["slide"],
-                "has_slides": bool(load_slides(slides_path)), "show_clock": show_clock, "layout": showing["layout"], "path": showing["path"],
+                "has_slides": bool(load_slides(slides_path)), "has_notes": notes_path is not None, "show_clock": show_clock, "layout": showing["layout"], "path": showing["path"],
                 "view": showing["view"], "track": showing["track"]}
 
     @guarded
@@ -660,10 +702,45 @@ def make_app(
 
     @guarded
     async def notes(request: Request) -> dict:
-        "The presenter's notes, read afresh so they can be edited while presenting."
+        "The notes, read afresh, so the file can be edited while the class runs."
         if notes_path is None or not notes_path.is_file():
             return {"notes": {}, "path": str(notes_path) if notes_path else None}
         return {"notes": parse_notes(notes_path.read_text(encoding="utf-8")), "path": str(notes_path)}
+
+    @guarded
+    async def save_notes(request: Request) -> dict:
+        "Write one step's section of the notes file, if nobody changed that section since the page read it."
+        if notes_path is None:
+            raise GitError("timewalk was started without --notes, so there is no notes file to save to")
+        body = await request.json()
+        step, text, base = str(body["step"]), str(body["text"]), str(body.get("base", ""))
+        current = notes_path.read_text(encoding="utf-8") if notes_path.is_file() else ""
+        now = parse_notes(current).get(step, {}).get("raw", "")
+        if now.strip() != base.strip():
+            raise GitError(f"the notes for {step} changed in {notes_path.name} since this page read them. Copy your text, reload, and edit again")
+        notes_path.write_text(replace_section(current, step, text), encoding="utf-8")
+        await hub.tell({"type": "notes"})
+        return {"ok": True}
+
+    async def pdf(request: Request) -> Response:
+        "Make a PDF of the slides and the notes, as the handout would be, and send it to download."
+        if not allowed(request):
+            return JSONResponse({"error": "missing or wrong token"}, status_code=403)
+        if slides_path is None and notes_path is None:
+            return JSONResponse({"error": "there are no slides and no notes to put in a PDF"}, status_code=404)
+        import slides_pdf  # imported here: slides_pdf imports this module
+
+        try:
+            data = await asyncio.to_thread(slides_pdf.make_pdf, slides_path, notes_path, repo.main.name, True)
+        except SystemExit as exc:
+            return JSONResponse({"error": str(exc)}, status_code=500)
+        return Response(data, media_type="application/pdf",
+                        headers={"content-disposition": f'attachment; filename="{repo.main.name}.pdf"', "cache-control": "no-store"})
+
+    async def presenter(request: Request) -> Response:
+        "The old presenter address: there is one page now, so go there, keeping the token."
+        query = request.url.query
+        return RedirectResponse("/" + (f"?{query}" if query else ""), status_code=307)
 
     @guarded
     async def show(request: Request) -> dict:
@@ -691,7 +768,7 @@ def make_app(
             raise GitError(f"there is no terminal called {track}")
         term.write(body["text"] + ("\r" if body.get("enter", True) else ""))
         showing["track"] = track
-        await hub.tell({"type": "show", "track": track, "focus": "audience", "layout": showing["layout"]})
+        await hub.tell({"type": "show", "track": track, "from": body.get("from", ""), "focus": "sender", "layout": showing["layout"]})
         return {"ok": True}
 
     @guarded
@@ -726,7 +803,7 @@ def make_app(
             term.clients.discard(socket)
 
     async def events(socket: WebSocket) -> None:
-        "Keep a page informed of moves and of what the presenter asked to show."
+        "Keep a window informed of moves, and of what another window asked to show."
         if not allowed(socket):
             await socket.close(code=4403)
             return
@@ -755,7 +832,7 @@ def make_app(
 
     return Starlette(lifespan=lifespan, routes=[
         Route("/", page("index.html")),
-        Route("/presenter", page("index.html")),  # the same page, which adds the notes and the clock there
+        Route("/presenter", presenter),
         Route("/api/state", state),
         Route("/api/tree", tree),
         Route("/api/file", file),
@@ -763,6 +840,8 @@ def make_app(
         Route("/api/slide", slide, methods=["POST"]),
         Route("/api/recipes", just_recipes),
         Route("/api/notes", notes),
+        Route("/api/notes", save_notes, methods=["POST"]),
+        Route("/api/pdf", pdf),
         Route("/api/show", show, methods=["POST"]),
         Route("/api/type", type_command, methods=["POST"]),
         Route("/api/clock", set_clock, methods=["POST"]),
@@ -773,18 +852,20 @@ def make_app(
 
 
 def main() -> None:
-    "Parse the command line, start the server and open the audience page."
+    "Parse the command line, start the server and open the page."
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("repo", type=Path, nargs="?", default=Path.cwd(), help="the repository to browse (default: here)")
-    parser.add_argument("--notes", type=Path, help="a Markdown file of private presenter notes, one `## step-name` section per step")
+    parser.add_argument("--notes", type=Path, help="a Markdown file of notes, the script of each step, in one `## step-name` section per step; outside the repository")
     parser.add_argument("--slides", type=Path, help="a TOML manifest of slides: [slides] step-name = [\"file.md\", \"deck.pdf#page=2\"]")
     parser.add_argument("--tags", default="step-*", help="glob for the tags that mark steps (default: step-*)")
     parser.add_argument("--commits", action="store_true", help="step through the commits of the current branch instead of tags")
     parser.add_argument("--in-place", action="store_true", help="move the repository itself instead of a second working copy")
     parser.add_argument("--discard-edits", action="store_true", help="a move throws uncommitted edits away instead of asking and stashing them; meant for a replay copy")
-    parser.add_argument("--clock", action="store_true", help="show the clock band on the presenter page: the clock, planned times and the next step")
+    parser.add_argument("--clock", action="store_true", help="show the clock band: the clock, the planned times and the next step")
     parser.add_argument("--assistant", default="claude", help="command started in the assistant terminal tab (default: claude)")
-    parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--port", type=int, default=8765, help="the port to listen on (default: 8765)")
+    parser.add_argument("--host", default="127.0.0.1", help="the address to listen on (default: 127.0.0.1, this machine only). "
+                        "0.0.0.0 listens on every network: anyone who can reach the port and has the address can run commands as you")
     parser.add_argument("--no-open", action="store_true", help="do not open the browser")
     args = parser.parse_args()
 
@@ -792,18 +873,31 @@ def main() -> None:
         repo = Repo(args.repo.resolve(), tags=args.tags, commits=args.commits, in_place=args.in_place, discard=args.discard_edits)
     except GitError as exc:
         raise SystemExit(f"timewalk: {exc}") from None
-    token = secrets.token_urlsafe(16)
-    base = f"http://127.0.0.1:{args.port}"
-    print(f"timewalk: {len(repo.steps)} steps in {repo.main}")
-    print(f"timewalk: stepping in {repo.work}")
-    print(f"timewalk: audience   {base}/?t={token}")
-    print(f"timewalk: presenter  {base}/presenter?t={token}", flush=True)
-    if not args.no_open:
-        webbrowser.open(f"{base}/?t={token}")
     notes_path = args.notes.resolve() if args.notes else None
     slides_path = args.slides.resolve() if args.slides else None
-    uvicorn.run(make_app(repo, token, args.port, notes_path, args.assistant, slides_path, show_clock=args.clock),
-                host="127.0.0.1", port=args.port, log_level="warning")
+    if notes_path is not None and notes_inside(repo, notes_path):
+        raise SystemExit(f"timewalk: the notes file {notes_path} is inside the repository or its replay copy. Keep the notes "
+                         "outside it: a move would change them, or throw your edits away.")
+    local = args.host in ("127.0.0.1", "localhost", "::1")
+    with socket.socket(socket.AF_INET6 if ":" in args.host else socket.AF_INET) as probe:
+        try:
+            probe.bind((args.host, args.port))
+        except OSError as exc:
+            raise SystemExit(f"timewalk: cannot listen on {args.host} port {args.port} ({exc.strerror}). If another timewalk "
+                             "uses the port, stop it, or pass --port with another number.") from None
+    token = secrets.token_urlsafe(16)
+    shown = "127.0.0.1" if local else (socket.gethostname() if args.host in ("0.0.0.0", "::") else args.host)
+    address = f"http://{shown}:{args.port}/?t={token}"
+    print(f"timewalk: {len(repo.steps)} steps in {repo.main}")
+    print(f"timewalk: stepping in {repo.work}")
+    if not local:
+        print(f"timewalk: WARNING: listening on {args.host}, beyond this machine. Anyone who can reach port {args.port} and has the")
+        print("timewalk: address below can run commands as you. The connection is not encrypted. An SSH tunnel is safer.")
+    print(f"timewalk: open       {address}", flush=True)
+    if not args.no_open and local:
+        webbrowser.open(address)
+    uvicorn.run(make_app(repo, token, args.port, notes_path, args.assistant, slides_path, show_clock=args.clock, any_host=not local),
+                host=args.host, port=args.port, log_level="warning")
 
 
 if __name__ == "__main__":

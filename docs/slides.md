@@ -54,7 +54,7 @@ horizontal rule inside a slide, write `***`.
 ![What the picture shows](pictures/shape.svg)
 ```
 
-Keep a slide to about six bullets or one table. On the projector page, a long slide scrolls. In the PDF,
+Keep a slide to about six bullets or one table. On the page, a long slide scrolls. In the PDF,
 the slide shrinks to fit its page.
 
 The server reads the manifest and the slide files again each time it shows a slide. So you can edit them
@@ -66,7 +66,7 @@ A step under `[docs]` shows one whole Markdown file in the slide pane:
 
 - The document does not split at `---`. There, `---` is a usual horizontal rule.
 - The document keeps the text size of the slides, and the pane keeps its size. So the document scrolls.
-- Both pages hide the slide arrows, and the Up and Down keys scroll the document.
+- The page hides the slide arrows, and the Up and Down keys scroll the document.
 - The document replaces any `[slides]` entry for that step.
 
 Use a document for a walkthrough, a reading, a comparison, or other text that is too long for a slide. For
@@ -74,7 +74,25 @@ example, step-03 of the demo shows the document `demo/slides/formatting.md`.
 
 ![A document in the slide pane: it scrolls, and has no slide arrows](images/document.png)
 
+### A document among slides
+
+To put a document among the slides of a step, add `#doc` to its entry under `[slides]`:
+
+```toml
+[slides]
+step-05 = ["talk.md#4", "walkthrough.md#doc", "talk.md#5"]
+```
+
+On the document, **Up** and **Down** scroll it, even though the step has other slides. To change the
+slide, press Alt with **Up** or **Down**, or click a slide arrow.
+
 ## A PDF of the slides
+
+The **PDF** button in the step bar makes a PDF of the slides, with the notes of each step after its
+slides. The browser then downloads it. timewalk draws the PDF with the browser on your machine, through
+Playwright, so it takes a few seconds.
+
+To make the PDF from the command line, run `slides_pdf.py`:
 
 ```
 uv run slides_pdf.py slides/slides.toml -o handout.pdf --title "My talk" --notes notes.md
@@ -87,9 +105,29 @@ the step and the page.
 - A slide with too much content shrinks to fit its page.
 - The pages of a PDF deck come directly from that PDF.
 - A document continues over as many pages as it needs, under the name of its step.
-- The command reads `--notes` only for the title of each step, for the footer. It uses nothing else from
-  the notes file.
+- Without `--with-notes`, the command reads `--notes` only for the title of each step, for the footer.
+
+### The notes in the PDF
+
+Add `--with-notes` to put the notes of each step after its slides, as the **PDF** button does:
+
+```
+uv run slides_pdf.py slides/slides.toml --notes notes.md --with-notes
+```
+
+The notes show the prose, the cues in their own shade, and the commands in code blocks. The PDF leaves out
+the `time:` lines.
+
+The manifest is optional with `--with-notes`. Without a manifest, the PDF holds only the notes, as a
+runbook. A runbook is a written script of each step, with its prose and commands. The command writes
+`notes.pdf` beside the notes file:
+
+```
+uv run slides_pdf.py --notes notes.md --with-notes
+```
+
+### What the command needs
 
 The command needs Chrome or Edge, and it finds either one on your machine. If you have neither, run
 `uvx playwright install chromium` one time. In the timewalk folder,
-`just pdf slides/slides.toml -o handout.pdf` does the same thing.
+`just pdf slides/slides.toml -o handout.pdf` does the same thing as the first command.

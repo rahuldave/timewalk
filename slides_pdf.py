@@ -2,18 +2,21 @@
 # requires-python = ">=3.11"
 # dependencies = ["starlette>=0.40", "uvicorn>=0.30", "websockets>=13", "playwright>=1.45", "pypdf>=5"]
 # ///
-"""Make one PDF of every slide in a timewalk slides manifest, to hand out.
+"""Make one PDF of the slides and, if asked, the notes of every step, to hand out.
 
-    uv run slides_pdf.py slides.toml                         writes slides.pdf beside the manifest
+    uv run slides_pdf.py slides.toml                                    writes slides.pdf beside the manifest
     uv run slides_pdf.py slides.toml -o handout.pdf --title "babykev" --notes notes.md
+    uv run slides_pdf.py slides.toml --notes notes.md --with-notes      each step's notes after its slides
+    uv run slides_pdf.py --notes notes.md --with-notes                  the notes alone, as a runbook
 
-Slides come out in step order, one per page, and in the manifest's order within a step, whatever they are written in: Markdown slides and
-pictures are drawn exactly as the step browser draws them, and pages of a PDF deck are copied from that PDF.
-A document (a step under the manifest's [docs], or an entry ending in `#doc`) is printed whole, over as many
-pages as it needs, headed by its step. Each drawn slide has a footer with the deck title, the step it belongs to
-and a page number. With --notes, the
-footer also carries each step's title from the notes file's `## step-name Title` headings; nothing else is read
-from the notes, which stay private.
+Steps come out in step order. Within a step, the slides come in the manifest's order, one per page, whatever they
+are written in: Markdown slides and pictures are drawn as the page draws them, and pages of a PDF deck are copied
+from that PDF. A document (a step under the manifest's [docs], or an entry ending in `#doc`) is printed whole,
+over as many pages as it needs. With --with-notes, each step's notes follow its slides, over as many pages as
+they need: the prose, the `>` cues in their own shade, and the commands in code blocks. Each drawn slide has a
+footer with the deck title, the step and a page number; with --notes the footer also has each step's title.
+
+The page in timewalk has a PDF button that makes the same PDF, with the notes.
 
 It needs a Chromium-family browser to do the drawing and uses the Google Chrome or Microsoft Edge already
 installed. If there is neither, run `uvx playwright install chromium` once.
@@ -21,6 +24,7 @@ installed. If there is neither, run `uvx playwright install chromium` once.
 
 import argparse
 import io
+import re
 import socket
 import threading
 import time
@@ -39,22 +43,49 @@ from starlette.staticfiles import StaticFiles
 
 from timewalk import HERE, load_slides, parse_notes
 
+COMMAND = re.compile(r"^\s*(main|runs[2-9]?)?\$\s+(.+)$")
+
+
+def notes_markdown(
+    raw: str,  # A step's section of the notes, as written
+) -> str:  # The same as Markdown for the page: commands in code blocks, no planned time
+    "Turn a section of the notes into Markdown to print: each run of command lines becomes one code block."
+    out: list[str] = []
+    block: list[str] = []
+    for line in raw.split("\n"):
+        if re.match(r"^time:\s*\d+:\d\d\s*$", line.strip()):
+            continue
+        if COMMAND.match(line):
+            block.append(line.strip())
+            continue
+        if block:
+            out += ["```", *block, "```"]
+            block = []
+        out.append(line)
+    if block:
+        out += ["```", *block, "```"]
+    return "\n".join(out).strip()
+
 
 def deck_of(
-    manifest: Path,  # The slides manifest
-    notes: Path | None,  # The presenter's notes, read only for step titles
+    manifest: Path | None,  # The slides manifest, if there is one
+    notes: Path | None,  # The notes file, if there is one: its step titles, and with `with_notes` its text
     title: str,  # The deck's title, for the footer
-) -> dict:  # The deck: its title and, per step, the step's title and slides
-    "Describe the whole deck in the manifest's order."
-    titles = {name: entry.get("title", "") for name, entry in parse_notes(notes.read_text(encoding="utf-8")).items()} if notes else {}
+    with_notes: bool = False,  # Print each step's notes after its slides
+) -> dict:  # The deck: its title and, per step, the step's title, slides and notes
+    "Describe the whole deck, step by step."
+    parsed = parse_notes(notes.read_text(encoding="utf-8")) if notes and notes.is_file() else {}
+    slides = load_slides(manifest) if manifest else {}
+    names = set(slides) | (set(parsed) if with_notes else set())
     # In step-name order, as timewalk orders the steps, so a step under [docs] falls among the [slides] steps.
-    steps = [{"name": name, "title": titles.get(name, ""), "slides": slides} for name, slides in sorted(load_slides(manifest).items())]
+    steps = [{"name": name, "title": parsed.get(name, {}).get("title", ""), "slides": slides.get(name, []),
+              "notes": notes_markdown(parsed[name]["raw"]) if with_notes and name in parsed else ""} for name in sorted(names)]
     return {"title": title, "steps": steps}
 
 
 def serve(
     deck: dict,  # What `deck_of` returned
-    folder: Path,  # The manifest's folder, where the slide files are
+    folder: Path | None,  # The manifest's folder, where the slide files are, if there is a manifest
 ) -> tuple[uvicorn.Server, int]:  # The running server and its port
     "Serve the print page on a free local port, for the few seconds the export takes."
     async def print_page(request: Request) -> FileResponse:
@@ -67,7 +98,7 @@ def serve(
         Route("/print", print_page),
         Route("/api/deck", deck_json),
         Mount("/static", StaticFiles(directory=HERE / "static")),
-        Mount("/slides", StaticFiles(directory=folder)),
+        *([Mount("/slides", StaticFiles(directory=folder))] if folder else []),
     ])
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
@@ -82,8 +113,9 @@ def serve(
 def draw(
     port: int,  # Where the print page is served
     docs: list[str],  # The document entries of the deck, each printed on its own
-) -> tuple[bytes, dict[str, bytes]]:  # A PDF with one page for every slide that is neither a PDF page nor a document; a PDF per document
-    "Open the print page in a headless browser and print it, then print each document over as many pages as it needs."
+    notes: list[str] = (),  # The steps whose notes are printed, each on its own
+) -> tuple[bytes, dict[str, bytes], dict[str, bytes]]:  # The slides' PDF, a PDF per document, a PDF per step's notes
+    "Open the print page in a headless browser and print it, then each document and each step's notes over as many pages as they need."
     with sync_playwright() as p:
         browser = None
         for channel in ("chrome", "msedge", None):
@@ -107,17 +139,19 @@ def draw(
 
         slides = printed(f"http://127.0.0.1:{port}/print")
         documents = {doc: printed(f"http://127.0.0.1:{port}/print?doc={quote(doc)}") for doc in dict.fromkeys(docs)}
+        written = {step: printed(f"http://127.0.0.1:{port}/print?notes={quote(step)}") for step in notes}
         browser.close()
-        return slides, documents
+        return slides, documents, written
 
 
 def assemble(
     deck: dict,  # What `deck_of` returned
     drawn: bytes,  # The slides' PDF from `draw`
     documents: dict[str, bytes],  # The documents' PDFs from `draw`
-    folder: Path,  # The manifest's folder
-) -> PdfWriter:  # The handout, with every slide in the manifest's order
-    "Interleave the drawn pages with the documents' pages and pages copied from PDF decks."
+    written: dict[str, bytes],  # Each step's notes as a PDF, from `draw`
+    folder: Path | None,  # The manifest's folder
+) -> PdfWriter:  # The handout: each step's slides in the manifest's order, then its notes
+    "Interleave the drawn pages with the documents' pages, pages copied from PDF decks, and each step's notes."
     pages = iter(PdfReader(io.BytesIO(drawn)).pages)
     out = PdfWriter()
     sources: dict[str, PdfReader] = {}
@@ -140,38 +174,57 @@ def assemble(
                 if not 0 <= index < len(source.pages):
                     raise SystemExit(f"slides_pdf: {path} has {len(source.pages)} pages; the manifest asks for page {wanted}")
                 out.add_page(source.pages[index])
+        for page in PdfReader(io.BytesIO(written[step["name"]])).pages if step["name"] in written else []:
+            out.add_page(page)
     if next(pages, None) is not None:
         raise SystemExit("slides_pdf: the browser drew more pages than there are slides; a slide may have spilled onto a second page")
     return out
 
 
+def make_pdf(
+    manifest: Path | None,  # The slides manifest, if there is one
+    notes: Path | None,  # The notes file, if there is one
+    title: str,  # A title for the footer of every page
+    with_notes: bool = False,  # Print each step's notes after its slides
+) -> bytes:  # The PDF
+    "Make the whole PDF: draw it in a browser, copy in PDF pages, and join the parts in step order."
+    deck = deck_of(manifest, notes, title, with_notes)
+    if not any(step["slides"] or step["notes"] for step in deck["steps"]):
+        raise SystemExit("slides_pdf: there is nothing to print: no slides, and no notes")
+    folder = manifest.parent if manifest else None
+    server, port = serve(deck, folder)
+    try:
+        docs = [entry for step in deck["steps"] for entry in step["slides"] if entry.endswith("#doc")]
+        drawn, documents, written = draw(port, docs, [step["name"] for step in deck["steps"] if step["notes"]])
+        handout = assemble(deck, drawn, documents, written, folder)
+    finally:
+        server.should_exit = True
+    handout.add_metadata({"/Title": title})
+    buffer = io.BytesIO()
+    handout.write(buffer)
+    return buffer.getvalue()
+
+
 def main() -> None:
     "Parse the command line and write the PDF."
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("manifest", type=Path, help="the slides manifest, a TOML file")
-    parser.add_argument("-o", "--output", type=Path, help="the PDF to write (default: slides.pdf beside the manifest)")
-    parser.add_argument("--notes", type=Path, help="a notes file; only its step titles are used, in the footer")
+    parser.add_argument("manifest", type=Path, nargs="?", help="the slides manifest, a TOML file (optional with --with-notes)")
+    parser.add_argument("-o", "--output", type=Path, help="the PDF to write (default: slides.pdf beside the manifest, or notes.pdf beside the notes)")
+    parser.add_argument("--notes", type=Path, help="a notes file: its step titles go in the footer, and with --with-notes its text is printed")
+    parser.add_argument("--with-notes", action="store_true", help="print each step's notes after its slides, cues and commands included")
     parser.add_argument("--title", default="", help="a title for the footer of every page")
     args = parser.parse_args()
 
-    manifest = args.manifest.resolve()
-    if not manifest.is_file():
+    manifest = args.manifest.resolve() if args.manifest else None
+    notes = args.notes.resolve() if args.notes else None
+    if manifest is not None and not manifest.is_file():
         raise SystemExit(f"slides_pdf: {manifest} does not exist")
-    deck = deck_of(manifest, args.notes, args.title)
-    count = sum(len(step["slides"]) for step in deck["steps"])
-    if not count:
-        raise SystemExit(f"slides_pdf: {manifest} lists no slides under [slides] or [docs]")
-    server, port = serve(deck, manifest.parent)
-    try:
-        docs = [entry for step in deck["steps"] for entry in step["slides"] if entry.endswith("#doc")]
-        handout = assemble(deck, *draw(port, docs), manifest.parent)
-    finally:
-        server.should_exit = True
-    output = (args.output or manifest.with_name("slides.pdf")).resolve()
-    handout.add_metadata({"/Title": args.title or manifest.parent.name})
-    with output.open("wb") as file:
-        handout.write(file)
-    print(f"slides_pdf: wrote {len(handout.pages)} pages for {len(deck['steps'])} steps to {output}")
+    if manifest is None and not (notes and args.with_notes):
+        raise SystemExit("slides_pdf: give a slides manifest, or --notes with --with-notes, or both")
+    data = make_pdf(manifest, notes, args.title or (manifest or notes).parent.name, args.with_notes)
+    output = (args.output or (manifest.with_name("slides.pdf") if manifest else notes.with_name("notes.pdf"))).resolve()
+    output.write_bytes(data)
+    print(f"slides_pdf: wrote {len(PdfReader(io.BytesIO(data)).pages)} pages to {output}")
 
 
 if __name__ == "__main__":

@@ -1,5 +1,6 @@
 """Tests for timewalk: the git layer, the notes and slides readers, and the web application's guards."""
 
+import shutil
 import subprocess
 import sys
 import time
@@ -497,6 +498,13 @@ def test_every_route_needs_the_token(served: TestClient) -> None:
     assert served.post("/api/type", json={"text": "echo no"}).status_code == 403
 
 
+def test_listening_beyond_this_machine_accepts_any_host_name_but_still_needs_the_token(repo: timewalk.Repo) -> None:
+    "With --host, people reach timewalk by an IP or a DNS name, so the host check is off, and the token is the guard."
+    app = TestClient(timewalk.make_app(repo, TOKEN, PORT, assistant="", any_host=True), headers={"host": f"10.0.0.5:{PORT}"})
+    assert app.get("/api/state", params={"t": TOKEN}).status_code == 200
+    assert app.get("/api/state", params={"t": "wrong"}).status_code == 403
+
+
 def test_requests_to_another_host_are_refused(served: TestClient) -> None:
     "The right token sent to a different host name is refused, which stops a hostile page that rebinds a name to localhost."
     assert served.get("/api/state", params={"t": TOKEN}, headers={"host": "evil.example:8765"}).status_code == 403
@@ -594,10 +602,76 @@ def test_the_clock_band_is_off_unless_asked_for(served: TestClient, repo: timewa
     assert with_clock.get("/api/state", params=auth).json()["show_clock"] is True
 
 
-def test_the_presenter_page_is_the_projector_page(served: TestClient) -> None:
-    "/presenter serves the same page; the script adds the notes and the clock there."
+def test_the_old_presenter_address_goes_to_the_one_page(served: TestClient) -> None:
+    "There is one page now. /presenter sends the browser there, with the token, so old links still work."
+    response = served.get("/presenter", params={"t": TOKEN}, follow_redirects=False)
+    assert response.status_code == 307 and response.headers["location"] == f"/?t={TOKEN}"
+
+
+def test_state_says_if_there_are_notes(served: TestClient, repo: timewalk.Repo) -> None:
+    "The page shows the notes column, the Notes toggle and the PDF button only when timewalk has a notes file."
+    assert served.get("/api/state", params={"t": TOKEN}).json()["has_notes"] is True
+    bare = TestClient(timewalk.make_app(repo, TOKEN, PORT, assistant=""), headers=HOST)
+    assert bare.get("/api/state", params={"t": TOKEN}).json()["has_notes"] is False
+
+
+def test_a_section_of_the_notes_is_saved_and_the_rest_kept(served: TestClient, tmp_path: Path) -> None:
+    "Saving writes one step's section; a stale page is refused, so two writers never overwrite each other."
     auth = {"t": TOKEN}
-    assert served.get("/presenter", params=auth).text == served.get("/", params=auth).text
+    notes = tmp_path / "notes.md"
+    before = notes.read_text()
+    base = served.get("/api/notes", params=auth).json()["notes"]["step-01"]["raw"]
+    assert served.post("/api/notes", params=auth, json={"step": "step-01", "base": base, "text": "> Say: hello\n\n$ ls"}).json() == {"ok": True}
+    after = timewalk.parse_notes(notes.read_text())
+    assert after["step-01"]["raw"] == "> Say: hello\n\n$ ls" and after["step-01"]["commands"] == [{"track": "replay", "text": "ls"}]
+    assert after["step-00"] == timewalk.parse_notes(before)["step-00"], "other steps are untouched"
+    stale = served.post("/api/notes", params=auth, json={"step": "step-01", "base": base, "text": "mine"})
+    assert stale.status_code == 409 and "changed" in stale.json()["error"]
+    served.post("/api/notes", params=auth, json={"step": "step-09", "base": "", "text": "New notes."})
+    assert timewalk.parse_notes(notes.read_text())["step-09"]["text"] == "New notes."
+
+
+def test_replace_section_keeps_the_layout_of_the_file() -> None:
+    "Only the lines of one section change; the headings and the other sections stay as written."
+    text = "# Notes\n\n## step-00 Start\ntime: 0:00\n\nOld.\n\n## step-01\n\nKeep me.\n"
+    out = timewalk.replace_section(text, "step-00", "time: 0:00\n\nNew.")
+    assert out == "# Notes\n\n## step-00 Start\ntime: 0:00\n\nNew.\n\n## step-01\n\nKeep me.\n"
+
+
+def test_notes_inside_the_repository_are_refused(repo: timewalk.Repo, tmp_path: Path) -> None:
+    "Notes belong outside the repository the class walks through, and outside its replay copy."
+    assert timewalk.notes_inside(repo, repo.main / "notes.md")
+    assert timewalk.notes_inside(repo, repo.work / "docs" / "notes.md")
+    assert not timewalk.notes_inside(repo, tmp_path / "class" / "notes.md")
+
+
+def test_recipes_come_only_from_the_folders_own_justfile(tmp_path: Path) -> None:
+    "A justfile in a parent folder is some other project's, so its recipes are not listed."
+    if not shutil.which("just"):
+        pytest.skip("just is not installed")
+    (tmp_path / "justfile").write_text("# The parent's recipe\nparent:\n    echo parent\n")
+    child = tmp_path / "child"
+    child.mkdir()
+    assert timewalk.recipes(child) == []
+    (child / "justfile").write_text("# The child's recipe\nmine:\n    echo mine\n")
+    assert [r["name"] for r in timewalk.recipes(child)] == ["mine"]
+
+
+def test_the_pdf_has_each_steps_notes_after_its_slides(tmp_path: Path) -> None:
+    "With notes, a step's notes follow its slides, commands in code blocks and the planned time left out."
+    import slides_pdf
+
+    notes = tmp_path / "notes.md"
+    notes.write_text("## step-00 Start\ntime: 0:00\n\n> Say: hello\n\nRead this.\n\n$ ls\nruns$ just train\n\n## step-02 Later\n\nOnly notes.\n")
+    manifest = tmp_path / "slides.toml"
+    manifest.write_text('[slides]\nstep-00 = ["a.svg"]\nstep-01 = ["b.svg"]\n')
+    deck = slides_pdf.deck_of(manifest, notes, "T", with_notes=True)
+    assert [(s["name"], s["slides"]) for s in deck["steps"]] == [("step-00", ["a.svg"]), ("step-01", ["b.svg"]), ("step-02", [])]
+    assert deck["steps"][0]["notes"] == "> Say: hello\n\nRead this.\n\n```\n$ ls\nruns$ just train\n```"
+    assert deck["steps"][1]["notes"] == "" and deck["steps"][2]["notes"] == "Only notes."
+    assert all(s["notes"] == "" for s in slides_pdf.deck_of(manifest, notes, "T")["steps"]), "without with_notes, no notes are printed"
+
+
 
 
 def test_notes_are_served_only_by_their_own_route(served: TestClient) -> None:

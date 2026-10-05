@@ -1,14 +1,14 @@
 # Development
 
 timewalk is a few files, and it has no build step. The server is one Python file that you run with
-`uv run`. `uv run` reads the dependencies of the server from the file itself. The pages are plain HTML, CSS
-and JavaScript modules.
+`uv run`. `uv run` reads the dependencies of the server from the file itself. They are Starlette, uvicorn,
+websockets, and Playwright and pypdf for the PDF. The pages are plain HTML, CSS and JavaScript modules.
 
 | File | What it is |
 |---|---|
 | `timewalk.py` | The server. It holds the git layer (`Repo`), the readers for notes and slides, the terminals, the edits watcher and the web application |
-| `slides_pdf.py` | The PDF export |
-| `static/` | The page (`index.html`, `app.js`), served at `/` for the projector page and at `/presenter` with the notes and the clock. Also the print page, `common.js` and `app.css` |
+| `slides_pdf.py` | The PDF export. The **PDF** button of the page uses it too |
+| `static/` | The page (`index.html`, `app.js`), served at `/`. The old address `/presenter` sends the browser on to `/`. Also the print page, `common.js` and `app.css` |
 | `static/vendor/` | ghostty-web, highlight.js and marked, each with its licence |
 | `tests/test_timewalk.py` | The tests |
 | `demo/` | The demo submodule, with its notes and slides |
@@ -30,7 +30,8 @@ The tests build small repositories of their own. They check that timewalk never 
 - write through the file view
 - answer a request without the token
 
-To check a change to the pages, drive both pages in headless Chrome against a clone of the demo. Headless Chrome is Chrome that runs without a window. Throw the
+To check a change to the page, drive it in headless Chrome against a clone of the demo. Headless Chrome is
+Chrome that runs without a window. Open the page in two windows, and check that they agree. Throw the
 clone away after the check.
 
 ## The site
@@ -45,7 +46,7 @@ order of its `PAGES` list. A GitHub Action builds the site on every push to `mai
 site to GitHub Pages.
 
 `screenshots.py` clones the demo into a temporary folder and serves the clone with timewalk. Then it drives
-both pages in headless Chrome. It uses bash and a short prompt, so nothing personal shows. When the pages
+the page in headless Chrome. It uses bash and a short prompt, so nothing personal shows. When the pages
 change, take the pictures again.
 
 ## The writing guide

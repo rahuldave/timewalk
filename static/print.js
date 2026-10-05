@@ -1,12 +1,30 @@
 // Lays out every slide of the deck, one per page, for printing to PDF. Pages of a PDF deck are not drawn here:
 // the exporter copies those pages straight from their file. A document (an entry ending in #doc) is not drawn
 // here either: the exporter prints each one separately, as /print?doc=entry, so that it can run over several pages.
-import { drawSlide, isDoc } from "/static/common.js";
+// The notes of a step are printed the same way, as /print?notes=step.
+import { drawSlide, isDoc, renderMarkdown } from "/static/common.js";
 
 const deck = await (await fetch("/api/deck")).json();
 document.title = deck.title || "Slides";
 const only = new URLSearchParams(location.search).get("doc");
-if (only) {
+const notesOf = new URLSearchParams(location.search).get("notes");
+if (notesOf) {
+  // One step's notes, flowing from page to page: the prose, the cues in their own shade, the commands as code.
+  const step = deck.steps.find((s) => s.name === notesOf) || { name: notesOf, title: "", notes: "" };
+  const margins = document.createElement("style");
+  margins.textContent = "@page { margin: 40px 0 36px; }";
+  document.head.append(margins);
+  const head = document.createElement("p");
+  head.className = "doc-head";
+  head.textContent = [deck.title, step.name, step.title, "notes"].filter(Boolean).join(" | ");
+  const box = document.createElement("div");
+  box.className = "doc-print notes-print";
+  const text = document.createElement("div");
+  text.className = "slide-md slide-doc";
+  text.innerHTML = renderMarkdown(step.notes || "");
+  box.append(text);
+  document.body.append(head, box);
+} else if (only) {
   // One document, flowing from page to page, headed by the step it belongs to.
   const step = deck.steps.find((s) => s.slides.includes(only)) || { name: "", title: "" };
   const margins = document.createElement("style");
