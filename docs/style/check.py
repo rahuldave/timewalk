@@ -96,8 +96,8 @@ def check(path: Path) -> tuple[list[str], list[str]]:  # Hard problems, soft not
     for line, raw, kind in blocks(path.read_text(encoding="utf-8")):
         text = plain(raw)
         where = f"{line}"
-        for mark, name in (("—", "an em dash"), ("–", "an en dash"), ("·", "a middle dot"),
-                           ("“", "a curly quote"), ("”", "a curly quote"), ("‘", "a curly quote"), ("’", "a curly quote")):
+        for mark, name in (("\u2014", "an em dash"), ("\u2013", "an en dash"), ("\u00b7", "a middle dot"),
+                           ("\u201c", "a curly quote"), ("\u201d", "a curly quote"), ("\u2018", "a curly quote"), ("\u2019", "a curly quote")):
             if mark in text:
                 hard.append(f"{where}: {name}")
         if kind == "head":
