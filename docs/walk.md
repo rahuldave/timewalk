@@ -33,21 +33,28 @@ git push origin --tags
 
 ## Make the kit
 
-The kit holds four files. Make a repository called `bla-walk` with these files, and push it to GitHub.
+Make a repository called `bla-walk` with these files, and push it to GitHub.
 
 | File | Holds |
 |---|---|
 | `walk.md` | The notes of every step, as in [Notes](notes.md). The notes go to students, so remove your private cues first |
 | `slides/` | The slides and the manifest, if the walk has slides. See [Slides and documents](slides.md) |
-| `.gitignore` | The two folders that the kit makes on each machine, `repo/` and `worktree/` |
+| `.gitignore` | The two folders that the kit makes on each machine, `repo/` and `worktree/`, and the PDF of the student, `walk.pdf` |
+| `bla.pdf` | Optional. A PDF of the walk as you wrote it, for students who only want to read |
 | `justfile` | The recipes `present`, `setup` and `pdf` |
 
-The `.gitignore` has two lines:
+The `.gitignore` has three lines:
 
 ```
 /repo/
 /worktree/
+/walk.pdf
 ```
+
+`just pdf` writes `walk.pdf`, the PDF of the notes of the student. Git ignores it, so a student's own PDF
+never shows as a change in their fork. If the kit ships a PDF, give it another name, for example
+`bla.pdf`. Then the two PDFs never collide, and a pull of your update never conflicts with the PDF of a
+student.
 
 The `justfile` names the project, its upstream owner on GitHub, and the version of timewalk. Change the
 first three lines for your project, and keep the rest:
