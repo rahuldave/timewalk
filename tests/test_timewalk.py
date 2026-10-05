@@ -242,6 +242,23 @@ def test_edits_are_set_aside_not_discarded(repo: timewalk.Repo) -> None:
     assert "edited" in run_git(repo.work, "stash", "show", "--patch", "stash@{0}")
 
 
+def test_discard_throws_edits_away_and_replaces_only_the_files_the_step_has(sample: Path) -> None:
+    "With --discard-edits a move never asks: edits go, a new file the step has is replaced, any other new file stays."
+    repo = timewalk.Repo(sample, discard=True)
+    repo.move(1)
+    (repo.work / "src" / "greet.py").write_text("edited\n")
+    (repo.work / "tests").mkdir()
+    (repo.work / "tests" / "test_greet.py").write_text("mine\n")  # step-02 has this file
+    (repo.work / "scratch.txt").write_text("keep\n")  # no step has this one
+    repo.move(2)
+    assert repo.current() == 2
+    assert repo.edits() == []
+    assert "edited" not in (repo.work / "src" / "greet.py").read_text()
+    assert (repo.work / "tests" / "test_greet.py").read_text() == "def test_it():\n    assert True\n"
+    assert (repo.work / "scratch.txt").read_text() == "keep\n"
+    assert run_git(repo.work, "stash", "list") == ""
+
+
 def test_untracked_files_survive_every_move(repo: timewalk.Repo) -> None:
     "What a command wrote (a database, a run folder, an environment) is left alone, ignored or not."
     (repo.work / "runs").mkdir()

@@ -2,7 +2,8 @@
 
 At a step, some commands only look (`pytest`, `git log`) and some change files (`ruff format`,
 `uv lock`, an editor). timewalk shows the second kind as it happens, beside what the step itself changed,
-and never throws the changes away.
+and never throws the changes away, unless you start it with `--discard-edits`, which is for a replay copy
+where everything typed during a session is throwaway: then a move drops them without asking.
 
 ## What you see
 

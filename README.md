@@ -44,7 +44,9 @@ audience sees.
 
 - It never moves it: stepping happens in a second working copy, `<repo>-replay`, a git worktree.
 - It never deletes an untracked file, so a run's outputs survive every move.
-- It never discards an edit: moving with edits asks, then stashes them.
+- It never discards an edit: moving with edits asks, then stashes them. The one exception is asked for
+  by name: `--discard-edits`, for a replay copy where everything typed is throwaway, makes a move throw
+  edits away without asking, and replace a new file only where the step has one of the same name.
 - The file view cannot write.
 
 More in [The replay copy](https://rahuldave.com/timewalk/replay.html).

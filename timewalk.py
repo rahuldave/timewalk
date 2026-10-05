@@ -10,6 +10,7 @@
     uv run timewalk.py /path/to/repo --tags 'v*'        steps are other tags
     uv run timewalk.py /path/to/repo --commits          steps are the commits on the current branch
     uv run timewalk.py /path/to/repo --in-place         step the repository itself, not a second copy
+    uv run timewalk.py /path/to/repo --discard-edits    a move throws edits away instead of asking; for a replay copy
 
 Two pages are served. The audience page, for the projector, shows slides for the step, the files as they are at that step, which of
 them that step added or changed, and terminal tabs built on Ghostty's terminal core: one in the repository at
@@ -97,7 +98,9 @@ class Repo:
         tags: str = "step-*",  # Glob for the tags that mark steps
         commits: bool = False,  # Step through commits instead of tags
         in_place: bool = False,  # Move `main` itself instead of a second working copy
+        discard: bool = False,  # A move throws uncommitted edits away instead of asking and stashing
     ):
+        self.discard = discard
         self.main = Path(git(main, "rev-parse", "--show-toplevel"))
         self.steps = self._commit_steps() if commits else self._tag_steps(tags)
         if not self.steps:
@@ -165,10 +168,17 @@ class Repo:
         index: int,  # Step to move to
         set_aside: bool = False,  # Stash uncommitted edits first instead of refusing
     ) -> None:
-        "Move the working copy to a step. Edits are stashed, never discarded; untracked files are left alone."
+        """Move the working copy to a step. Edits are stashed, never discarded; untracked files are left alone.
+
+        With `discard`, the move is `git checkout -f`: edits to tracked files are thrown away, and an untracked
+        file is replaced only where the step has a file of that name. Every other untracked file still stays.
+        """
         if not 0 <= index < len(self.steps):
             raise GitError(f"there is no step {index}")
         target = self.steps[index]
+        if self.discard:
+            git(self.work, "checkout", "--force", "--detach", "--quiet", target.sha)
+            return
         if self.edits():
             if not set_aside:
                 raise GitError("uncommitted edits")
@@ -239,7 +249,8 @@ class Repo:
     def state(self) -> dict:  # Everything a page needs to draw its header
         "Summarise where the working copy is."
         return {"main": str(self.main), "work": str(self.work), "in_place": self.work == self.main,
-                "steps": [asdict(s) for s in self.steps], "current": self.current(), "edits": self.edits()}
+                "discard": self.discard, "steps": [asdict(s) for s in self.steps], "current": self.current(),
+                "edits": self.edits()}
 
 
 def recipes(
@@ -765,13 +776,14 @@ def main() -> None:
     parser.add_argument("--tags", default="step-*", help="glob for the tags that mark steps (default: step-*)")
     parser.add_argument("--commits", action="store_true", help="step through the commits of the current branch instead of tags")
     parser.add_argument("--in-place", action="store_true", help="move the repository itself instead of a second working copy")
+    parser.add_argument("--discard-edits", action="store_true", help="a move throws uncommitted edits away instead of asking and stashing them; meant for a replay copy")
     parser.add_argument("--assistant", default="claude", help="command started in the assistant terminal tab (default: claude)")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--no-open", action="store_true", help="do not open the browser")
     args = parser.parse_args()
 
     try:
-        repo = Repo(args.repo.resolve(), tags=args.tags, commits=args.commits, in_place=args.in_place)
+        repo = Repo(args.repo.resolve(), tags=args.tags, commits=args.commits, in_place=args.in_place, discard=args.discard_edits)
     except GitError as exc:
         raise SystemExit(f"timewalk: {exc}") from None
     token = secrets.token_urlsafe(16)

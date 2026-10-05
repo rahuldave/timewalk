@@ -22,7 +22,8 @@ just lint            # ruff
 ```
 
 The tests build small repositories of their own and check what timewalk must never do: move the
-repository it is pointed at, delete an untracked file, discard an edit, write through the file view,
+repository it is pointed at, delete an untracked file, discard an edit (unless `--discard-edits` asks
+it to), write through the file view,
 answer a request without the token. A change to the pages is checked by driving both pages in headless
 Chrome against a throwaway clone of the demo.
 

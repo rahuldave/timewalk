@@ -39,7 +39,9 @@ $ git worktree list
   untracked one sits, the move is refused and the file is named.
 - **It never discards an edit.** Edits to tracked files are shown as they happen. Moving with edits asks
   first, then sets them aside with `git stash`, labelled with the step they were made at. See
-  [Live edits](edits.md).
+  [Live edits](edits.md). The one exception is asked for by name: with `--discard-edits`, for a replay
+  copy where everything typed is throwaway, a move is `git checkout -f`: edits are dropped without
+  asking, and an untracked file is replaced only where the step has a file of that name.
 - **The file view cannot write.** There is no route that changes a file. The terminals can, as any
   terminal can.
 
