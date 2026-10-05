@@ -46,9 +46,13 @@ copy of the notes that you give to students.
 
 ## The notes column
 
-The top of the column shows the name of the step and the title from the notes. Below the prose, each
-command of the step has a button. A click on a button types the command into its terminal and brings that
-tab to the front in every window. The terminal in the window where you clicked gets the keyboard.
+The top of the column shows the name of the step and the title from the notes. Below it, the column
+shows the notes in the order of the file. Each command is a button at the place where the notes have it,
+between the prose around it. A click on a button types the command into its terminal and brings that tab
+to the front in every window. The terminal in the window where you clicked gets the keyboard.
+
+A `$ ` line inside a fenced code block is code to read, and not a command. Use a code block to show a
+command that the reader must not run from the page.
 
 By default, a click only types the command. The reader can look at the command, and then press Enter to
 run it. To run each command with one click, turn on **run on click** at the top of the column. The

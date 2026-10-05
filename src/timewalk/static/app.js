@@ -600,27 +600,44 @@ function drawNotes() {
   const mine = here ? ui.notes[here.name] : null;
   $("notes-title").textContent = here ? `${here.name}, ${mine?.title || here.subject}` : "between steps";
   $("notes-edit").hidden = !!ui.editing || !here;
-  if (mine?.text) $("notes").innerHTML = renderMarkdown(mine.text);
-  else $("notes").innerHTML = `<p class="p-empty">${ui.notesPath
-    ? `No notes for ${escapeHtml(here?.name || "this step")} in ${escapeHtml(ui.notesPath)}. Add a section headed "## ${escapeHtml(here?.name || "step-name")}".`
-    : "No notes file. Start timewalk with --notes notes.md, with one \"## step-name\" section per step."}</p>`;
-  const commands = $("commands");
-  commands.replaceChildren();
-  for (const command of mine?.commands || []) {
-    const button = document.createElement("button");
-    const text = document.createElement("span");
-    text.textContent = command.text;
-    const track = document.createElement("span");
-    track.className = "track";
-    const extra = /^runs([2-9])$/.exec(command.track);
-    track.textContent = extra ? `Runs ${extra[1]}` : { main: "Main", runs: "Runs" }[command.track] || "at this step";
-    button.append(text, track);
-    button.title = "Types this into that terminal. With run on click, it also presses Enter";
-    button.onclick = () => api("/api/type", { track: command.track, text: command.text, enter: $("run-on-click").checked, from: PAGE })
-      .catch((error) => showNotice(error.message, true));
-    commands.append(button);
+  // The prose and the commands, in the order of the notes file: each command is a button where it is written.
+  const box = $("notes");
+  box.replaceChildren();
+  let group = null;   // the buttons of a run of commands, one after another in the file
+  for (const part of mine?.parts || []) {
+    if (part.kind === "text") {
+      const prose = document.createElement("div");
+      prose.innerHTML = renderMarkdown(part.text);
+      box.append(prose);
+      group = null;
+      continue;
+    }
+    if (!group) {
+      group = document.createElement("div");
+      group.className = "p-commands";
+      box.append(group);
+    }
+    group.append(commandButton(part));
   }
-  if (!commands.children.length) commands.innerHTML = `<span class="p-empty">None. In the notes, "$ " starts a command at this step, "runs$ " one for the Runs tab, "main$ " one in Main.</span>`;
+  if (!box.children.length) box.innerHTML = `<p class="p-empty">${!here ? "" : ui.notesPath
+    ? `No notes for ${escapeHtml(here.name)} in ${escapeHtml(ui.notesPath.split("/").pop())}. Click Edit to write them, or add a section headed "## ${escapeHtml(here.name)}".`
+    : "No notes file. Start timewalk with --notes notes.md, with one \"## step-name\" section per step."}</p>`;
+}
+
+/** One command of the notes, as a button that types it into its terminal, and runs it with run on click. */
+function commandButton(command) {
+  const button = document.createElement("button");
+  const text = document.createElement("span");
+  text.textContent = command.text;
+  const track = document.createElement("span");
+  track.className = "track";
+  const extra = /^runs([2-9])$/.exec(command.track);
+  track.textContent = extra ? `Runs ${extra[1]}` : { main: "Main", runs: "Runs" }[command.track] || "at this step";
+  button.append(text, track);
+  button.title = "Types this into that terminal. With run on click, it also presses Enter";
+  button.onclick = () => api("/api/type", { track: command.track, text: command.text, enter: $("run-on-click").checked, from: PAGE })
+    .catch((error) => showNotice(error.message, true));
+  return button;
 }
 
 function drawBand() {

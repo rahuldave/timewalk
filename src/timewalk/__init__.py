@@ -305,14 +305,18 @@ def parse_notes(
         main$ git log         a command for the terminal in the repository you started from
         > Say: ...            a cue; shown with the prose, set apart in its own shade
 
-    Every other line is prose, shown as written. `raw` keeps the section as written, below its heading, for editing.
+    Every other line is prose, shown as written. Inside a fenced code block every line is prose, so a `$ ` line
+    there is code to read, not a command. `parts` keeps the prose and the commands in the order of the file, so the
+    page can show each command where it is written. `raw` keeps the section as written, for editing.
     """
     notes: dict[str, dict] = {}
     current: dict | None = None
+    fence: str | None = None  # the fence character while inside a fenced code block, ` or ~
     for line in text.splitlines():
-        heading = re.match(r"^##\s+(\S+)", line)
+        mark = re.match(r"^\s*(```+|~~~+)", line)
+        heading = re.match(r"^##\s+(\S+)", line) if fence is None else None
         if heading:
-            current = notes.setdefault(heading.group(1), {"time": None, "commands": [], "text": [], "raw": []})
+            current = notes.setdefault(heading.group(1), {"time": None, "commands": [], "text": [], "raw": [], "parts": []})
             title = line[heading.end():].strip()
             if title:
                 current["title"] = title
@@ -320,17 +324,28 @@ def parse_notes(
         if current is None:
             continue
         current["raw"].append(line)
-        planned = re.match(r"^time:\s*(\d+):(\d\d)\s*$", line.strip())
-        command = re.match(r"^\s*(main|runs[2-9]?)?\$\s+(.+)$", line)
+        planned = re.match(r"^time:\s*(\d+):(\d\d)\s*$", line.strip()) if fence is None else None
+        command = re.match(r"^\s*(main|runs[2-9]?)?\$\s+(.+)$", line) if fence is None else None
+        if mark:
+            fence = mark.group(1)[0] if fence is None else (None if mark.group(1)[0] == fence else fence)
+        parts = current["parts"]
         if planned:
             current["time"] = int(planned.group(1)) * 60 + int(planned.group(2))
         elif command:
-            current["commands"].append({"track": command.group(1) or "replay", "text": command.group(2).strip()})
+            entry = {"track": command.group(1) or "replay", "text": command.group(2).strip()}
+            current["commands"].append(entry)
+            parts.append({"kind": "command", **entry})
         else:
             current["text"].append(line)
+            if parts and parts[-1]["kind"] == "text":
+                parts[-1]["text"] += "\n" + line
+            else:
+                parts.append({"kind": "text", "text": line})
     for entry in notes.values():
         entry["text"] = "\n".join(entry["text"]).strip()
         entry["raw"] = "\n".join(entry["raw"]).strip("\n")
+        entry["parts"] = [p for p in ({**p, "text": p["text"].strip("\n")} if p["kind"] == "text" else p for p in entry["parts"])
+                          if p["kind"] == "command" or p["text"].strip()]
     return notes
 
 

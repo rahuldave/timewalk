@@ -48,10 +48,14 @@ def notes_markdown(
     "Turn a section of the notes into Markdown to print: each run of command lines becomes one code block."
     out: list[str] = []
     block: list[str] = []
+    fence: str | None = None  # inside a fenced code block, a `$ ` line is code to read, and stays as written
     for line in raw.split("\n"):
-        if re.match(r"^time:\s*\d+:\d\d\s*$", line.strip()):
+        mark = re.match(r"^\s*(```+|~~~+)", line)
+        if mark:
+            fence = mark.group(1)[0] if fence is None else (None if mark.group(1)[0] == fence else fence)
+        elif fence is None and re.match(r"^time:\s*\d+:\d\d\s*$", line.strip()):
             continue
-        if COMMAND.match(line):
+        if fence is None and not mark and COMMAND.match(line):
             block.append(line.strip())
             continue
         if block:

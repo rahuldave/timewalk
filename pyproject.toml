@@ -1,6 +1,6 @@
 [project]
 name = "timewalk"
-version = "1.0.2"
+version = "1.0.3"
 description = "Browse a git repository one step at a time, with slides, notes and terminals, to teach how it was built"
 readme = "README.md"
 license = "MIT"

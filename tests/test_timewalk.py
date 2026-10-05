@@ -403,6 +403,30 @@ def test_notes_are_read_per_step() -> None:
     assert notes["step-01"]["text"] == "- one\n- two"
 
 
+def test_notes_keep_prose_and_commands_in_order() -> None:
+    "The parts of a step keep the order of the file, so each command shows where it is written."
+    notes = timewalk.parse_notes("## step-00\ntime: 0:00\n\nFirst read this.\n\n$ ls\nruns$ just train\n\nThen this.\n\nmain$ git log\n")
+    assert [(p["kind"], p["text"]) for p in notes["step-00"]["parts"]] == [
+        ("text", "First read this."), ("command", "ls"), ("command", "just train"), ("text", "Then this."), ("command", "git log")]
+    assert [p.get("track") for p in notes["step-00"]["parts"] if p["kind"] == "command"] == ["replay", "runs", "main"]
+
+
+def test_a_dollar_line_in_a_code_block_is_code_not_a_command() -> None:
+    "Inside a fenced code block, a `$ ` line is code to read, and a `## ` line does not start a step."
+    notes = timewalk.parse_notes("## step-00\n\n```\n$ not a button\n## not a step\n```\n\n$ ls\n")
+    assert list(notes) == ["step-00"]
+    assert notes["step-00"]["commands"] == [{"track": "replay", "text": "ls"}]
+    assert notes["step-00"]["parts"][0] == {"kind": "text", "text": "```\n$ not a button\n## not a step\n```"}
+
+
+def test_the_pdf_keeps_a_code_block_of_the_notes_as_written() -> None:
+    "The PDF wraps command lines in code blocks, but leaves a code block that the notes already have."
+    from timewalk import slides_pdf
+
+    raw = "time: 0:01\nRead.\n\n```\n$ shown as code\n```\n\n$ ls\nMore."
+    assert slides_pdf.notes_markdown(raw) == "Read.\n\n```\n$ shown as code\n```\n\n```\n$ ls\n```\nMore."
+
+
 def test_slides_manifest(tmp_path: Path) -> None:
     "The manifest maps a step to its slides, in order; a missing manifest means no slides."
     manifest = tmp_path / "slides.toml"
