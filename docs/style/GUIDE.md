@@ -3,7 +3,7 @@
 A writing guide for documentation, READMEs and other prose that an AI model writes and a person reads. It
 joins two sources. The first source is ASD-STE100, Simplified Technical English, which aerospace manuals
 use so that readers who are not native English speakers understand them. The second source is the
-plain-writing skill from docwriter-org, which keeps prose plain and free of the habits of AI writing.
+plain-writing skill by Shreya Shankar, which keeps prose plain and free of the habits of AI writing.
 
 Give this file to the model with the task, together with a glossary of the project's terms. Then run
 `check.py` on the result, and read the result yourself.
