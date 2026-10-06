@@ -70,6 +70,14 @@ every request needs the token in the address it prints, new at each start. On a 
 tunnel, or `--host 0.0.0.0` with a firewall rule for your own address. **Do not put that address on a
 slide or in a recording.** More in [Safety](https://rahuldave.com/timewalk/safety.html).
 
+## If a window stops answering
+
+In a long class, Chrome can stop answering in a window on the projector, often in full screen, and say
+that the page is unresponsive. A projector that goes blank and comes back can come first. If a window
+stops answering, open the address again in it. The server keeps the step, the slide and the shells. The
+window comes back at the same place, with the recent output of each shell. More in
+[Teach a class](https://rahuldave.com/timewalk/class.html#if-a-window-stops-answering).
+
 ## Requirements
 
 You need `uv`, `git` and a browser. Also install `just` for the recipes, and put `claude` on the path for

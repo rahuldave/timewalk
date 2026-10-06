@@ -75,6 +75,25 @@ so. Drag that window to the projector, and click **Full screen** in it.
 - **The address is a key.** Anyone on your machine who has the address can run commands as you. Do not
   show it on a slide. See [Safety](safety.md).
 
+## If a window stops answering
+
+In a long class, Chrome can stop answering in a window, and say that the page is unresponsive. It happens
+most in the window on the projector, in full screen. A projector that goes blank and comes back can come
+first, for example because of a loose cable or adapter. The cause is not known yet.
+
+If a window stops answering, do these steps:
+
+1. Close the message of Chrome, or press Escape to leave full screen.
+2. Open the address again in the same window, or reload it. If you closed the window for the class, click
+   **Room** in your window.
+3. Click **Full screen** again in the window for the class.
+
+Nothing is lost. The server keeps the step, the slide, the layout and the shells. The window comes back at
+the same place, with the recent output of each shell. A command that runs in a shell keeps running.
+
+A shell that prints very fast, for example a progress bar, keeps each window busy, even when its tab is
+not in front. If the windows become slow, stop the run, or let it print less often.
+
 ## A check the evening before
 
 1. Run `just present`, and open the address on your laptop.

@@ -27,6 +27,7 @@ Keep the text of these headings. A link from another page uses each one as an an
 | terminals.md | The shells' environment |
 | page.md | Several windows |
 | slides.md | A PDF of the slides |
+| class.md | If a window stops answering |
 
 ## Glossary
 
