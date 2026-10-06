@@ -81,7 +81,7 @@ timewalk := "uvx --from git+https://github.com/rahuldave/timewalk@v1.0.12"
 present *args:
     {{ timewalk }} timewalk repo --replay worktree --notes notes.md --slides slides/slides.toml {{ args }}
 
-# Make the handout: every slide, with the notes of each step
-handout:
-    {{ timewalk }} timewalk-pdf slides/slides.toml --notes notes.md --with-notes -o handout.pdf
+# Make the PDF: every slide, one page each, no notes
+pdf:
+    {{ timewalk }} timewalk-pdf slides/slides.toml --notes notes.md -o build/slides.pdf
 ```

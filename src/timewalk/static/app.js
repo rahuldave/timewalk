@@ -640,7 +640,7 @@ function drawTools() {
   const shown = hasNotes && !notesHidden.get();
   $("notes-toggle").hidden = !hasNotes;
   $("notes-toggle").setAttribute("aria-pressed", String(shown));
-  $("pdf").hidden = !(hasNotes || hasSlides);
+  $("pdf").hidden = !hasSlides;
   $("notes-pane").hidden = !shown;
   document.body.classList.toggle("with-notes", shown);
   $("cues-toggle").hidden = !shown;

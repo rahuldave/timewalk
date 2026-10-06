@@ -41,7 +41,7 @@ the audience sees. Keep the notes file outside the repository. timewalk refuses 
 
 - **Slides and documents** for each step, from a TOML manifest of Markdown slides, pictures, PDF pages
   and longer documents that scroll.
-- **A PDF** of the slides, with the notes of each step after its slides. Make it with the **PDF** button
+- **A PDF** of the slides, one page each. The notes are for the page, and are not in it. Make it with the **PDF** button
   or with the command `timewalk-pdf`.
 - **The files at each step**, with what the step changed.
 - **Live edits.** Run `ruff format` at a step, and the page shows what it changed, as it happens.

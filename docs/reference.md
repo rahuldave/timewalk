@@ -43,12 +43,12 @@ timewalk-pdf [MANIFEST] [-o OUT.pdf] [--title TEXT] [--notes FILE] [--with-notes
 | Option | Does |
 |---|---|
 | `MANIFEST` | The slides manifest. Optional with `--with-notes`. Without a manifest, the PDF holds only the notes |
-| `-o`, `--output` | The PDF to write. Default: `slides.pdf` beside the manifest, or `notes.pdf` beside the notes file when there is no manifest |
+| `-o`, `--output` | The PDF to write. Default: `build/slides.pdf` in the current folder, or `build/notes.pdf` when there is no manifest. The folder `build` is made if it is missing |
 | `--title` | A title for the footer of every page |
 | `--notes` | A notes file. Without `--with-notes`, `slides_pdf` reads only the title of each step from it, for the footer |
 | `--with-notes` | Put the notes of each step after its slides: the prose, the cues in their own shade, and the commands in code blocks. The `time:` lines stay out |
 
-The **PDF** button on the page makes the same PDF, with the notes. See
+The **PDF** button on the page makes the same PDF, without the notes. See
 [Slides and documents](slides.md#a-pdf-of-the-slides).
 
 ## Recipes

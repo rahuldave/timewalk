@@ -105,7 +105,7 @@ then happen, in this order:
 | **run on click**, in the notes column | A click on a command also presses Enter, in this window | The work of the command, in the folder of that tab |
 | **Notes** | Shows or hides the notes column, in this window | None |
 | **Edit**, then **Save**, in the notes column | Writes the section of the current step into the notes file, unless the section changed in the file since the page read it. Every window then shows the new notes | None. The server writes the notes file in your class folder |
-| **PDF** | Makes a PDF of the slides, with the notes of each step after its slides, and downloads it | None. It reads the manifest, the slide files and the notes file |
+| **PDF** | Makes a PDF of the slides, one page each, and downloads it | None. It reads the manifest and the slide files |
 | **Start the clock**, with `--clock` | Records the start time | None |
 | (no control, each second) | The edits watcher looks for edits, and tells every window when they change | `git status`, in the replay copy |
 | (no control, each second) | The content watcher looks at the notes file, the manifest and each slide file. When one changes, every window draws the notes and the slide again | None |

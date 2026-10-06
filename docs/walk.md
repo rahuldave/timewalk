@@ -101,13 +101,12 @@ setup url="":
     git -C repo fetch --quiet --tags --force upstream
     echo "setup: repo/ is $(git -C repo remote get-url origin), with $(git -C repo tag -l 'step-*' | wc -l | tr -d ' ') steps from {{ upstream }}/{{ project }}"
 
-# Make walk.pdf: the slides, if the kit has any, with the notes of every step after them
+# Make build/walk.pdf: the slides, one page each, and no notes
 pdf:
     #!/usr/bin/env bash
     set -euo pipefail
-    slides=()
-    if [ -f slides/slides.toml ]; then slides=(slides/slides.toml); fi
-    uvx --from "{{ timewalk }}" timewalk-pdf ${slides[@]+"${slides[@]}"} --notes walk.md --with-notes --title "{{ project }}" -o walk.pdf
+    test -f slides/slides.toml || { echo "pdf: this walk has no slides" >&2; exit 1; }
+    uvx --from "{{ timewalk }}" timewalk-pdf slides/slides.toml --notes walk.md --title "{{ project }}" -o build/walk.pdf
 ```
 
 The kit for babykev, https://github.com/rahuldave/babykev-walk, is a complete example.

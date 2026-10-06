@@ -28,7 +28,7 @@ Rahul made timewalk for `~/Projects/babykev-class`, the class kit for `~/Project
 two recipes:
 
 - `just present` runs `timewalk` on babykev with its `notes.md` and `slides/slides.toml`.
-- `just handout` runs `timewalk-pdf`.
+- `just pdf` runs `timewalk-pdf`: the slides, one page each, and no notes.
 
 Keep these points:
 

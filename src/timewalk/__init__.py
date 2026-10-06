@@ -839,15 +839,15 @@ def make_app(
         return {"ok": True}
 
     async def pdf(request: Request) -> Response:
-        "Make a PDF of the slides and the notes, as the handout would be, and send it to download."
+        "Make a PDF of the slides, one page each and no notes, and send it to download."
         if not allowed(request):
             return JSONResponse({"error": "missing or wrong token"}, status_code=403)
-        if slides_path is None and notes_path is None:
-            return JSONResponse({"error": "there are no slides and no notes to put in a PDF"}, status_code=404)
+        if slides_path is None:
+            return JSONResponse({"error": "there are no slides to put in a PDF"}, status_code=404)
         from timewalk import slides_pdf  # imported here: slides_pdf imports this module
 
         try:
-            data = await asyncio.to_thread(slides_pdf.make_pdf, slides_path, notes_path, repo.main.name, True)
+            data = await asyncio.to_thread(slides_pdf.make_pdf, slides_path, notes_path, repo.main.name, False)
         except SystemExit as exc:
             return JSONResponse({"error": str(exc)}, status_code=500)
         except Exception as exc:  # a browser that fails to start, a page that fails to draw: say what happened

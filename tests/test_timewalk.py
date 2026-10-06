@@ -645,7 +645,7 @@ def test_the_old_presenter_address_goes_to_the_one_page(served: TestClient) -> N
 
 
 def test_state_says_if_there_are_notes(served: TestClient, repo: timewalk.Repo) -> None:
-    "The page shows the notes column, the Notes toggle and the PDF button only when timewalk has a notes file."
+    "The page shows the notes column, and the Notes toggle only when timewalk has a notes file."
     assert served.get("/api/state", params={"t": TOKEN}).json()["has_notes"] is True
     bare = TestClient(timewalk.make_app(repo, TOKEN, PORT, assistant=""), headers=HOST)
     assert bare.get("/api/state", params={"t": TOKEN}).json()["has_notes"] is False

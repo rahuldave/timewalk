@@ -114,8 +114,7 @@ slide, press Alt with **Up** or **Down**, or click a slide arrow.
 
 ## A PDF of the slides
 
-The **PDF** button in the step bar makes a PDF of the slides, with the notes of each step after its
-slides. The browser then downloads it. timewalk draws the PDF with the browser on your machine, through
+The **PDF** button in the step bar makes a PDF of the slides, one page each. The notes are for the page and are not in it. The browser then downloads it. timewalk draws the PDF with the browser on your machine, through
 Playwright, so it takes a few seconds.
 
 To make the PDF from the command line, run `timewalk-pdf`:

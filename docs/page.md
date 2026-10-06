@@ -65,13 +65,12 @@ edits away. See [Live edits](edits.md#with---discard-edits).
 | **Cues** | Shows or hides the cues in this window, the lines of the notes that start with `>`. The prose and the commands stay |
 | **Room** | Opens the window for the class: on the projector at full size where the browser allows it, with no cues and no clock band. See [Teach a class](class.md) |
 | **Full screen** | Only in the window for the class. Fills the screen with that window |
-| **PDF** | Makes a PDF of the slides and the notes of every step, and downloads it |
+| **PDF** | Makes a PDF of the slides, one page each, and downloads it |
 | **Slides**, **Both**, **Code** | Choose what fills the page, in every window |
 | **A−**, **A+** | Change the size of all the text in this window. The terminals use the same size |
 | **Dark**, **Light** | Change the theme of this window |
 
-The **PDF** button makes the same PDF as the export command, with the notes after the slides of each
-step. The export uses the browser on your machine, so it can take a few seconds. See
+The **PDF** button makes the same PDF as the export command, without the notes, which are for this page. The export uses the browser on your machine, so it can take a few seconds. See
 [Slides and documents](slides.md#a-pdf-of-the-slides).
 
 ![The Slides layout, where the slide fills the page](images/layout-slides.png)

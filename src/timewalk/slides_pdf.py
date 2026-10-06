@@ -1,6 +1,6 @@
 """Make one PDF of the slides and, if asked, the notes of every step, to hand out.
 
-    timewalk-pdf slides.toml                                    writes slides.pdf beside the manifest
+    timewalk-pdf slides.toml                                    writes build/slides.pdf in the current folder
     timewalk-pdf slides.toml -o handout.pdf --title "babykev" --notes notes.md
     timewalk-pdf slides.toml --notes notes.md --with-notes      each step's notes after its slides
     timewalk-pdf --notes notes.md --with-notes                  the notes alone, as a runbook
@@ -213,7 +213,7 @@ def main() -> None:
     "Parse the command line and write the PDF."
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("manifest", type=Path, nargs="?", help="the slides manifest, a TOML file (optional with --with-notes)")
-    parser.add_argument("-o", "--output", type=Path, help="the PDF to write (default: slides.pdf beside the manifest, or notes.pdf beside the notes)")
+    parser.add_argument("-o", "--output", type=Path, help="the PDF to write (default: build/slides.pdf, or build/notes.pdf with only notes, in the current folder)")
     parser.add_argument("--notes", type=Path, help="a notes file: its step titles go in the footer, and with --with-notes its text is printed")
     parser.add_argument("--with-notes", action="store_true", help="print each step's notes after its slides, cues and commands included")
     parser.add_argument("--title", default="", help="a title for the footer of every page")
@@ -226,7 +226,8 @@ def main() -> None:
     if manifest is None and not (notes and args.with_notes):
         raise SystemExit("slides_pdf: give a slides manifest, or --notes with --with-notes, or both")
     data = make_pdf(manifest, notes, args.title or (manifest or notes).parent.name, args.with_notes)
-    output = (args.output or (manifest.with_name("slides.pdf") if manifest else notes.with_name("notes.pdf"))).resolve()
+    output = (args.output or Path("build") / ("slides.pdf" if manifest else "notes.pdf")).resolve()
+    output.parent.mkdir(parents=True, exist_ok=True)
     output.write_bytes(data)
     print(f"slides_pdf: wrote {len(PdfReader(io.BytesIO(data)).pages)} pages to {output}")
 
