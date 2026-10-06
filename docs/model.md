@@ -92,7 +92,7 @@ then happen, in this order:
 | **Room** | Opens a second window with `room=1` and `cues=off` in its address. In Chrome and Edge, it asks to place windows, and opens the window on the other screen | None |
 | **Cues** | Hides or shows the `>` lines of the notes, in this window | None |
 | A scroll of the slide, the file or the notes | Sends the place, as a fraction, to every other window over the events socket | None |
-| The handles between the panes | Change the width of the slides or the file list, or the height of the terminals, in this browser. A double-click resets a width | None |
+| The handles between the panes | Change the width of the slides, the file list or the notes, or the height of the terminals, in this browser. A double-click resets a width | None |
 | A file in the file list, **File** | Reads the file from disk, and refuses paths outside the copy | None. It reads a file in the replay copy |
 | **Changes in this step** | The diff of the step for that file | `git diff <step before> <step> -- <file>`, in the replay copy |
 | **Edits since the step** | The edits since the commit of the step | `git diff HEAD -- <file>`, in the replay copy |

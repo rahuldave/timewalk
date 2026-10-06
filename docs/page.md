@@ -17,7 +17,7 @@ keeps the shared state, and it sends each change to every window.
 | The slide | If the cues show | The text size |
 | Slides, Both or Code | Which terminal has the keyboard | The height of the terminals |
 | The open file, and its view | | If a click on a command runs it |
-| The scroll position of the slide, the file and the notes | | The widths of the slides and of the file list |
+| The scroll position of the slide, the file and the notes | | The widths of the slides, the file list and the notes |
 | The terminal tab in front | | |
 | The terminals themselves: the same shells | | |
 
@@ -87,6 +87,9 @@ Thin handles sit between the panes. Drag a handle to change how much room each p
 - **The handle between the slides and the file list** changes the width of the slides. Make the slides
   narrow to show more code, and wide again for the next slide.
 - **The handle between the file list and the reader** changes the width of the file list.
+- **The handle on the left edge of the notes** changes the width of the notes column. On a narrow
+  screen, where the notes sit under the terminals, the handle is on their top edge and changes their
+  height.
 - **The bar above the terminals** changes the height of the terminals.
 
 To put a handle back to its default width, double-click it. The browser remembers the widths. The
