@@ -141,8 +141,8 @@ function drawSlides() {
   $("slide-count").textContent = doc ? slides[slide].replace(/#doc$/, "") : slides.length ? `Slide ${slide + 1} of ${slides.length}` : "No slides for this step";
   $("slide-prev").disabled = slide <= 0;
   $("slide-next").disabled = slide >= slides.length - 1;
-  drawSlide($("slide"), slides[slide], { command: commandButton });   // a $ line on a slide is a button, as in the notes
   for (const entry of ui.terms.values()) if (!entry.el.hidden) requestAnimationFrame(() => entry.fit.fit());
+  return drawSlide($("slide"), slides[slide], { command: commandButton });   // a $ line on a slide is a button, as in the notes
 }
 
 function applyLayout(layout) {
@@ -756,6 +756,7 @@ const events = onEvents(async (event) => {
     if (ui.open) await openFile(ui.open, ui.view, false);
   }
   if (event.type === "scroll") { followScroll(event); return; }
+  if (event.type === "content") { await reloadContent(); return; }
   if (event.type === "slide") { ui.state = await api("/api/state"); drawSlides(); }
   if (event.type === "notes" && !ui.editing) { await loadNotes(); drawNotes(); drawBand(); }
   if (event.type === "clock") { ui.state = await api("/api/state"); ui.skew = ui.state.now - Date.now() / 1000; drawBand(); }
@@ -791,4 +792,16 @@ function followScroll(event) {
   if (!el) return;
   following[event.pane] = Date.now() + 200;
   el.scrollTop = event.at * (el.scrollHeight - el.clientHeight);
+}
+
+// ---------- live reload ----------
+// When the notes file, the manifest or a slide file changes on disk, every window reads it again and draws the
+// current slide and notes anew, at the same scroll position. A notes section that you are editing stays as it is.
+async function reloadContent() {
+  const tops = Object.fromEntries(Object.entries(SCROLLERS).map(([pane, id]) => [pane, $(id).scrollTop]));
+  ui.state = await api("/api/state");
+  for (const pane of Object.keys(SCROLLERS)) following[pane] = Date.now() + 500;   // not a scroll to send on
+  if (!ui.editing && ui.state.has_notes) { await loadNotes(); drawNotes(); drawBand(); }
+  await drawSlides();
+  for (const [pane, top] of Object.entries(tops)) $(SCROLLERS[pane]).scrollTop = top;
 }

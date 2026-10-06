@@ -57,8 +57,9 @@ horizontal rule inside a slide, write `***`.
 Keep a slide to about six bullets or one table. On the page, a long slide scrolls. In the PDF,
 the slide shrinks to fit its page.
 
-The server reads the manifest and the slide files again each time it shows a slide. So you can edit them
-while you present.
+The page reloads the slides by itself. When you save the manifest or a slide file in your editor, every
+window draws the current slide again within about a second. The scroll position stays. You do not need
+to reload the page.
 
 ## Commands on a slide
 

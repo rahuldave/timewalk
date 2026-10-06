@@ -79,8 +79,9 @@ reload the page, and edit again.
 
 ![The notes of step-02 in the text box, ready to save](images/notes-edit.png)
 
-The server also reads the file again at every step, so you can edit the notes in your own editor while
-the class runs.
+The page also reloads the notes by itself. When you save the notes file in your editor, or a `git pull`
+changes it, every window shows the new notes within about a second. A section that you are editing in the
+text box stays as it is until you save it.
 
 ## The clock band
 

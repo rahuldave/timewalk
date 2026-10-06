@@ -474,6 +474,28 @@ def shell_environment(
     return env
 
 
+def typed_line(
+    length: int,  # How many characters the command line held, or -1 if timewalk cannot tell
+    text: str,  # What was just typed
+) -> int:  # How many characters it holds now, or -1 if timewalk cannot tell
+    """Follow the command line of a shell from what is typed into it, to know when it is empty.
+
+    Enter, Ctrl-C and Ctrl-U leave it empty. A printable character adds one, and Backspace takes one away. An
+    arrow key, Tab or another control key can change the line in ways timewalk cannot see, so after one the
+    length is unknown until the next Enter.
+    """
+    for char in text:
+        if char in "\r\n\x03\x15":
+            length = 0
+        elif char in "\x7f\x08":
+            length = max(length - 1, 0) if length > 0 else length
+        elif char < " " or char == "\x1b":
+            length = -1
+        elif length >= 0:
+            length += 1
+    return length
+
+
 class Terminal:
     "A shell on a pseudo-terminal, shared by every page connected to it and kept alive between page loads."
 
@@ -491,6 +513,7 @@ class Terminal:
         self.scrollback: deque[bytes] = deque()
         self.scrollback_size = 0
         self.size = (30, 110)
+        self.line = 0  # the length of the command line as typed, -1 if unknown: see typed_line
 
     def start(self) -> None:
         "Start the shell if it is not running."
@@ -547,7 +570,24 @@ class Terminal:
         "Type into the shell."
         self.start()
         assert self.master is not None
+        self.line = typed_line(self.line, text)
         os.write(self.master, text.encode("utf-8"))
+
+    def refresh_prompt(self) -> bool:  # Whether the shell was idle, and so got an Enter
+        """Press Enter in an idle shell, so that it draws its prompt again, with the new HEAD after a move.
+
+        The shell is idle when it is itself in the foreground of its terminal, waiting for a command, and nothing is
+        typed on its command line. A running program, such as a training run or Claude, never gets the Enter.
+        """
+        if self.master is None or self.process is None or self.process.poll() is not None or self.line != 0:
+            return False
+        try:
+            idle = os.tcgetpgrp(self.master) == os.getpgid(self.process.pid)
+        except OSError:
+            return False
+        if idle:
+            os.write(self.master, b"\r")
+        return idle
 
     def resize(
         self,
@@ -576,6 +616,44 @@ class Hub:
                 await page.send_json(event)
             except Exception:
                 self.pages.discard(page)
+
+
+def content_marks(
+    notes_path: Path | None,  # The notes file, if there is one
+    slides_path: Path | None,  # The slides manifest, if there is one
+) -> tuple:  # Each file with its modification time and size
+    "Fingerprint the notes, the manifest and every slide file it names, to see when one of them is edited."
+    files = [path for path in (notes_path, slides_path) if path is not None]
+    if slides_path is not None and slides_path.is_file():
+        try:
+            entries = {entry.split("#")[0] for slides in load_slides(slides_path).values() for entry in slides}
+        except (OSError, ValueError):
+            entries = set()
+        files += [slides_path.parent / entry for entry in sorted(entries) if "://" not in entry]
+    marks = []
+    for path in files:
+        try:
+            info = path.stat()
+            marks.append((str(path), info.st_mtime_ns, info.st_size))
+        except OSError:
+            marks.append((str(path), None, None))
+    return tuple(marks)
+
+
+async def watch_content(
+    notes_path: Path | None,  # The notes file, if there is one
+    slides_path: Path | None,  # The slides manifest, if there is one
+    hub: "Hub",  # Where to announce changes
+    every: float = 1.0,  # Seconds between looks
+) -> None:
+    "Tell every page when the notes or a slide changes, so an edit in your editor shows at once, without a reload."
+    seen = None
+    while True:
+        now = await asyncio.to_thread(content_marks, notes_path, slides_path)
+        if seen is not None and now != seen:
+            await hub.tell({"type": "content"})
+        seen = now
+        await asyncio.sleep(every)
 
 
 async def watch_edits(
@@ -703,6 +781,10 @@ def make_app(
         repo.move(int(body["to"]), set_aside=bool(body.get("set_aside")))
         showing["slide"] = 0
         await hub.tell({"type": "moved"})
+        # The shells at the step are now at another commit. An idle one draws its prompt again, to show the new HEAD.
+        for term in terminals.values():
+            if term.cwd == repo.work:
+                term.refresh_prompt()
         return repo.state()
 
     @guarded
@@ -856,12 +938,15 @@ def make_app(
 
     @contextlib.asynccontextmanager
     async def lifespan(app: Starlette):
-        "Watch the working copy for edits while the server runs."
-        watcher = asyncio.create_task(watch_edits(repo, hub, watch_every))
+        "Watch the working copy for edits, and the notes and slides for changes, while the server runs."
+        watchers = [asyncio.create_task(watch_edits(repo, hub, watch_every))]
+        if notes_path is not None or slides_path is not None:
+            watchers.append(asyncio.create_task(watch_content(notes_path, slides_path, hub, watch_every)))
         try:
             yield
         finally:
-            watcher.cancel()
+            for watcher in watchers:
+                watcher.cancel()
 
     return Starlette(lifespan=lifespan, routes=[
         Route("/", page("index.html")),

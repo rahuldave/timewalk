@@ -97,6 +97,24 @@ changes those files under it, as the section above says.
 questions about the code at the current commit. `--assistant aider` starts a different tool in the tab.
 `--assistant ''` gives a plain shell.
 
+## The prompt after a move
+
+Your prompt may show the git state, for example the commit of HEAD. A shell draws its prompt only when it
+waits for a command, so after a move the old prompt would still show the old commit. So after a move,
+timewalk presses Enter in each shell at the step that is idle. The shell then draws a new prompt, with the
+new commit.
+
+timewalk presses Enter only in a shell that meets three conditions:
+
+- **It is at the step.** The shell runs in the replay copy. The **Main** tab does not move, so it gets
+  nothing.
+- **It waits for a command.** The shell itself is in front, and no program runs in it. A training run in
+  **Runs**, or Claude in the **Claude** tab, never gets the Enter.
+- **Its command line is empty.** If you typed part of a command, timewalk leaves it alone. After an arrow
+  key or Tab, timewalk cannot tell what is on the line, so it waits until your next Enter.
+
+An Enter on an empty line runs nothing, and adds nothing to the history of the shell.
+
 ## Which tab has the keyboard
 
 The page keeps the arrow keys, for steps and slides, until you click in a terminal. Then that terminal

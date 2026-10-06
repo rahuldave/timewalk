@@ -750,6 +750,74 @@ def test_a_scroll_in_one_window_reaches_the_other_windows(served: TestClient) ->
         assert theirs.receive_json() == {"type": "scroll", "pane": "slide", "at": 1.0}
 
 
+def test_the_command_line_is_followed_from_what_is_typed() -> None:
+    "timewalk knows the command line is empty after Enter, Ctrl-C or Ctrl-U, and is unsure after an arrow key."
+    assert timewalk.typed_line(0, "ls") == 2
+    assert timewalk.typed_line(2, "\x7f\x7f") == 0
+    assert timewalk.typed_line(0, "ls -la\r") == 0
+    assert timewalk.typed_line(0, "ech\x03") == 0
+    assert timewalk.typed_line(0, "\x1b[A") == -1, "an arrow key may bring back a command"
+    assert timewalk.typed_line(-1, "x\x15") == 0
+
+
+def test_an_idle_shell_draws_its_prompt_again_and_a_busy_one_does_not(tmp_path: Path) -> None:
+    "After a move, only a shell that waits at an empty command line gets an Enter."
+    import asyncio
+
+    async def scenario() -> list[bool]:
+        term = timewalk.Terminal(tmp_path)
+        term.start()
+        await asyncio.sleep(1.5)
+        seen = [term.refresh_prompt()]           # idle, empty line: yes
+        term.write("ech")
+        seen.append(term.refresh_prompt())       # half a command typed: no
+        term.write("\x15")
+        await asyncio.sleep(0.3)
+        seen.append(term.refresh_prompt())       # line cleared: yes
+        term.write("sleep 3\r")
+        await asyncio.sleep(1.0)
+        seen.append(term.refresh_prompt())       # a program runs in front: no
+        term.process.kill()
+        return seen
+
+    assert asyncio.run(asyncio.wait_for(scenario(), timeout=20)) == [True, False, True, False]
+
+
+def test_the_content_watcher_announces_an_edited_slide(tmp_path: Path) -> None:
+    "An edit to a slide file named in the manifest, or to the notes, tells the pages to draw them again."
+    import asyncio
+
+    (tmp_path / "talk.md").write_text("# One\n")
+    manifest = tmp_path / "slides.toml"
+    manifest.write_text('[slides]\nstep-00 = ["talk.md"]\n')
+    notes = tmp_path / "notes.md"
+    notes.write_text("## step-00\n\nHello.\n")
+    assert len(timewalk.content_marks(notes, manifest)) == 3
+
+    class Listener(timewalk.Hub):
+        def __init__(self) -> None:
+            super().__init__()
+            self.heard: list[dict] = []
+
+        async def tell(self, event: dict) -> None:
+            self.heard.append(event)
+
+    async def scenario() -> list[dict]:
+        hub = Listener()
+        watcher = asyncio.create_task(timewalk.watch_content(notes, manifest, hub, every=0.05))
+        await asyncio.sleep(0.2)
+        assert hub.heard == []
+        (tmp_path / "talk.md").write_text("# One, edited at length\n")
+        for _ in range(60):
+            if hub.heard:
+                break
+            await asyncio.sleep(0.05)
+        watcher.cancel()
+        return hub.heard
+
+    assert asyncio.run(asyncio.wait_for(scenario(), timeout=10)) == [{"type": "content"}]
+
+
 def test_unknown_terminal_names_are_refused(served: TestClient) -> None:
     "Only the known tab names get a shell."
     assert served.post("/api/type", params={"t": TOKEN}, json={"track": "../../bin", "text": "echo no"}).status_code == 409

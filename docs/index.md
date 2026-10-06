@@ -70,14 +70,14 @@ You do not need a clone of timewalk. uv can run timewalk straight from GitHub. I
 once, and keeps it in its cache:
 
 ```
-uvx --from git+https://github.com/rahuldave/timewalk@v1.0.7 timewalk ~/code/project --notes notes.md --slides slides/slides.toml
+uvx --from git+https://github.com/rahuldave/timewalk@v1.0.8 timewalk ~/code/project --notes notes.md --slides slides/slides.toml
 ```
 
 The part after `@` pins a version, so every machine runs the same timewalk. To install the commands
 `timewalk` and `timewalk-pdf` on your machine for good, run this command once:
 
 ```
-uv tool install git+https://github.com/rahuldave/timewalk@v1.0.7
+uv tool install git+https://github.com/rahuldave/timewalk@v1.0.8
 timewalk ~/code/project --notes notes.md --slides slides/slides.toml
 ```
 

@@ -108,6 +108,7 @@ then happen, in this order:
 | **PDF** | Makes a PDF of the slides, with the notes of each step after its slides, and downloads it | None. It reads the manifest, the slide files and the notes file |
 | **Start the clock**, with `--clock` | Records the start time | None |
 | (no control, each second) | The edits watcher looks for edits, and tells every window when they change | `git status`, in the replay copy |
+| (no control, each second) | The content watcher looks at the notes file, the manifest and each slide file. When one changes, every window draws the notes and the slide again | None |
 
 Each shell starts in its folder. A `cd` in one shell moves that shell and nothing else. The file list
 and the reader stay on the replay copy.
@@ -143,7 +144,9 @@ If a terminal checks out another commit, the replay copy is no longer at a step.
 4. The server lists the untracked files, and the files that the new step tracks. If a path is in both
    lists, the server refuses and names it. A checkout would write over your file.
 5. The server runs `git checkout --detach` to the commit of the step.
-6. The server sets the slide back to the first slide, and tells every window.
+6. The server sets the slide back to the first slide, and tells every window. It presses Enter in each
+   idle shell at the step, so that the shell draws its prompt again. See
+   [The terminals](terminals.md#the-prompt-after-a-move).
 7. Each window reads the new state, the file list, the recipes, and the notes. An open file stays open,
    and the window reads it again at the new step.
 
