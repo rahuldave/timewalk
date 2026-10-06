@@ -5,11 +5,11 @@
 Run timewalk from GitHub with uv, with no clone and no install:
 
 ```
-uvx --from git+https://github.com/rahuldave/timewalk@v1.0.8 timewalk [repo] [options]
-uvx --from git+https://github.com/rahuldave/timewalk@v1.0.8 timewalk-pdf [options]
+uvx --from git+https://github.com/rahuldave/timewalk@v1.0.9 timewalk [repo] [options]
+uvx --from git+https://github.com/rahuldave/timewalk@v1.0.9 timewalk-pdf [options]
 ```
 
-Or install the two commands once with `uv tool install git+https://github.com/rahuldave/timewalk@v1.0.8`. In a clone of timewalk, run them with
+Or install the two commands once with `uv tool install git+https://github.com/rahuldave/timewalk@v1.0.9`. In a clone of timewalk, run them with
 `uv run timewalk` and `uv run timewalk-pdf`.
 
 ## timewalk

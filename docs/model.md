@@ -120,6 +120,7 @@ and the reader stay on the replay copy.
 | The steps, with names, commits and notes | timewalk reads them from the tags when it starts | timewalk reads them again at the next start. Restart after you change the tags |
 | The current step | Git, as the HEAD of the replay copy. timewalk asks git again each time | Never. A restart finds the replay copy where it was |
 | Slide, layout, open file, view, tab in front, clock | The memory of the server, shared by every window | timewalk stops |
+| Where each step was left: its slide, and the scroll of its slide, notes and open file | The memory of the server. A move back to a step brings them back | timewalk stops |
 | Each shell, and the last 256 KB of its output | The server, with one process for each tab, on a pseudo-terminal | timewalk stops. The shells end, and their commands end too, unless you started a command with `nohup` and `&` |
 | Theme, text size, terminal height, run on click | The local storage of the browser | You clear it |
 | If the notes column shows | The session storage of the window | You close the window |
@@ -144,7 +145,9 @@ If a terminal checks out another commit, the replay copy is no longer at a step.
 4. The server lists the untracked files, and the files that the new step tracks. If a path is in both
    lists, the server refuses and names it. A checkout would write over your file.
 5. The server runs `git checkout --detach` to the commit of the step.
-6. The server sets the slide back to the first slide, and tells every window. It presses Enter in each
+6. The server sets the slide to the one where you left this step. A step that you have not visited starts
+   at its first slide. The server then tells every window. Each window then scrolls the slide, the notes and the open
+   file to where you left them. It presses Enter in each
    idle shell at the step, so that the shell draws its prompt again. See
    [The terminals](terminals.md#the-prompt-after-a-move).
 7. Each window reads the new state, the file list, the recipes, and the notes. An open file stays open,

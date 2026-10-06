@@ -57,6 +57,8 @@ so. Drag that window to the projector, and click **Full screen** in it.
 - **Click a command in the notes** to type it into its terminal. Press Enter to run it, in your window.
   The class sees the command and its output in the same terminal.
 - **Scroll in your window.** The class sees the same part of the slide, the file or the notes.
+- **Go back a step when you need to.** Each step comes back where you left it, at the same slide and the
+  same scroll of the slide, the notes and the open file.
 - **Read your cues** in your window. The class does not see them.
 
 ## Things to know

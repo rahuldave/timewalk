@@ -700,7 +700,17 @@ def make_app(
     hub = Hub()
     clock: dict[str, float | None] = {"started": None}
     # What every window shows, kept here so that all the windows on the page agree.
-    showing: dict = {"slide": 0, "layout": "split", "path": None, "view": "file", "track": "replay"}
+    showing: dict = {"slide": 0, "layout": "split", "path": None, "view": "file", "track": "replay", "step": None}
+    # Where each step was left: its slide, and how far down its slide, notes and open file were scrolled, as
+    # fractions. A move back to a step brings it all back. Kept while the server runs.
+    memory: dict[str, dict] = {}
+
+    def remember(step: str | None, **what) -> None:
+        "Note where a step is: its slide, or the scroll of one pane."
+        if step:
+            memory.setdefault(step, {"slide": 0, "scroll": {}})
+            memory[step].update({k: v for k, v in what.items() if k != "scroll"})
+            memory[step]["scroll"].update(what.get("scroll", {}))
 
     def slides_now() -> list[str]:  # The slides of the step the working copy is at
         "Read the manifest afresh, so slides can be edited while presenting."
@@ -758,7 +768,10 @@ def make_app(
         "Where the working copy is, the list of steps, the slides of this step, and the clock."
         deck = slides_now()
         showing["slide"] = min(showing["slide"], max(len(deck) - 1, 0))
-        return {**repo.state(), "clock": clock["started"], "now": time.time(), "slides": deck, "slide": showing["slide"],
+        where = repo.state()
+        showing["step"] = repo.steps[where["current"]].name if where["current"] is not None else None
+        return {**where, "clock": clock["started"], "now": time.time(), "slides": deck, "slide": showing["slide"],
+                "restore": memory.get(showing["step"] or "", {}).get("scroll", {}),
                 "has_slides": bool(load_slides(slides_path)), "has_notes": notes_path is not None, "show_clock": show_clock, "layout": showing["layout"], "path": showing["path"],
                 "view": showing["view"], "track": showing["track"]}
 
@@ -779,7 +792,8 @@ def make_app(
         "Move to another step and tell every page."
         body = await request.json()
         repo.move(int(body["to"]), set_aside=bool(body.get("set_aside")))
-        showing["slide"] = 0
+        showing["step"] = repo.steps[int(body["to"])].name
+        showing["slide"] = memory.get(showing["step"], {}).get("slide", 0)   # back where you left this step
         await hub.tell({"type": "moved"})
         # The shells at the step are now at another commit. An idle one draws its prompt again, to show the new HEAD.
         for term in terminals.values():
@@ -793,6 +807,7 @@ def make_app(
         body = await request.json()
         deck = slides_now()
         showing["slide"] = min(max(int(body["to"]), 0), max(len(deck) - 1, 0))
+        remember(showing["step"], slide=showing["slide"])
         await hub.tell({"type": "slide"})
         return {"slide": showing["slide"], "slides": deck}
 
@@ -921,6 +936,9 @@ def make_app(
                     continue
                 if message.get("type") == "scroll" and message.get("pane") in ("slide", "file", "notes"):
                     at = min(max(float(message.get("at", 0)), 0.0), 1.0)
+                    # Remember it for this step: the slide's scroll with its slide, the file's with its path.
+                    place = {"slide": [showing["slide"], at], "notes": at, "file": [showing["path"], at]}[message["pane"]]
+                    remember(showing["step"], scroll={message["pane"]: place})
                     for page in list(hub.pages):
                         if page is not socket:
                             try:

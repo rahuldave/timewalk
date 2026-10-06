@@ -75,7 +75,7 @@ The `.gitignore` of the kit lists `repo/` and `worktree/`, so the names never ch
 `justfile` like this one runs timewalk from GitHub on the clone:
 
 ```just
-timewalk := "uvx --from git+https://github.com/rahuldave/timewalk@v1.0.8"
+timewalk := "uvx --from git+https://github.com/rahuldave/timewalk@v1.0.9"
 
 # Open the page on the project, with these notes and slides
 present *args:

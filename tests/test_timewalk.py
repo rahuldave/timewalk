@@ -818,6 +818,23 @@ def test_the_content_watcher_announces_an_edited_slide(tmp_path: Path) -> None:
     assert asyncio.run(asyncio.wait_for(scenario(), timeout=10)) == [{"type": "content"}]
 
 
+def test_a_step_is_back_where_you_left_it(served: TestClient) -> None:
+    "Move away from a step and back: its slide, and the scroll of its slide and notes, come back."
+    auth = {"t": TOKEN}
+    served.post("/api/move", params=auth, json={"to": 1})
+    served.post("/api/slide", params=auth, json={"to": 1})
+    served.get("/api/state", params=auth)
+    with served.websocket_connect(f"/ws/events?t={TOKEN}") as window, served.websocket_connect(f"/ws/events?t={TOKEN}") as other:
+        window.send_json({"type": "scroll", "pane": "notes", "at": 0.6})
+        assert other.receive_json()["at"] == 0.6
+    served.post("/api/move", params=auth, json={"to": 2})
+    later = served.get("/api/state", params=auth).json()
+    assert (later["slide"], later["restore"]) == (0, {}), "a step not visited yet starts at the top"
+    served.post("/api/move", params=auth, json={"to": 1})
+    back = served.get("/api/state", params=auth).json()
+    assert back["slide"] == 1 and back["restore"]["notes"] == 0.6
+
+
 def test_unknown_terminal_names_are_refused(served: TestClient) -> None:
     "Only the known tab names get a shell."
     assert served.post("/api/type", params={"t": TOKEN}, json={"track": "../../bin", "text": "echo no"}).status_code == 409

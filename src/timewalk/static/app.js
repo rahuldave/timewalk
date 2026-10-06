@@ -5,9 +5,12 @@ import { init, Terminal, FitAddon } from "/static/vendor/ghostty-web/ghostty-web
 import { api, socket, onEvents, escapeHtml, settings, stepLabel, drawSlide, isDoc, renderMarkdown } from "/static/common.js";
 
 const $ = (id) => document.getElementById(id);
-const PAGE = Math.random().toString(36).slice(2);
+const PAGE = Math.random().toString(36).slice(2);   // tells this window's own requests apart from another window's
 // The window for the class, opened by the Room button, or by an address with room=1: no cues, no clock band.
-const ROOM = new URLSearchParams(location.search).get("room") === "1";   // tells this window's own requests apart from another window's
+const ROOM = new URLSearchParams(location.search).get("room") === "1";
+// The panes whose scroll every window shares, and the time until which a pane's scrolls come from elsewhere.
+const SCROLLERS = { slide: "slide", file: "file-body", notes: "notes-body" };
+const following = {};
 const LANGUAGES = { py: "python", toml: "ini", cfg: "ini", ini: "ini", yaml: "yaml", yml: "yaml", json: "json", jsonl: "json", md: "markdown",
   qmd: "markdown", sh: "bash", zsh: "bash", js: "javascript", ts: "typescript", html: "xml", css: "css", lua: "lua", lock: "ini" };
 const TERM_THEMES = {
@@ -50,12 +53,26 @@ async function refresh() {
   ui.layout = ui.state.layout;
   ui.skew = ui.state.now - Date.now() / 1000;
   drawSteps();
-  drawSlides();
+  const drawn = drawSlides();
   await Promise.all([loadTree(), loadRecipes(), ui.state.has_notes ? loadNotes() : null]);
   if (ui.open) await openFile(ui.open, ui.view, false);
   drawNotes();
   drawBand();
   drawTools();
+  await drawn;
+  restorePlaces(ui.state.restore);
+}
+
+/** Put the slide, the notes and the open file back where this step was left, as the server remembers it. */
+function restorePlaces(places = {}) {
+  const put = (pane, at) => {
+    const el = $(SCROLLERS[pane]);
+    following[pane] = Date.now() + 300;   // a scroll that we make here is not sent on to the other windows
+    el.scrollTop = at * (el.scrollHeight - el.clientHeight);
+  };
+  if (places.slide && places.slide[0] === ui.state.slide) put("slide", places.slide[1]);
+  if (typeof places.notes === "number") put("notes", places.notes);
+  if (places.file && places.file[0] && places.file[0] === ui.open) put("file", places.file[1]);
 }
 
 /** Ask the server to change what both pages show. The change comes back to this page as an event too. */
@@ -748,7 +765,7 @@ wireControls();
 await init();
 await refresh();
 selectTab(ui.state.track || "replay");
-if (ui.state.path) await openFile(ui.state.path, ui.state.view);
+if (ui.state.path) { await openFile(ui.state.path, ui.state.view); restorePlaces(ui.state.restore); }
 const events = onEvents(async (event) => {
   if (event.type === "moved") { hideNotice(); await refresh(); }
   if (event.type === "edits") {
@@ -771,8 +788,6 @@ const events = onEvents(async (event) => {
 // ---------- shared scrolling ----------
 // When you scroll a slide, a file or the notes, every other window scrolls to the same place, as a fraction of the
 // whole, since the windows can differ in size. A scroll that came from another window is not sent back.
-const SCROLLERS = { slide: "slide", file: "file-body", notes: "notes-body" };
-const following = {};   // pane -> time until which its scrolls come from another window
 for (const [pane, id] of Object.entries(SCROLLERS)) {
   const el = $(id);
   let queued = false;

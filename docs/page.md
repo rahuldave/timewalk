@@ -25,6 +25,10 @@ When you scroll a slide, a file or the notes, every other window scrolls to the 
 windows can differ in size, the place is a fraction of the whole. Half way down in one window is half way
 down in every window. To teach with one window for you and one for the class, see [Teach a class](class.md).
 
+Each step also remembers where you left it. Move from step 6 to step 7 and back, and step 6 comes back at
+the same slide. The slide, the notes and the open file also come back at the same scroll. A step that you have
+not visited yet starts at its first slide, at the top. timewalk keeps this memory while it runs.
+
 A setting of the browser applies to every window of that browser. To give the projector another theme or
 text size, open its window in another browser, or in a private window.
 
