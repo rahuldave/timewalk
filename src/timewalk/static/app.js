@@ -157,6 +157,7 @@ function drawSlides() {
   $("slide-arrows").hidden = doc && slides.length === 1;
   $("slide-count").textContent = doc ? slides[slide].replace(/#doc$/, "") : slides.length ? `Slide ${slide + 1} of ${slides.length}` : "No slides for this step";
   $("slide-prev").disabled = slide <= 0;
+  $("slide-first").hidden = slide <= 0;   // shown once you are past the first slide
   $("slide-next").disabled = slide >= slides.length - 1;
   for (const entry of ui.terms.values()) if (!entry.el.hidden) requestAnimationFrame(() => entry.fit.fit());
   return drawSlide($("slide"), slides[slide], { command: commandButton });   // a $ line on a slide is a button, as in the notes
@@ -479,6 +480,7 @@ function wireControls() {
   $("next").onclick = () => move((ui.state.current ?? -1) + 1);
   $("only-changed").onchange = drawTree;
   $("slide-prev").onclick = () => showSlide(ui.state.slide - 1);
+  $("slide-first").onclick = () => showSlide(0);
   $("slide-next").onclick = () => showSlide(ui.state.slide + 1);
   for (const button of $("layouts").querySelectorAll("button")) button.onclick = () => show({ layout: button.dataset.layout });
   for (const view of ["file", "diff", "edits"]) $("view-" + view).onclick = () => ui.open && show({ path: ui.open, view });
@@ -492,7 +494,16 @@ function wireControls() {
     show({ track: "extra-" + n });
   };
   document.addEventListener("keydown", (event) => {
-    if (event.metaKey || event.ctrlKey || event.shiftKey) return;
+    if (event.metaKey || event.ctrlKey) return;
+    // Shift+Up and Shift+Down: the first and the last slide of the step. Other keys with Shift are left alone.
+    if (event.shiftKey) {
+      const target = event.target instanceof Element ? event.target : document.body;
+      if (target.closest(".term-pane") || target.closest("textarea, select, [contenteditable], input:not([type=checkbox]):not([type=radio])")) return;
+      const count = ui.state?.slides?.length || 0;
+      if (event.key === "ArrowUp" && count > 1) { event.preventDefault(); event.stopPropagation(); showSlide(0); }
+      if (event.key === "ArrowDown" && count > 1) { event.preventDefault(); event.stopPropagation(); showSlide(count - 1); }
+      return;
+    }
     // Alt+arrows work everywhere, a terminal included. Plain arrows work unless a terminal or a text field has the keys.
     if (!event.altKey) {
       const target = event.target instanceof Element ? event.target : document.body;
