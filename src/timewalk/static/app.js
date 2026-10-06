@@ -548,6 +548,34 @@ function wireControls() {
     handle.addEventListener("dblclick", () => { panes.style.removeProperty("--" + name); settings.set(name, null); });
   }
 
+  // drag the handle on the edge of the notes: their width, or on a narrow screen, where they sit under the
+  // terminals, their height. Each browser keeps the size; a double-click resets it.
+  const notesHandle = $("resize-notes");
+  for (const name of ["notes-width", "notes-height"]) {
+    const saved = settings.get(name, null);
+    if (saved) document.body.style.setProperty("--" + name, saved + "px");
+  }
+  notesHandle.addEventListener("pointerdown", (down) => {
+    down.preventDefault();
+    notesHandle.setPointerCapture(down.pointerId);
+    notesHandle.classList.add("dragging");
+    const across = getComputedStyle(notesHandle).cursor !== "row-resize";
+    const name = across ? "notes-width" : "notes-height";
+    const onMove = (e) => {
+      const size = across ? Math.min(Math.max(window.innerWidth - e.clientX, 220), window.innerWidth - 420)
+                          : Math.min(Math.max(window.innerHeight - e.clientY, 120), window.innerHeight - 200);
+      document.body.style.setProperty("--" + name, Math.round(size) + "px");
+      settings.set(name, Math.round(size));
+    };
+    notesHandle.addEventListener("pointermove", onMove);
+    notesHandle.addEventListener("pointerup", () => { notesHandle.removeEventListener("pointermove", onMove); notesHandle.classList.remove("dragging"); }, { once: true });
+  });
+  notesHandle.addEventListener("dblclick", () => {
+    const name = getComputedStyle(notesHandle).cursor !== "row-resize" ? "notes-width" : "notes-height";
+    document.body.style.removeProperty("--" + name);
+    settings.set(name, null);
+  });
+
   const divider = $("divider");
   divider.addEventListener("pointerdown", (down) => {
     divider.setPointerCapture(down.pointerId);
