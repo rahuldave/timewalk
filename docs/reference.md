@@ -5,11 +5,11 @@
 Run timewalk from GitHub with uv, with no clone and no install:
 
 ```
-uvx --from git+https://github.com/rahuldave/timewalk@v1.0.9 timewalk [repo] [options]
-uvx --from git+https://github.com/rahuldave/timewalk@v1.0.9 timewalk-pdf [options]
+uvx --from git+https://github.com/rahuldave/timewalk@v1.0.10 timewalk [repo] [options]
+uvx --from git+https://github.com/rahuldave/timewalk@v1.0.10 timewalk-pdf [options]
 ```
 
-Or install the two commands once with `uv tool install git+https://github.com/rahuldave/timewalk@v1.0.9`. In a clone of timewalk, run them with
+Or install the two commands once with `uv tool install git+https://github.com/rahuldave/timewalk@v1.0.10`. In a clone of timewalk, run them with
 `uv run timewalk` and `uv run timewalk-pdf`.
 
 ## timewalk
@@ -101,6 +101,7 @@ Add these to the address that timewalk prints, after the token, with `&`.
 | Left, Right | Previous or next step |
 | Up, Down | Previous or next slide, when there is more than one. On a document, or with one slide, they scroll |
 | Alt with an arrow | Moves the step or the slide, even inside a terminal or on a document |
+| Home, End | The top or the bottom of the slide, the file or the notes under the mouse |
 
 ## Requirements
 

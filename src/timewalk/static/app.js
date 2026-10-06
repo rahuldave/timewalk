@@ -499,6 +499,11 @@ function wireControls() {
       if (target.closest(".term-pane") || target.closest("textarea, select, [contenteditable], input:not([type=checkbox]):not([type=radio])")) return;
     }
     const manySlides = (ui.state?.slides?.length || 0) > 1;
+    // Home and End: the top or the bottom of the slide, file or notes under the mouse.
+    if ((event.key === "Home" || event.key === "End") && !event.altKey) {
+      const pane = paneUnderMouse();
+      if (pane) { event.preventDefault(); scrollPane(pane, event.key === "Home" ? "top" : "bottom"); }
+    }
     if (event.key === "ArrowRight") { event.preventDefault(); $("next").click(); }
     if (event.key === "ArrowLeft") { event.preventDefault(); $("prev").click(); }
     // With one slide or a document, plain Up and Down are left to scroll.
@@ -791,6 +796,7 @@ const events = onEvents(async (event) => {
 for (const [pane, id] of Object.entries(SCROLLERS)) {
   const el = $(id);
   let queued = false;
+  el.addEventListener("scroll", () => drawTopButtons(), { passive: true });
   el.addEventListener("scroll", () => {
     if (Date.now() < (following[pane] || 0) || queued) return;
     queued = true;
@@ -820,3 +826,28 @@ async function reloadContent() {
   await drawSlides();
   for (const [pane, top] of Object.entries(tops)) $(SCROLLERS[pane]).scrollTop = top;
 }
+
+// ---------- back to the top ----------
+// Each scrolling pane has a Top button in its header, shown only when the pane is scrolled down. Home and End
+// scroll the pane under the mouse to its top or bottom. Either is a scroll, so the other windows follow.
+let mouse = { x: 0, y: 0 };
+document.addEventListener("mousemove", (event) => { mouse = { x: event.clientX, y: event.clientY }; }, { passive: true });
+
+function paneUnderMouse() {
+  const under = document.elementFromPoint(mouse.x, mouse.y);
+  for (const [pane, id] of Object.entries(SCROLLERS)) if (under && $(id).contains(under)) return pane;
+  for (const pane of ["slide", "file"]) if ($(SCROLLERS[pane]).offsetParent) return pane;   // else the first one shown
+  return null;
+}
+
+function scrollPane(pane, where) {
+  const el = $(SCROLLERS[pane]);
+  el.scrollTop = where === "top" ? 0 : el.scrollHeight;
+}
+
+function drawTopButtons() {
+  for (const button of document.querySelectorAll(".to-top")) button.hidden = $(SCROLLERS[button.dataset.pane]).scrollTop < 40;
+}
+
+for (const button of document.querySelectorAll(".to-top")) button.onclick = () => scrollPane(button.dataset.pane, "top");
+setInterval(drawTopButtons, 1000);   // a redraw puts a pane back at the top without a scroll event

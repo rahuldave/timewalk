@@ -94,7 +94,7 @@ Rahul set these rules. Each rule has tests. Do not weaken them.
 timewalk is a package, `src/timewalk`, built with hatchling from `pyproject.toml`. It gives two commands,
 `timewalk` and `timewalk-pdf`. Its dependencies are Starlette, uvicorn, websockets, Playwright and pypdf;
 the tests use the `dev` group. In a clone, run `uv run timewalk`. Users run it from GitHub with
-`uvx --from git+https://github.com/rahuldave/timewalk@v1.0.9 timewalk`, so it is not on PyPI, by Rahul's choice. When a change must reach users,
+`uvx --from git+https://github.com/rahuldave/timewalk@v1.0.10 timewalk`, so it is not on PyPI, by Rahul's choice. When a change must reach users,
 raise the version in `pyproject.toml`, tag the commit `vX.Y.Z`, push the tag, and update the pin in the
 docs and in the kits.
 

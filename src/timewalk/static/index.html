@@ -54,6 +54,7 @@
     <section class="slide-pane" id="slide-pane">
       <div class="pane-head">
         <span id="slide-count">Slides</span>
+        <button class="to-top" data-pane="slide" hidden title="Back to the top of the slide (Home)">&#8593; Top</button>
         <span class="views" id="slide-arrows">
           <button id="slide-prev" title="Previous slide (Up arrow; Alt+Up inside a terminal)" aria-label="Previous slide">&#9650;</button>
           <button id="slide-next" title="Next slide (Down arrow; Alt+Down inside a terminal)" aria-label="Next slide">&#9660;</button>
@@ -77,6 +78,7 @@
     <section class="file-pane">
       <div class="pane-head">
         <span id="file-path" class="file-path">Choose a file</span>
+        <button class="to-top" data-pane="file" hidden title="Back to the top of the file (Home)">&#8593; Top</button>
         <span class="views" role="tablist">
           <button id="view-file" role="tab" aria-selected="true">File</button>
           <button id="view-diff" role="tab" aria-selected="false">Changes in this step</button>
@@ -103,6 +105,7 @@
     <div class="pane-head">
       <span id="notes-title">Notes</span>
       <span class="notes-tools">
+        <button class="to-top" data-pane="notes" hidden title="Back to the top of the notes (Home)">&#8593; Top</button>
         <label class="only" title="When on, a click on a command also presses Enter. When off, it only types the command, for you to read and run"><input type="checkbox" id="run-on-click"> run on click</label>
         <button id="notes-edit" title="Edit the notes of this step, in the notes file">Edit</button>
       </span>

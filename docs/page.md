@@ -94,6 +94,14 @@ handle of the slides shows only in the **Both** layout.
 
 ![The handles between the slides, the file list and the reader](images/handles.png)
 
+## Back to the top
+
+When you scroll down a slide, a file or the notes, an **↑ Top** button shows in the header of that pane.
+Click it to go back to the top. The button hides again at the top.
+
+The keys **Home** and **End** take the pane under the mouse to its top or its bottom. Both are ordinary
+scrolls, so every other window follows, and the step remembers the place.
+
 ## Slides
 
 The slides pane shows the slides for the step, from the manifest. The manifest is the TOML file that says
@@ -170,6 +178,7 @@ show the recipes of your repository. A folder with no `justfile` shows no recipe
 | Left, Right | The previous or next step |
 | Up, Down | The previous or next slide, when the step has more than one. On a document, or with one slide, they scroll |
 | Alt with an arrow | Moves the step or the slide, from anywhere, a terminal included |
+| Home, End | The top or the bottom of the slide, the file or the notes under the mouse |
 
 The page keeps the arrow keys until you click into a terminal. Then the terminal has the keys, and a blue
 edge around it shows this. The arrows then move through the history of your shell.
