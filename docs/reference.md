@@ -37,7 +37,7 @@ timewalk [repo] [options]
 ## timewalk-pdf
 
 ```
-timewalk-pdf [MANIFEST] [-o OUT.pdf] [--title TEXT] [--notes FILE] [--with-notes]
+timewalk-pdf [MANIFEST] [-o OUT.pdf] [--title TEXT] [--notes FILE] [--with-notes] [--brand DIR]
 ```
 
 | Option | Does |
@@ -47,8 +47,9 @@ timewalk-pdf [MANIFEST] [-o OUT.pdf] [--title TEXT] [--notes FILE] [--with-notes
 | `--title` | A title for the footer of every page |
 | `--notes` | A notes file. Without `--with-notes`, `slides_pdf` reads only the title of each step from it, for the footer |
 | `--with-notes` | Put the notes of each step after its slides: the prose, the cues in their own shade, and the commands in code blocks. The `time:` lines stay out |
+| `--brand` | A brand: a folder with a `brand.toml`, or the `brand.toml` itself. It sets the font, colours, footer, cover and dividers. See [Brand a PDF](brand.md) |
 
-The **PDF** button on the page makes the same PDF, without the notes. See
+The **PDF** button on the page makes the same PDF, without the notes and without a brand. See
 [Slides and documents](slides.md#a-pdf-of-the-slides).
 
 ## Recipes

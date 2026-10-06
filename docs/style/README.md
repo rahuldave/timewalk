@@ -58,6 +58,9 @@ only that page could not know it.
 | shell | The program that runs in a terminal, for example zsh or bash |
 | slide, document | One slide, or one longer Markdown page shown instead of slides |
 | manifest | The TOML file that says which slides go with which step |
+| brand | A folder with a `brand.toml`, a logo and fonts, that sets the look of a PDF |
+| divider | A page of one colour before the slides of a step, in a branded PDF |
+| cover | The first page of a branded PDF, with the title |
 | notes file | The Markdown file of notes, the script of each step. It lives outside your repository |
 | layout | Slides, Both or Code |
 | recipe | A task in a `justfile`, run with `just` |

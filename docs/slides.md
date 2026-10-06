@@ -131,10 +131,11 @@ the step and the page.
 - The pages of a PDF deck come directly from that PDF.
 - A document continues over as many pages as it needs, under the name of its step.
 - Without `--with-notes`, the command reads `--notes` only for the title of each step, for the footer.
+- With `--brand`, the PDF takes the font, colours, cover and dividers of a brand. See [Brand a PDF](brand.md).
 
 ### The notes in the PDF
 
-Add `--with-notes` to put the notes of each step after its slides, as the **PDF** button does:
+Add `--with-notes` to put the notes of each step after its slides. The **PDF** button does not add the notes:
 
 ```
 timewalk-pdf slides/slides.toml --notes notes.md --with-notes
@@ -144,8 +145,8 @@ The notes show the prose, the cues in their own shade, and the commands in code 
 the `time:` lines.
 
 The manifest is optional with `--with-notes`. Without a manifest, the PDF holds only the notes, as a
-runbook. A runbook is a written script of each step, with its prose and commands. The command writes
-`notes.pdf` beside the notes file:
+runbook. A runbook is a written script of each step, with its prose and commands. Without `-o`, the command
+writes `build/notes.pdf` in the current folder:
 
 ```
 timewalk-pdf --notes notes.md --with-notes

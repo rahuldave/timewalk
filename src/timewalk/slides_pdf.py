@@ -12,7 +12,11 @@ over as many pages as it needs. With --with-notes, each step's notes follow its 
 they need: the prose, the `>` cues in their own shade, and the commands in code blocks. Each drawn slide has a
 footer with the deck title, the step and a page number; with --notes the footer also has each step's title.
 
-The page in timewalk has a PDF button that makes the same PDF, with the notes.
+With --brand DIR, the PDF takes the look of a brand: a folder with a `brand.toml` and the files it names, a logo
+and fonts. A brand can set the font, the colours, the footer, a cover page and a page of one colour before each
+step. Without --brand, the PDF looks as it always has. See `load_brand` for the keys.
+
+The page in timewalk has a PDF button that makes the slides alone, with no notes and no brand.
 
 It needs a Chromium-family browser to do the drawing and uses the Google Chrome or Microsoft Edge already
 installed. If there is neither, run `uvx playwright install chromium` once.
@@ -24,6 +28,7 @@ import re
 import socket
 import threading
 import time
+import tomllib
 from pathlib import Path
 from urllib.parse import quote
 
@@ -40,6 +45,67 @@ from starlette.staticfiles import StaticFiles
 from timewalk import HERE, load_slides, parse_notes
 
 COMMAND = re.compile(r"^\s*(main|runs[2-9]?)?\$\s+(.+)$")
+COLOUR = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$")
+FONT_FILES = (".ttf", ".otf", ".woff", ".woff2")
+# Every key a brand.toml may have: its table, its name, and what its value must be. Each key is optional.
+BRAND_KEYS = {
+    "brand": {"font": "font", "text_color": "colour", "title_color": "colour", "accent": "colour",
+              "footer": "text", "logo": "file", "logo_on": ("cover", "every")},
+    "cover": {"title": "text", "box": "text", "lines": "lines"},
+    "divider": {"color": "colour", "title": "yes or no"},
+}
+
+
+def load_brand(
+    where: Path,  # The brand's folder, or the brand.toml in it
+) -> dict:  # The brand, as the print page reads it: files become addresses under /brand/, and "folder" is the folder
+    """Read and check a brand. Every key is optional; one that is left out keeps the PDF as it is without a brand.
+
+    [brand]  font: a font this machine has, or a font file in the folder; text_color: the body text;
+             title_color: the slide titles, which then get a thin rule under them; accent: the box on the cover;
+             footer: text at the bottom left of every slide, in place of the deck's title; logo: a picture in the
+             folder; logo_on: "cover" (the default) or "every" page.
+    [cover]  A cover page comes first when this table is there. title: the default is the deck's title;
+             box: a line in a box of the accent colour; lines: a list of lines under the box, the first one larger.
+    [divider] color: a page of this colour before each step that has slides; title: true (the default) to write
+             the step's title on it, in white.
+    """
+    toml = where / "brand.toml" if where.is_dir() else where
+    if not toml.is_file():
+        raise SystemExit(f"slides_pdf: there is no brand.toml at {where}" if where.is_dir() else f"slides_pdf: the brand {where} does not exist")
+    folder = toml.parent
+    try:
+        data = tomllib.loads(toml.read_text(encoding="utf-8"))
+    except tomllib.TOMLDecodeError as error:
+        raise SystemExit(f"slides_pdf: {toml} is not valid TOML: {error}") from None
+    brand: dict = {"folder": folder}
+    for table, values in data.items():
+        if table not in BRAND_KEYS:
+            raise SystemExit(f"slides_pdf: {toml} has a table [{table}] that a brand does not have; it may have [{'], ['.join(BRAND_KEYS)}]")
+        if not isinstance(values, dict):
+            raise SystemExit(f"slides_pdf: in {toml}, {table} must be a table, written [{table}]")
+        for key, value in values.items():
+            kind = BRAND_KEYS[table].get(key)
+            name = f"{table}.{key}"
+            if kind is None:
+                raise SystemExit(f"slides_pdf: {toml} has a key {key} in [{table}] that a brand does not have; "
+                                 f"[{table}] may have {', '.join(BRAND_KEYS[table])}")
+            if kind == "colour" and not (isinstance(value, str) and COLOUR.match(value)):
+                raise SystemExit(f"slides_pdf: in {toml}, {name} = {value!r} is not a colour; write it as \"#RRGGBB\", for example \"#951026\"")
+            if kind in ("text", "font", "file") and not isinstance(value, str):
+                raise SystemExit(f"slides_pdf: in {toml}, {name} must be text in quotes")
+            if kind == "lines" and not (isinstance(value, list) and all(isinstance(line, str) for line in value)):
+                raise SystemExit(f"slides_pdf: in {toml}, {name} must be a list of lines, for example [\"A name\", \"A place\"]")
+            if kind == "yes or no" and not isinstance(value, bool):
+                raise SystemExit(f"slides_pdf: in {toml}, {name} must be true or false")
+            if isinstance(kind, tuple) and value not in kind:
+                raise SystemExit(f"slides_pdf: in {toml}, {name} = {value!r} must be one of {', '.join(repr(k) for k in kind)}")
+            if kind == "file" or (kind == "font" and value.lower().endswith(FONT_FILES)):
+                if not (folder / value).is_file():
+                    raise SystemExit(f"slides_pdf: in {toml}, {name} names {value}, and there is no such file in {folder}")
+                value = "/brand/" + quote(value)
+            brand.setdefault(table, {})[key] = value
+    return brand
 
 
 def notes_markdown(
@@ -72,7 +138,8 @@ def deck_of(
     notes: Path | None,  # The notes file, if there is one: its step titles, and with `with_notes` its text
     title: str,  # The deck's title, for the footer
     with_notes: bool = False,  # Print each step's notes after its slides
-) -> dict:  # The deck: its title and, per step, the step's title, slides and notes
+    brand: dict | None = None,  # What `load_brand` returned, or None for no brand
+) -> dict:  # The deck: its title, its brand and, per step, the step's title, slides and notes
     "Describe the whole deck, step by step."
     parsed = parse_notes(notes.read_text(encoding="utf-8")) if notes and notes.is_file() else {}
     slides = load_slides(manifest) if manifest else {}
@@ -80,12 +147,13 @@ def deck_of(
     # In step-name order, as timewalk orders the steps, so a step under [docs] falls among the [slides] steps.
     steps = [{"name": name, "title": parsed.get(name, {}).get("title", ""), "slides": slides.get(name, []),
               "notes": notes_markdown(parsed[name]["raw"]) if with_notes and name in parsed else ""} for name in sorted(names)]
-    return {"title": title, "steps": steps}
+    return {"title": title, "steps": steps, "brand": {k: v for k, v in brand.items() if k != "folder"} if brand else None}
 
 
 def serve(
     deck: dict,  # What `deck_of` returned
     folder: Path | None,  # The manifest's folder, where the slide files are, if there is a manifest
+    brand_folder: Path | None = None,  # The brand's folder, where its logo and fonts are, if there is a brand
 ) -> tuple[uvicorn.Server, int]:  # The running server and its port
     "Serve the print page on a free local port, for the few seconds the export takes."
     async def print_page(request: Request) -> FileResponse:
@@ -99,6 +167,7 @@ def serve(
         Route("/api/deck", deck_json),
         Mount("/static", StaticFiles(directory=HERE / "static")),
         *([Mount("/slides", StaticFiles(directory=folder))] if folder else []),
+        *([Mount("/brand", StaticFiles(directory=brand_folder))] if brand_folder else []),
     ])
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
@@ -137,6 +206,9 @@ def draw(
             page.wait_for_selector("body[data-ready]", state="attached", timeout=120_000)
             if problems:
                 raise SystemExit("slides_pdf: the print page failed: " + "; ".join(problems))
+            problem = page.evaluate("document.body.dataset.problem || ''")  # the print page found the brand wanting
+            if problem:
+                raise SystemExit(f"slides_pdf: {problem}")
             return page.pdf(width="13.333in", height="7.5in", print_background=True, prefer_css_page_size=True)
 
         slides = printed(f"http://127.0.0.1:{port}/print") if draws_slides else b""
@@ -157,7 +229,19 @@ def assemble(
     pages = iter(PdfReader(io.BytesIO(drawn)).pages if drawn else [])
     out = PdfWriter()
     sources: dict[str, PdfReader] = {}
+    brand = deck.get("brand") or {}
+
+    def drawn_page(what: str) -> None:  # Add the next page that the browser drew
+        page = next(pages, None)
+        if page is None:
+            raise SystemExit(f"slides_pdf: the browser drew fewer pages than there are slides; stopped at {what}")
+        out.add_page(page)
+
+    if "cover" in brand:
+        drawn_page("the cover")
     for step in deck["steps"]:
+        if step["slides"] and "color" in brand.get("divider", {}):
+            drawn_page(f"the divider before {step['name']}")
         for entry in step["slides"]:
             path, _, fragment = entry.partition("#")
             if entry in documents:
@@ -165,10 +249,7 @@ def assemble(
                     out.add_page(page)
                 continue
             if not path.lower().endswith(".pdf"):
-                page = next(pages, None)
-                if page is None:
-                    raise SystemExit(f"slides_pdf: the browser drew fewer pages than there are slides; stopped at {entry}")
-                out.add_page(page)
+                drawn_page(entry)
                 continue
             source = sources.setdefault(path, PdfReader(folder / path))
             wanted = dict(part.split("=", 1) for part in fragment.split("&") if "=" in part).get("page")
@@ -188,18 +269,22 @@ def make_pdf(
     notes: Path | None,  # The notes file, if there is one
     title: str,  # A title for the footer of every page
     with_notes: bool = False,  # Print each step's notes after its slides
+    brand: Path | None = None,  # A brand's folder, or its brand.toml, for the look of the PDF; None for no brand
 ) -> bytes:  # The PDF
     "Make the whole PDF: draw it in a browser, copy in PDF pages, and join the parts in step order."
-    deck = deck_of(manifest, notes, title, with_notes)
+    look = load_brand(brand) if brand else None
+    deck = deck_of(manifest, notes, title, with_notes, look)
     if not any(step["slides"] or step["notes"] for step in deck["steps"]):
         raise SystemExit("slides_pdf: there is nothing to print: no slides, and no notes")
     folder = manifest.parent if manifest else None
-    server, port = serve(deck, folder)
+    server, port = serve(deck, folder, look["folder"] if look else None)
     try:
         docs = [entry for step in deck["steps"] for entry in step["slides"] if entry.endswith("#doc")]
         drawn_entries = [entry for step in deck["steps"] for entry in step["slides"]
                          if not entry.split("#")[0].lower().endswith(".pdf") and not entry.endswith("#doc")]
-        drawn, documents, written = draw(port, docs, [step["name"] for step in deck["steps"] if step["notes"]], bool(drawn_entries))
+        # A cover and the dividers are drawn pages too, even in a deck of PDF pages only.
+        extra = look is not None and ("cover" in look or "color" in look.get("divider", {}))
+        drawn, documents, written = draw(port, docs, [step["name"] for step in deck["steps"] if step["notes"]], bool(drawn_entries) or extra)
         handout = assemble(deck, drawn, documents, written, folder)
     finally:
         server.should_exit = True
@@ -217,6 +302,7 @@ def main() -> None:
     parser.add_argument("--notes", type=Path, help="a notes file: its step titles go in the footer, and with --with-notes its text is printed")
     parser.add_argument("--with-notes", action="store_true", help="print each step's notes after its slides, cues and commands included")
     parser.add_argument("--title", default="", help="a title for the footer of every page")
+    parser.add_argument("--brand", type=Path, help="a brand: a folder with a brand.toml, its logo and fonts, for the look of the PDF (default: no brand)")
     args = parser.parse_args()
 
     manifest = args.manifest.resolve() if args.manifest else None
@@ -225,7 +311,8 @@ def main() -> None:
         raise SystemExit(f"slides_pdf: {manifest} does not exist")
     if manifest is None and not (notes and args.with_notes):
         raise SystemExit("slides_pdf: give a slides manifest, or --notes with --with-notes, or both")
-    data = make_pdf(manifest, notes, args.title or (manifest or notes).parent.name, args.with_notes)
+    brand = args.brand.resolve() if args.brand else None
+    data = make_pdf(manifest, notes, args.title or (manifest or notes).parent.name, args.with_notes, brand)
     output = (args.output or Path("build") / ("slides.pdf" if manifest else "notes.pdf")).resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_bytes(data)

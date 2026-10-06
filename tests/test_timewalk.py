@@ -1,5 +1,6 @@
 """Tests for timewalk: the git layer, the notes and slides readers, and the web application's guards."""
 
+import re
 import shutil
 import subprocess
 import sys
@@ -706,6 +707,104 @@ def test_the_pdf_has_each_steps_notes_after_its_slides(tmp_path: Path) -> None:
     assert deck["steps"][0]["notes"] == "> Say: hello\n\nRead this.\n\n```\n$ ls\nruns$ just train\n```"
     assert deck["steps"][1]["notes"] == "" and deck["steps"][2]["notes"] == "Only notes."
     assert all(s["notes"] == "" for s in slides_pdf.deck_of(manifest, notes, "T")["steps"]), "without with_notes, no notes are printed"
+
+
+# A picture of one pixel, for a brand's logo.
+PIXEL = bytes.fromhex("89504e470d0a1a0a0000000d4948445200000001000000010806000000"
+                      "1f15c4890000000d49444154789c6360f8cf000000030101005d8c0ad80000000049454e44ae426082")
+
+
+def a_font() -> Path | None:  # A font file of this machine, for a brand that loads its font from its folder
+    for folder in ("/System/Library/Fonts/Supplemental", "/System/Library/Fonts", "/usr/share/fonts", "C:/Windows/Fonts"):
+        found = sorted(Path(folder).rglob("*.ttf")) if Path(folder).is_dir() else []
+        if found:
+            return found[0]
+    return None
+
+
+def full_brand(folder: Path) -> Path:  # A brand with every key
+    folder.mkdir()
+    (folder / "logo.png").write_bytes(PIXEL)
+    font = a_font()
+    if font:
+        shutil.copy(font, folder / "face.ttf")
+    (folder / "brand.toml").write_text(
+        "[brand]\n" + ('font = "face.ttf"\n' if font else "") +
+        'text_color = "#404040"\ntitle_color = "#1F497D"\naccent = "#951026"\nfooter = "A Teacher"\nlogo = "logo.png"\nlogo_on = "every"\n'
+        '[cover]\ntitle = "A course"\nbox = "CS 101"\nlines = ["A Teacher", "A school"]\n'
+        '[divider]\ncolor = "#951026"\ntitle = true\n')
+    return folder
+
+
+def test_a_brand_is_read_from_its_folder(tmp_path: Path) -> None:
+    "A brand's files become addresses under /brand/, a brand may set one key only, and the toml may be named in place of the folder."
+    from timewalk import slides_pdf
+
+    brand = slides_pdf.load_brand(full_brand(tmp_path / "full"))
+    assert brand["folder"] == tmp_path / "full"
+    assert brand["brand"]["logo"] == "/brand/logo.png" and brand["cover"]["lines"] == ["A Teacher", "A school"]
+    (tmp_path / "plain").mkdir()
+    (tmp_path / "plain" / "brand.toml").write_text('[divider]\ncolor = "#2a6f4e"\n')
+    assert slides_pdf.load_brand(tmp_path / "plain" / "brand.toml") == {"folder": tmp_path / "plain", "divider": {"color": "#2a6f4e"}}
+    (tmp_path / "empty").mkdir()
+    with pytest.raises(SystemExit, match="there is no brand"):
+        slides_pdf.load_brand(tmp_path / "empty")
+
+
+@pytest.mark.parametrize("toml, says", [
+    ('[brand]\nlogo = "gone.png"\n', "brand.logo names gone.png, and there is no such file"),
+    ('[brand]\naccent = "maroon"\n', "brand.accent = 'maroon' is not a colour"),
+    ('[brand]\ncolour = "#fff"\n', "a key colour in [brand] that a brand does not have"),
+    ('[footer]\ntext = "x"\n', "a table [footer] that a brand does not have"),
+    ('[divider]\ntitle = "yes"\n', "divider.title must be true or false"),
+    ('[brand]\nlogo_on = "some"\n', "brand.logo_on = 'some' must be one of 'cover', 'every'"),
+    ('[cover]\nlines = "one"\n', "cover.lines must be a list of lines"),
+    ('[brand\n', "is not valid TOML"),
+])
+def test_a_brand_with_a_mistake_says_which_key(tmp_path: Path, toml: str, says: str) -> None:
+    "A brand that is wrong stops the PDF with a message that names the key and the file."
+    from timewalk import slides_pdf
+
+    (tmp_path / "brand.toml").write_text(toml)
+    with pytest.raises(SystemExit, match=re.escape(says)):
+        slides_pdf.load_brand(tmp_path)
+
+
+def test_a_brand_adds_a_cover_and_a_divider_before_each_step_with_slides(tmp_path: Path) -> None:
+    "Pages: one per slide, one per divider and the cover. Without a brand the PDF is as before, even after a branded one."
+    from timewalk import slides_pdf
+
+    if shutil.which("pdftotext") is None:
+        pytest.skip("needs pdftotext")
+    (tmp_path / "talk.md").write_text("## One\n\nfirst\n\n---\n\n## Two\n\nsecond\n\n---\n\n## Three\n\nthird\n")
+    manifest = tmp_path / "slides.toml"
+    manifest.write_text('[slides]\nstep-00 = ["talk.md#1"]\nstep-01 = ["talk.md#2-3"]\n')
+    notes = tmp_path / "notes.md"
+    notes.write_text("## step-00 Start\n\nSay hi.\n\n## step-01 Then\n\nMore.\n\n## step-02 Notes only\n\nNo slides here.\n")
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    (plain / "brand.toml").write_text('[divider]\ncolor = "#2a6f4e"\n')
+
+    def made(brand: Path | None) -> tuple[int, str, set[str]]:  # The pages, the text and the page sizes of a PDF
+        try:
+            data = slides_pdf.make_pdf(manifest, notes, "Deck", brand=brand)
+        except SystemExit as error:
+            if "no Chrome" in str(error):
+                pytest.skip(str(error))
+            raise
+        out = tmp_path / "out.pdf"
+        out.write_bytes(data)
+        text = subprocess.run(["pdftotext", "-raw", str(out), "-"], capture_output=True, text=True, check=True).stdout
+        pages = slides_pdf.PdfReader(out).pages
+        return len(pages), text, {(round(float(p.mediabox.width)), round(float(p.mediabox.height))) for p in pages}
+
+    before = made(None)
+    assert before[0] == 3 and "Deck" in before[1] and before[2] == {(960, 540)}
+    full = made(full_brand(tmp_path / "full"))
+    assert full[0] == 3 + 2 + 1, "three slides, a divider before each of the two steps with slides, and the cover"
+    assert "CS 101" in full[1] and "Start" in full[1] and "Notes only" not in full[1] and "A Teacher" in full[1]
+    assert made(plain)[0] == 3 + 2, "a brand with only a divider colour adds the dividers alone"
+    assert made(None) == before, "no leftover of a brand in the next PDF"
 
 
 
