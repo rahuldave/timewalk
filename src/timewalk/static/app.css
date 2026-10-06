@@ -289,8 +289,7 @@ body.with-notes .notes-pane { grid-area: notes; }
 .p-notes blockquote p { margin: 0 0 0.4em; }
 .p-notes blockquote p:last-child { margin-bottom: 0; }
 .p-commands { display: flex; flex-direction: column; gap: 6px; margin: 0.2em 0 0.9em; }
-.slide-commands { max-width: 34em; }
-.slide-commands button { font-size: 0.72em; }
+
 .p-commands button { text-align: left; font-family: var(--mono); font-size: 0.9em; padding: 6px 10px; display: flex; gap: 8px; align-items: baseline; }
 .p-commands .track { font: 0.8em var(--sans); color: var(--ink-3); flex: none; margin-left: auto; }
 .p-empty { color: var(--ink-3); }
@@ -312,3 +311,8 @@ body.no-slides-here .layouts button { opacity: 0.45; }
 .p-notes table { border-collapse: collapse; }
 .p-notes th, .p-notes td { border-bottom: 1px solid var(--rule); padding: 2px 12px 2px 0; text-align: left; }
 .slide-md p:has(img) { max-width: none; }
+/* A command on a slide: the size of the rest of the page, not of the large slide text, and as wide as its text.
+   Written after the rule for command buttons, and more specific, so that it wins. */
+.slide-md .slide-commands { align-items: flex-start; margin: 0.3em 0 0.8em; }
+.slide-md .slide-commands button { font-size: calc(var(--size) * 1.25); max-width: 100%; }
+.slide-md .slide-commands .track { margin-left: 1.5em; }

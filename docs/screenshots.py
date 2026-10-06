@@ -232,7 +232,10 @@ def shoot(browser, base: str, repo: timewalk.Repo) -> None:
     # The notes column at step-02: cues in their own shade, the prose, and the commands.
     at(2)
     save("notes", "#notes-pane")
+    page.locator("#slide").evaluate("e => e.scrollTop = e.scrollHeight")   # the command is at the end of the slide
+    page.wait_for_timeout(200)
     save("slide-command", "#slide-pane")
+    page.locator("#slide").evaluate("e => e.scrollTop = 0")
     save("band", "#band")
     # Editing the notes of the step.
     page.locator("#notes-edit").click()
