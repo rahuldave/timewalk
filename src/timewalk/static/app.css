@@ -91,7 +91,9 @@ code, pre, .mono { font-family: var(--mono); }
 }
 #step-list button.done { background: var(--accent-soft); color: var(--ink); }
 #step-list button.here { background: var(--accent); border-color: var(--accent); color: var(--surface); font-weight: 600; }
-.where { display: flex; align-items: baseline; gap: 10px; min-width: 0; flex: 1; }
+.where { display: flex; align-items: baseline; gap: 10px; min-width: 0; flex: 1; overflow: hidden; }
+/* The window for the class leaves out what only the presenter needs. */
+body.room #pdf, body.room #mode, body.room #notes-edit { display: none !important; }
 .step-name { font-family: var(--mono); font-weight: 600; white-space: nowrap; }
 .step-subject { color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tools { display: flex; gap: 4px; flex: none; align-items: center; }
@@ -288,6 +290,7 @@ body.with-notes .notes-pane { grid-area: notes; }
 .p-notes blockquote { margin: 0 0 0.7em; padding: 0.4em 0.8em; background: var(--accent-soft); color: var(--ink-2); border-left: 4px solid var(--rule); border-radius: 0 4px 4px 0; }
 .p-notes blockquote p { margin: 0 0 0.4em; }
 .p-notes blockquote p:last-child { margin-bottom: 0; }
+body.hide-cues .p-notes blockquote { display: none; }   /* the Cues button: the class sees the notes without the cues */
 .p-commands { display: flex; flex-direction: column; gap: 6px; margin: 0.2em 0 0.9em; }
 
 .p-commands button { text-align: left; font-family: var(--mono); font-size: 0.9em; padding: 6px 10px; display: flex; gap: 8px; align-items: baseline; }

@@ -14,12 +14,16 @@ keeps the shared state, and it sends each change to every window.
 | Shared by every window | Kept by each window | Kept by each browser |
 |---|---|---|
 | The step | If the notes show | The theme, dark or light |
-| The slide | The scroll position of a file or slide | The text size |
+| The slide | If the cues show | The text size |
 | Slides, Both or Code | Which terminal has the keyboard | The height of the terminals |
 | The open file, and its view | | If a click on a command runs it |
-| | | The widths of the slides and of the file list |
+| The scroll position of the slide, the file and the notes | | The widths of the slides and of the file list |
 | The terminal tab in front | | |
 | The terminals themselves: the same shells | | |
+
+When you scroll a slide, a file or the notes, every other window scrolls to the same place. Because the
+windows can differ in size, the place is a fraction of the whole. Half way down in one window is half way
+down in every window. To teach with one window for you and one for the class, see [Teach a class](class.md).
 
 A setting of the browser applies to every window of that browser. To give the projector another theme or
 text size, open its window in another browser, or in a private window.
@@ -54,6 +58,9 @@ edits away. See [Live edits](edits.md#with---discard-edits).
 | Button | Does |
 |---|---|
 | **Notes** | Shows or hides the notes column in this window. The button shows when timewalk has a notes file |
+| **Cues** | Shows or hides the cues in this window, the lines of the notes that start with `>`. The prose and the commands stay |
+| **Room** | Opens the window for the class: on the projector at full size where the browser allows it, with no cues and no clock band. See [Teach a class](class.md) |
+| **Full screen** | Only in the window for the class. Fills the screen with that window |
 | **PDF** | Makes a PDF of the slides and the notes of every step, and downloads it |
 | **Slides**, **Both**, **Code** | Choose what fills the page, in every window |
 | **A−**, **A+** | Change the size of all the text in this window. The terminals use the same size |

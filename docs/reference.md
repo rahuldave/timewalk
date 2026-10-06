@@ -5,11 +5,11 @@
 Run timewalk from GitHub with uv, with no clone and no install:
 
 ```
-uvx --from git+https://github.com/rahuldave/timewalk@v1.0.6 timewalk [repo] [options]
-uvx --from git+https://github.com/rahuldave/timewalk@v1.0.6 timewalk-pdf [options]
+uvx --from git+https://github.com/rahuldave/timewalk@v1.0.7 timewalk [repo] [options]
+uvx --from git+https://github.com/rahuldave/timewalk@v1.0.7 timewalk-pdf [options]
 ```
 
-Or install the two commands once with `uv tool install git+https://github.com/rahuldave/timewalk@v1.0.6`. In a clone of timewalk, run them with
+Or install the two commands once with `uv tool install git+https://github.com/rahuldave/timewalk@v1.0.7`. In a clone of timewalk, run them with
 `uv run timewalk` and `uv run timewalk-pdf`.
 
 ## timewalk
@@ -84,6 +84,15 @@ In the timewalk folder, `just` lists these:
 | `time: m:ss` | The planned start, for the clock band. The notes column and the PDF leave it out |
 | `> text` | A cue. Every window shows it, in its own shade. Remove private cues before you give the notes to students |
 | `$ cmd`, `runs$ cmd`, `runs2$ cmd` to `runs9$ cmd`, `main$ cmd` | A command for that tab |
+
+## Address options
+
+Add these to the address that timewalk prints, after the token, with `&`.
+
+| Option | Does |
+|---|---|
+| `cues=off` | The window starts with the cues hidden. timewalk prints this address for the class |
+| `room=1` | The window for the class: no cues, no clock band, and no PDF or Edit buttons. The **Room** button opens it |
 
 ## Keys
 

@@ -832,7 +832,19 @@ def make_app(
         hub.pages.add(socket)
         try:
             while True:
-                await socket.receive_text()
+                # A window that scrolls a slide, a file or the notes says so here, and the other windows follow.
+                try:
+                    message = json.loads(await socket.receive_text())
+                except ValueError:
+                    continue
+                if message.get("type") == "scroll" and message.get("pane") in ("slide", "file", "notes"):
+                    at = min(max(float(message.get("at", 0)), 0.0), 1.0)
+                    for page in list(hub.pages):
+                        if page is not socket:
+                            try:
+                                await page.send_json({"type": "scroll", "pane": message["pane"], "at": at})
+                            except Exception:
+                                hub.pages.discard(page)
         except WebSocketDisconnect:
             pass
         finally:
@@ -916,7 +928,10 @@ def main() -> None:
     if not local:
         print(f"timewalk: WARNING: listening on {args.host}, beyond this machine. Anyone who can reach port {args.port} and has the")
         print("timewalk: address below can run commands as you. The connection is not encrypted. An SSH tunnel is safer.")
-    print(f"timewalk: open       {address}", flush=True)
+    print(f"timewalk: open       {address}")
+    if notes_path is not None:
+        print(f"timewalk: for the class, without the cues: {address}&cues=off")
+    sys.stdout.flush()
     if not args.no_open and local:
         webbrowser.open(address)
     uvicorn.run(make_app(repo, token, args.port, notes_path, args.assistant, slides_path, show_clock=args.clock, any_host=not local),

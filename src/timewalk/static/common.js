@@ -28,6 +28,8 @@ export function onEvents(handler) {
     ws.onclose = () => setTimeout(connect, 1500);
   };
   connect();
+  // send: tell the other windows something, such as a scroll, when the connection is open
+  return { send: (message) => ws && ws.readyState === WebSocket.OPEN && ws.send(JSON.stringify(message)) };
 }
 
 export function escapeHtml(text) {

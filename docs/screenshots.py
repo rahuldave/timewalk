@@ -232,6 +232,16 @@ def shoot(browser, base: str, repo: timewalk.Repo) -> None:
     # The notes column at step-02: cues in their own shade, the prose, and the commands.
     at(2)
     save("notes", "#notes-pane")
+    # The window for the class, as the Room button opens it: the same step, the notes without the cues, no clock.
+    room = browser.new_page(viewport=WIDE, device_scale_factor=1)
+    room.on("pageerror", lambda error: errors.append(str(error)))
+    room.goto(f"{base}/?t={TOKEN}&room=1")
+    room.wait_for_selector("#notes .p-commands button")
+    room.wait_for_timeout(1500)
+    room.mouse.move(2, 2)
+    room.screenshot(path=str(OUT / "room-window.png"))
+    room.locator("#notes-pane").screenshot(path=str(OUT / "notes-room.png"))
+    room.close()
     page.locator("#slide").evaluate("e => e.scrollTop = e.scrollHeight")   # the command is at the end of the slide
     page.wait_for_timeout(200)
     save("slide-command", "#slide-pane")

@@ -5,7 +5,9 @@ import { init, Terminal, FitAddon } from "/static/vendor/ghostty-web/ghostty-web
 import { api, socket, onEvents, escapeHtml, settings, stepLabel, drawSlide, isDoc, renderMarkdown } from "/static/common.js";
 
 const $ = (id) => document.getElementById(id);
-const PAGE = Math.random().toString(36).slice(2);   // tells this window's own requests apart from another window's
+const PAGE = Math.random().toString(36).slice(2);
+// The window for the class, opened by the Room button, or by an address with room=1: no cues, no clock band.
+const ROOM = new URLSearchParams(location.search).get("room") === "1";   // tells this window's own requests apart from another window's
 const LANGUAGES = { py: "python", toml: "ini", cfg: "ini", ini: "ini", yaml: "yaml", yml: "yaml", json: "json", jsonl: "json", md: "markdown",
   qmd: "markdown", sh: "bash", zsh: "bash", js: "javascript", ts: "typescript", html: "xml", css: "css", lua: "lua", lock: "ini" };
 const TERM_THEMES = {
@@ -535,10 +537,42 @@ function wireControls() {
 /** Show the Notes and PDF buttons when there is something for them, and the notes column if this window wants it. */
 // Whether this window hides the notes. Kept per tab, not per browser, so a projector window and your own window
 // in the same browser can differ.
-const notesHidden = {
-  get() { try { return sessionStorage.getItem("timewalk.notes-hidden") === "1"; } catch { return false; } },
-  set(value) { try { sessionStorage.setItem("timewalk.notes-hidden", value ? "1" : "0"); } catch { /* not remembered */ } },
-};
+function perWindow(key) {
+  return {
+    get() { try { return sessionStorage.getItem("timewalk." + key) === "1"; } catch { return false; } },
+    set(value) { try { sessionStorage.setItem("timewalk." + key, value ? "1" : "0"); } catch { /* not remembered */ } },
+  };
+}
+const notesHidden = perWindow("notes-hidden");
+// Whether this window hides the cues, the "> " lines of the notes, for example in the window that the class sees.
+// An address with cues=off starts the window with them hidden.
+const cuesHidden = perWindow("cues-hidden");
+if (ROOM || /^(off|hide|hidden|no)$/i.test(new URLSearchParams(location.search).get("cues") || "")) cuesHidden.set(true);
+
+/** Open the window for the class. Where the browser can place windows (Chrome, Edge), it goes on the other screen,
+ *  at the full size of that screen. Elsewhere it opens as a new window, to drag to the projector. */
+async function openRoom() {
+  const url = new URL(location.href);
+  url.searchParams.set("room", "1");
+  url.searchParams.set("cues", "off");
+  let features = "popup,width=1280,height=800";
+  let note = "";
+  try {
+    if ("getScreenDetails" in window) {
+      const details = await window.getScreenDetails();
+      const other = details.screens.find((screen) => screen !== details.currentScreen);
+      if (other) features = `popup,left=${other.availLeft},top=${other.availTop},width=${other.availWidth},height=${other.availHeight}`;
+      else note = "Only one screen was found. Drag the room window to the projector, or make the projector an extended display.";
+    } else {
+      note = "This browser cannot place a window on another screen. Drag the room window to the projector.";
+    }
+  } catch {
+    note = "The browser did not allow timewalk to place windows. Drag the room window to the projector.";
+  }
+  const room = window.open(url.toString(), "timewalk-room", features);
+  if (!room) showNotice("The browser blocked the room window. Allow pop-ups for this address, then click Room again.", true);
+  else if (note) showNotice(note);
+}
 
 function drawTools() {
   const { has_notes: hasNotes, has_slides: hasSlides } = ui.state;
@@ -548,6 +582,9 @@ function drawTools() {
   $("pdf").hidden = !(hasNotes || hasSlides);
   $("notes-pane").hidden = !shown;
   document.body.classList.toggle("with-notes", shown);
+  $("cues-toggle").hidden = !shown;
+  $("cues-toggle").setAttribute("aria-pressed", String(!cuesHidden.get()));
+  document.body.classList.toggle("hide-cues", cuesHidden.get());
   $("run-on-click").checked = settings.get("run-on-click", false);
   for (const entry of ui.terms.values()) if (!entry.el.hidden) requestAnimationFrame(() => entry.fit.fit());
 }
@@ -665,7 +702,7 @@ function commandButton(command) {
 function drawBand() {
   if (!ui.state) return;
   // The clock band shows only when timewalk was started with --clock.
-  $("band").hidden = !ui.state.show_clock;
+  $("band").hidden = !ui.state.show_clock || ROOM;   // the clock is for you, not for the class
   if ($("band").hidden) return;
   const { steps, current, clock: started } = ui.state;
   const here = current === null ? null : steps[current];
@@ -692,6 +729,13 @@ function drawBand() {
 
 $("clock-start").onclick = () => api("/api/clock", { action: ui.state.clock ? "reset" : "start" });
 $("notes-toggle").onclick = () => { notesHidden.set(!notesHidden.get()); drawTools(); };
+$("cues-toggle").onclick = () => { cuesHidden.set(!cuesHidden.get()); drawTools(); };
+$("room").hidden = ROOM;
+$("room").onclick = openRoom;
+$("fullscreen").hidden = !ROOM || !document.fullscreenEnabled;
+$("fullscreen").onclick = () => document.documentElement.requestFullscreen().catch(() => {});
+document.addEventListener("fullscreenchange", () => { $("fullscreen").hidden = !ROOM || !!document.fullscreenElement; });
+if (ROOM) { document.title = "timewalk room"; document.body.classList.add("room"); }
 $("pdf").onclick = makePdf;
 $("run-on-click").onchange = () => settings.set("run-on-click", $("run-on-click").checked);
 $("notes-edit").onclick = startEditing;
@@ -705,12 +749,13 @@ await init();
 await refresh();
 selectTab(ui.state.track || "replay");
 if (ui.state.path) await openFile(ui.state.path, ui.state.view);
-onEvents(async (event) => {
+const events = onEvents(async (event) => {
   if (event.type === "moved") { hideNotice(); await refresh(); }
   if (event.type === "edits") {
     await loadTree();
     if (ui.open) await openFile(ui.open, ui.view, false);
   }
+  if (event.type === "scroll") { followScroll(event); return; }
   if (event.type === "slide") { ui.state = await api("/api/state"); drawSlides(); }
   if (event.type === "notes" && !ui.editing) { await loadNotes(); drawNotes(); drawBand(); }
   if (event.type === "clock") { ui.state = await api("/api/state"); ui.skew = ui.state.now - Date.now() / 1000; drawBand(); }
@@ -721,3 +766,29 @@ onEvents(async (event) => {
     if (event.track) selectTab(event.track, event.from === PAGE);
   }
 });
+
+// ---------- shared scrolling ----------
+// When you scroll a slide, a file or the notes, every other window scrolls to the same place, as a fraction of the
+// whole, since the windows can differ in size. A scroll that came from another window is not sent back.
+const SCROLLERS = { slide: "slide", file: "file-body", notes: "notes-body" };
+const following = {};   // pane -> time until which its scrolls come from another window
+for (const [pane, id] of Object.entries(SCROLLERS)) {
+  const el = $(id);
+  let queued = false;
+  el.addEventListener("scroll", () => {
+    if (Date.now() < (following[pane] || 0) || queued) return;
+    queued = true;
+    requestAnimationFrame(() => {
+      queued = false;
+      const room = el.scrollHeight - el.clientHeight;
+      events.send({ type: "scroll", pane, at: room > 0 ? el.scrollTop / room : 0 });
+    });
+  }, { passive: true });
+}
+
+function followScroll(event) {
+  const el = $(SCROLLERS[event.pane] || "");
+  if (!el) return;
+  following[event.pane] = Date.now() + 200;
+  el.scrollTop = event.at * (el.scrollHeight - el.clientHeight);
+}

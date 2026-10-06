@@ -29,6 +29,7 @@ Choose the path that fits what you want to do.
 |---|---|
 | Work through a walk that somebody made | Fork the walk on GitHub, clone your fork, and run `just present` in it. See [What a student does](walk.md#what-a-student-does) |
 | See what timewalk does | Run the demo, as below. Then take [the tour of the demo](demo.md) |
+| Teach a class from your laptop, with the class on a projector | Read [Teach a class](class.md) |
 | Make a walk for your own project | Read [Make a walk](walk.md) |
 | Run timewalk on a repository now | Run it from GitHub with uv, as below |
 
@@ -69,14 +70,14 @@ You do not need a clone of timewalk. uv can run timewalk straight from GitHub. I
 once, and keeps it in its cache:
 
 ```
-uvx --from git+https://github.com/rahuldave/timewalk@v1.0.6 timewalk ~/code/project --notes notes.md --slides slides/slides.toml
+uvx --from git+https://github.com/rahuldave/timewalk@v1.0.7 timewalk ~/code/project --notes notes.md --slides slides/slides.toml
 ```
 
 The part after `@` pins a version, so every machine runs the same timewalk. To install the commands
 `timewalk` and `timewalk-pdf` on your machine for good, run this command once:
 
 ```
-uv tool install git+https://github.com/rahuldave/timewalk@v1.0.6
+uv tool install git+https://github.com/rahuldave/timewalk@v1.0.7
 timewalk ~/code/project --notes notes.md --slides slides/slides.toml
 ```
 
@@ -87,6 +88,7 @@ For a class, put the notes and the slides in a kit of their own, as [Make a walk
 | Page | What it covers |
 |---|---|
 | [A tour of the demo](demo.md) | The sample project, one step at a time, with what to try at each step |
+| [Teach a class](class.md) | Your window and the window for the class, the Room button, cues, and a check before the class |
 | [Make a walk](walk.md) | The project, your class material and the kit as three repositories, how to make a kit, and what a student does with it |
 | [How it works](model.md) | The folders, the worktree, what each button does in which folder, and where timewalk keeps each thing |
 | [The page](page.md) | Several windows, steps, slides, files, the three views of the reader, recipes and the keyboard |

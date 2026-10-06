@@ -58,8 +58,12 @@ By default, a click only types the command. The reader can look at the command, 
 run it. To run each command with one click, turn on **run on click** at the top of the column. The
 browser remembers this setting.
 
-The **Notes** button in the step bar shows or hides the column in one window. For example, the projector
-can hide the notes while your own screen shows them.
+The **Notes** button in the step bar shows or hides the column in one window. The **Cues** button shows
+or hides only the cues, the lines that start with `>`, in one window. The prose and the commands stay. In
+a class, the window on the projector hides the cues, and your own window shows them. See
+[Teach a class](class.md).
+
+![The notes as the class sees them: the prose and the commands, without the cues](images/notes-room.png)
 
 If the screen is less than about 1000 pixels wide, the notes column moves under the terminals.
 

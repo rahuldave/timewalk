@@ -89,6 +89,9 @@ then happen, in this order:
 | A move, with `--discard-edits` | Moves and does not ask. Edits to tracked files are lost | `git checkout --force --detach <step>`, in the replay copy |
 | **Up**, **Down**, the slide arrows | Changes the shared slide number. On a document, **Up** and **Down** scroll it, and Alt with **Up** or **Down** changes the slide | None |
 | **Slides**, **Both**, **Code** | Changes the shared layout, in every window | None |
+| **Room** | Opens a second window with `room=1` and `cues=off` in its address. In Chrome and Edge, it asks to place windows, and opens the window on the other screen | None |
+| **Cues** | Hides or shows the `>` lines of the notes, in this window | None |
+| A scroll of the slide, the file or the notes | Sends the place, as a fraction, to every other window over the events socket | None |
 | The handles between the panes | Change the width of the slides or the file list, or the height of the terminals, in this browser. A double-click resets a width | None |
 | A file in the file list, **File** | Reads the file from disk, and refuses paths outside the copy | None. It reads a file in the replay copy |
 | **Changes in this step** | The diff of the step for that file | `git diff <step before> <step> -- <file>`, in the replay copy |
@@ -154,8 +157,8 @@ the server for events. A socket is an open connection between the window and the
 messages both ways. The old address `/presenter` sends the browser on to the page.
 
 When a window changes the step, the slide, the layout, the open file or the tab in front, it tells the
-server. The server then tells every window. Each window keeps its own scroll position and its own choice to
-show the notes. The browser keeps the theme, the text size, the terminal height and run on click. See [The page](page.md#several-windows).
+server. The server then tells every window. Each window keeps its own choice to show the notes and the cues. A
+scroll of the slide, the file or the notes goes to every other window too, as a fraction of the whole. The browser keeps the theme, the text size, the terminal height and run on click. See [The page](page.md#several-windows).
 
 Every window shows the same shells. Each shell has one size, and the window that you last typed in sets
 it. Another window draws the same shell in the space that it has.

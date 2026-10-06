@@ -739,6 +739,17 @@ def test_shells_do_not_inherit_this_tools_python() -> None:
     assert env["HOME"] == "/home/me" and env["TIMEWALK"] == "1"
 
 
+def test_a_scroll_in_one_window_reaches_the_other_windows(served: TestClient) -> None:
+    "A window that scrolls says so on its event socket; the server passes it on to the other windows, not back."
+    auth = f"?t={TOKEN}"
+    with served.websocket_connect("/ws/events" + auth) as mine, served.websocket_connect("/ws/events" + auth) as theirs:
+        mine.send_json({"type": "scroll", "pane": "notes", "at": 0.4})
+        assert theirs.receive_json() == {"type": "scroll", "pane": "notes", "at": 0.4}
+        mine.send_json({"type": "scroll", "pane": "nowhere", "at": 0.4})   # not a pane: ignored
+        mine.send_json({"type": "scroll", "pane": "slide", "at": 7})       # kept between 0 and 1
+        assert theirs.receive_json() == {"type": "scroll", "pane": "slide", "at": 1.0}
+
+
 def test_unknown_terminal_names_are_refused(served: TestClient) -> None:
     "Only the known tab names get a shell."
     assert served.post("/api/type", params={"t": TOKEN}, json={"track": "../../bin", "text": "echo no"}).status_code == 409
