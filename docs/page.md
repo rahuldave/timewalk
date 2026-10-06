@@ -107,7 +107,9 @@ scrolls, so every other window follows, and the step remembers the place.
 
 The slides pane shows the slides for the step, from the manifest. The manifest is the TOML file that says
 which slides go with which step. The top of the pane shows the number of slides and the arrows. If the step
-has more than one slide, **Up** and **Down** change the slide. Past the first slide, a **⇤ First** button
+has more than one slide, **Up** and **Down** change the slide.
+
+Past the first slide, a **⇤ First** button
 shows beside the arrows. Click it to go back to the first slide of the step. **Shift+Up** goes to the
 first slide too, and **Shift+Down** goes to the last.
 
