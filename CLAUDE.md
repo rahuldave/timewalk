@@ -152,3 +152,35 @@ socket.
 - The subject says what changed. The body says why, in the voice of the README.
 - **Ask before every commit.** After Rahul approves a commit, push `main` to github.com/rahuldave/timewalk
   and do not ask again.
+
+## Releasing a change
+
+Rahul expects every change to the page to ship as a release, with its docs, in one go:
+
+1. Build it, and drive it in headless Chrome against a throwaway clone (see Checking a change). For a long
+   file to scroll, clone timewalk itself and run it with `--tags 'v*'`.
+2. Update the docs that describe it (often `page.md`, `notes.md`, `model.md`, `reference.md`, `class.md`),
+   and retake the screenshots with `just screenshots` when the page looks different.
+3. Raise `version` in `pyproject.toml`, move the `timewalk@vX.Y.Z` pins in README, CLAUDE.md and `docs/`
+   with sed, commit, tag `vX.Y.Z` (annotated), and push `main` and the tag. The site deploys from the push.
+4. Check that the site deployed, and that `uvx --refresh-package timewalk --from git+https://github.com/rahuldave/timewalk`
+   gets the change. babykev-walk, babykev-class and the `walk` skill follow `main` unpinned, so they pick it up.
+
+## Pitfalls met before
+
+- **Run the checks so that a failure stops you.** `just lint | tail -1` and `just style > /dev/null && ...; next`
+  let failures through, and two releases went out with a lint error or a doc that failed the guide. Run
+  `just test`, `uvx ruff check .`, `just style` and the link check as separate commands, or under
+  `set -o pipefail`, and read each result before you commit.
+- **A Python script that edits files must fail loudly.** Assert that each old text is found once, and stop
+  the release if it is not. One release shipped without its docs because an edit missed a table row.
+- **Quote heredocs** (`<<'EOF'`). Without quotes, the shell runs every `` `backtick` `` inside the text.
+- **In `app.js`, a `const` that `refresh()` uses must be declared near the top.** `refresh()` runs during the
+  module's first top-level `await`, before later declarations exist.
+- **CSS rules of equal specificity: the later one wins.** A rule meant to override a general one must come
+  after it, or be more specific (the slide command buttons were once 24px for this reason).
+- **Per window or per browser:** `sessionStorage` is per tab (Notes and Cues toggles), `localStorage` is per
+  browser (theme, size, pane widths, run on click). The docs must say which.
+- **What the server shares:** step, slide, layout, open file and view, tab, clock (`showing`); a per-step
+  memory of slide and scroll (`memory`); scrolls are relayed between windows over `/ws/events`. A shell gets
+  an Enter after a move only when it is idle at an empty line (`Terminal.refresh_prompt`).
