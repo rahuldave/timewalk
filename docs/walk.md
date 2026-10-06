@@ -62,7 +62,7 @@ first three lines for your project, and keep the rest:
 ```just
 project := "bla"
 upstream := "your-github-name"
-timewalk := "git+https://github.com/rahuldave/timewalk@v1.0.12"
+timewalk := "git+https://github.com/rahuldave/timewalk@v1.0.13"
 
 [private]
 default:
