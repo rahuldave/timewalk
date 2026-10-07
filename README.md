@@ -49,6 +49,8 @@ the audience sees. Keep the notes file outside the repository. timewalk refuses 
 - **Terminals** at the step, for long runs, in your own repository, and with Claude Code.
 - **Notes**, the script of each step, with planned times and commands. A click types a command into its
   terminal. You can edit the notes on the page.
+- **Several walks** through one repository, from a table of contents, `toc.toml`. A menu in the step bar
+  changes the walk, and `timewalk-check` checks the notes and slides of every walk.
 - **Shell.** One button, or Alt+Enter, gives the terminals the space of the slides and the files, in every window.
 - **Keyboard.** Left and Right change the step, and Up and Down change the slide.
 

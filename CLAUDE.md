@@ -83,16 +83,17 @@ Rahul set these rules. Each rule has tests. Do not weaken them.
 | File | What it is |
 |---|---|
 | `src/timewalk/__init__.py` | The whole server, one module: `git()`, `Repo` (steps, worktree, moves, diffs, reads), notes and slides parsers, `Terminal` (a pty), `Hub` (events to pages), `make_app` (Starlette routes) |
+| `src/timewalk/walks.py` | Several walks: `load_toc` reads `toc.toml`, `check` checks notes and slides against the steps, and the command `timewalk-check` |
 | `src/timewalk/slides_pdf.py` | The command `timewalk-pdf`: the PDF of the slides and, with `--with-notes`, the notes, drawn by Chrome or Edge through Playwright. `--brand DIR` gives it the look of a brand folder (font, colours, cover, dividers); only this command and `print.js` know brands, and the page does not. The **PDF** button calls it through `/api/pdf`, with no brand |
 | `src/timewalk/static/` | `index.html`/`app.js` (the page, at `/`), `print.*` (for the PDF), `common.js`, `app.css` |
 | `src/timewalk/static/vendor/` | ghostty-web, highlight.js, marked, each with its licence. Vendored: do not edit |
 | `tests/test_timewalk.py` | The git layer, notes and slides, the guards of the app, a real terminal |
 | `demo/timewalk-demo` | A git submodule: the sample repository, five tagged steps, at github.com/rahuldave/timewalk-demo. Its replay copy, `demo/timewalk-demo-replay`, is ignored |
 | `docs/` | The site: one Markdown page per topic, `build.py` (the order is its `PAGES` list), `site.css`, `screenshots.py`, `images/`. `_site/` is built and ignored. `.github/workflows/pages.yml` publishes it |
-| `demo/notes.md`, `demo/slides/` | The notes and slides of the demo. They stay here, outside the sample, as in a class kit |
+| `demo/notes.md`, `demo/slides/`, `demo/toc.toml`, `demo/walks/` | The notes and slides of the demo, and a second walk. They stay here, outside the sample, as in a class kit |
 
-timewalk is a package, `src/timewalk`, built with hatchling from `pyproject.toml`. It gives two commands,
-`timewalk` and `timewalk-pdf`. Its dependencies are Starlette, uvicorn, websockets, Playwright and pypdf;
+timewalk is a package, `src/timewalk`, built with hatchling from `pyproject.toml`. It gives three commands,
+`timewalk`, `timewalk-pdf` and `timewalk-check`. Its dependencies are Starlette, uvicorn, websockets, Playwright and pypdf;
 the tests use the `dev` group. In a clone, run `uv run timewalk`. Users run it from GitHub with
 `uvx --from git+https://github.com/rahuldave/timewalk@v1.0.14 timewalk`, so it is not on PyPI, by Rahul's choice. When a change must reach users,
 raise the version in `pyproject.toml`, tag the commit `vX.Y.Z`, push the tag, and update the pin in the
@@ -106,6 +107,7 @@ Use the recipes, and not the commands behind them.
 just test            # all tests; extra arguments go to pytest: just test -k slides
 just lint            # ruff
 just demo            # fetch the sample submodule if needed, and open it with --discard-edits and --clock
+just demo-walks      # the same, with the two walks of demo/toc.toml
 just walk <repo> ... # run timewalk on a repository
 just pdf <manifest> -o out.pdf --title "..."
 just screenshots     # retake docs/images from a throwaway clone of the demo
@@ -168,10 +170,6 @@ Rahul expects every change to the page to ship as a release, with its docs, in o
 
 ## Pitfalls met before
 
-- **`app.js` rounds up `term.renderer.devicePixelRatio`, an internal of ghostty-web.** At a fractional ratio (a
-  zoomed window, a scaled screen) the renderer made a new canvas on every frame, in every terminal of every
-  window. After an update of the vendored ghostty-web, check that the canvas is not resized every frame at a
-  ratio of 1.25.
 - **The port probe in `main()` sets `SO_REUSEADDR`, as uvicorn does.** Without it, a timewalk just stopped
   blocked a restart on the same port for a minute, through connections in TIME_WAIT.
 - **Run the checks so that a failure stops you.** `just lint | tail -1` and `just style > /dev/null && ...; next`
@@ -187,9 +185,14 @@ Rahul expects every change to the page to ship as a release, with its docs, in o
   after it, or be more specific (the slide command buttons were once 24px for this reason).
 - **Per window or per browser:** `sessionStorage` is per tab (Notes and Cues toggles), `localStorage` is per
   browser (theme, size, pane widths, run on click). The docs must say which.
-- **`app.js` uses two internals of ghostty-web** to stop a hidden terminal from drawing: `startRenderLoop()` and
-  `animationFrameId`. `setDrawing` checks that they exist, and does nothing if they do not. After an update of
-  the vendored ghostty-web, check that a hidden tab still stops drawing (`drawing` in `window.timewalkTerminals()`).
-- **What the server shares:** step, slide, layout, Shell, open file and view, tab, clock (`showing`); a per-step
-  memory of slide and scroll (`memory`); scrolls (as fractions, and a terminal's as lines) are relayed between windows over `/ws/events`. A shell gets
+- **`app.js` uses internals of ghostty-web.** `startRenderLoop()` and `animationFrameId` stop a hidden terminal
+  from drawing; `setDrawing` checks that they exist, and does nothing if they do not. `term.renderer.devicePixelRatio`
+  is rounded up to a whole number: at a fractional ratio (a zoomed window, a scaled screen) the renderer made a new
+  canvas on every frame, in every terminal of every window. After an update of the vendored ghostty-web, run
+  timewalk-test's `test_drawing.py`, which checks both.
+- **ghostty-web's `fit.fit()` skips a size equal to the last one it fitted**, though a Room size may have come
+  between. `fitTerminal` compares `proposeDimensions()` with the terminal's real size instead.
+- **What the server shares:** walk, step and move, slide, layout, Shell, open file and view, tab, clock (`showing`); a per-step
+  memory of slide and scroll (`memory`); scrolls (as fractions, and a terminal's as lines) are relayed between windows over `/ws/events`. In Shell mode
+  each shell keeps the Room's size (`Terminal.room_size`), and a window that asks for another is told it again. A shell gets
   an Enter after a move only when it is idle at an empty line (`Terminal.refresh_prompt`).

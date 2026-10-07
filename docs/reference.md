@@ -23,6 +23,8 @@ timewalk [repo] [options]
 | `repo` | The repository to browse. Default: the current folder |
 | `--notes FILE` | A Markdown file of notes, the script of each step, with one `## step-name` section per step. The page shows them in a column on the right. timewalk refuses a notes file inside your repository or its replay copy. See [Notes](notes.md) |
 | `--slides FILE` | A TOML manifest of slides and documents |
+| `--toc FILE` | A table of contents, `toc.toml`, of several walks, each with its own notes and slides. Give it in place of `--notes`, `--slides` and `--tags`. See [Several walks](walks.md) |
+| `--walk ID` | With `--toc`: the walk to start on. Default: the first walk of the table |
 | `--tags GLOB` | The tags that mark steps. Default: `step-*` |
 | `--commits` | Step through the commits of the current branch instead of tags |
 | `--replay PATH` | Put the replay copy at `PATH`, for example `worktree`, instead of `<repo>-replay` beside the repository. timewalk refuses a path inside the repository |
@@ -38,6 +40,7 @@ timewalk [repo] [options]
 
 ```
 timewalk-pdf [MANIFEST] [-o OUT.pdf] [--title TEXT] [--notes FILE] [--with-notes] [--brand DIR]
+timewalk-pdf --toc toc.toml [--walk ID] [-o OUT.pdf] [--with-notes] [--brand DIR]
 ```
 
 | Option | Does |
@@ -48,9 +51,21 @@ timewalk-pdf [MANIFEST] [-o OUT.pdf] [--title TEXT] [--notes FILE] [--with-notes
 | `--notes` | A notes file. Without `--with-notes`, `slides_pdf` reads only the title of each step from it, for the footer |
 | `--with-notes` | Put the notes of each step after its slides: the prose, the cues in their own shade, and the commands in code blocks. The `time:` lines stay out |
 | `--brand` | A brand: a folder with a `brand.toml`, or the `brand.toml` itself. It sets the font, colours, footer, cover and dividers. See [Brand a PDF](brand.md) |
+| `--toc`, `--walk` | Take the manifest and the notes of one walk from a table of contents, in place of `MANIFEST` and `--notes`. Default: the first walk. The title of the walk goes in the footer, unless you give `--title` |
 
 The **PDF** button on the page makes the same PDF, without the notes and without a brand. See
 [Slides and documents](slides.md#a-pdf-of-the-slides).
+
+## timewalk-check
+
+```
+timewalk-check REPO --toc toc.toml
+timewalk-check REPO --notes notes.md --slides slides/slides.toml
+```
+
+Checks the notes and the slides of every walk against the steps, and against each other. It prints
+one line for each problem, and exits with code 1 when it finds an error. timewalk runs the same checks when it
+starts with `--toc`. See [Several walks](walks.md#the-checks).
 
 ## Recipes
 
@@ -59,6 +74,7 @@ In the timewalk folder, `just` lists these:
 | Recipe | Does |
 |---|---|
 | `just demo` | Fetch the demo submodule if needed. Then open it with its notes and slides, with `--discard-edits` and `--clock` |
+| `just demo-walks` | The same, with the two walks of `demo/toc.toml` |
 | `just walk REPO ...` | Run timewalk on a repository. More arguments go to timewalk |
 | `just pdf MANIFEST ...` | Make a PDF of every slide in a manifest |
 | `just test ...` | Run the tests. More arguments go to pytest |
@@ -74,8 +90,22 @@ In the timewalk folder, `just` lists these:
 | `deck` | Optional. The deck that bare numbers refer to |
 | `[slides]` | `step-name = [entries]`: Markdown slides, pictures, PDF pages, HTML deck slides |
 | `[docs]` | `step-name = "file.md"`: one whole document instead of slides |
+| `"step-name.N"` | In a tutorial, under `[slides]`: the slides of one move. Quote the name |
+| `sync` | In a tutorial, at the top: `false` keeps the slides and the moves apart. It wins over `sync` in `toc.toml` |
 
 [Slides and documents](slides.md#the-manifest) lists the entries.
+
+## The table of contents
+
+| Key | Holds |
+|---|---|
+| `[[walk]]` | One table for each walk. The first is the default |
+| `id`, `title`, `kind` | The name, the title in the menu, and `"narrative"` or `"tutorial"` |
+| `notes`, `slides`, `folder` | The notes file and the manifest, or a folder that holds `notes.md` and `slides/slides.toml` |
+| `steps`, `tags` | Some of the steps by name, or a glob for tags of its own |
+| `sync` | In a tutorial: whether the slides and the moves follow each other. Default: `true` |
+
+[Several walks](walks.md#the-table-of-contents) lists every key.
 
 ## The notes file
 
@@ -85,6 +115,8 @@ In the timewalk folder, `just` lists these:
 | `time: m:ss` | The planned start, for the clock band. The notes column and the PDF leave it out |
 | `> text` | A cue. Every window shows it, in its own shade. Remove private cues before you give the notes to students |
 | `$ cmd`, `runs$ cmd`, `runs2$ cmd` to `runs9$ cmd`, `main$ cmd` | A command for that tab |
+| `### step-name.N Title` | In a tutorial: starts the notes of one move |
+| `files:` | In a move: the files that its commit added or changed, each a link |
 
 ## Address options
 
@@ -103,11 +135,12 @@ Add these to the address that timewalk prints, after the token, with `&`.
 | Up, Down | Previous or next slide, when there is more than one. On a document, or with one slide, they scroll |
 | Alt with an arrow | Moves the step or the slide, even inside a terminal or on a document |
 | Shift+Up, Shift+Down | The first or the last slide of the step |
+| Shift+Right, Shift+Left | In a tutorial: the next or the previous move. In a terminal, add Alt |
 | Home, End | The top or the bottom of the slide, the file or the notes under the mouse |
 | Alt+Enter | **Shell** on or off, in every window |
 | Alt+1, Alt+2, Alt+3 | **Slides**, **Both**, **Code**, in every window |
 | Alt+\` | **Slides** or **Code**: from one to the other |
-| Alt+N | Shows or hides the notes, in this window |
+| Alt+\\ | Shows or hides the notes, in this window. Not Alt+N, which types ~ on some Mac keyboards |
 
 ## Requirements
 

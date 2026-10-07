@@ -45,9 +45,15 @@ def neutral_shell(
 def serve(
     repo: timewalk.Repo,  # The demo clone
     port: int,  # Where to listen
+    walks: bool = False,  # Serve the walks of demo/toc.toml, as `just demo-walks` does
 ) -> uvicorn.Server:  # The running server
     "Serve the demo with its notes and slides, as `just demo` does, in a thread."
-    app = timewalk.make_app(repo, TOKEN, port, ROOT / "demo" / "notes.md", "", ROOT / "demo" / "slides" / "slides.toml", show_clock=True)
+    if walks:
+        from timewalk.walks import load_toc
+
+        app = timewalk.make_app(repo, TOKEN, port, None, "", None, show_clock=True, walks=load_toc(ROOT / "demo" / "toc.toml"), root=ROOT / "demo")
+    else:
+        app = timewalk.make_app(repo, TOKEN, port, ROOT / "demo" / "notes.md", "", ROOT / "demo" / "slides" / "slides.toml", show_clock=True)
     server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
     threading.Thread(target=server.run, daemon=True).start()
     while not server.started:
@@ -70,6 +76,7 @@ def main() -> None:
             port = probe.getsockname()[1]
         server = serve(repo, port)
         base = f"http://127.0.0.1:{port}"
+        walks_server = None
         try:
             with sync_playwright() as p:
                 browser = None
@@ -82,9 +89,17 @@ def main() -> None:
                 if browser is None:
                     raise SystemExit("screenshots: no Chrome, Edge or Chromium. Run `uvx playwright install chromium` once.")
                 shoot(browser, base, repo)
+                server.should_exit = True
+                with socket.socket() as probe:
+                    probe.bind(("127.0.0.1", 0))
+                    port = probe.getsockname()[1]
+                walks_server = serve(repo, port, walks=True)
+                shoot_walks(browser, f"http://127.0.0.1:{port}")
                 browser.close()
         finally:
             server.should_exit = True
+            if walks_server:
+                walks_server.should_exit = True
     print(f"screenshots: wrote {len(list(OUT.glob('*.png')))} pictures to {OUT}")
 
 
@@ -273,6 +288,17 @@ def shoot(browser, base: str, repo: timewalk.Repo) -> None:
     at(0)
     if errors:
         raise SystemExit("screenshots: the pages reported errors: " + "; ".join(errors))
+
+
+def shoot_walks(browser, base: str) -> None:
+    "Take the step bar with the walk menu, as `just demo-walks` shows it."
+    page = browser.new_page(viewport=WIDE, device_scale_factor=1)
+    page.goto(f"{base}/?t={TOKEN}")
+    page.wait_for_selector("#walk-picker:not([hidden])")
+    page.wait_for_timeout(1500)
+    page.mouse.move(2, 2)
+    page.locator("header.bar").screenshot(path=str(OUT / "walks.png"))
+    page.close()
 
 
 if __name__ == "__main__":

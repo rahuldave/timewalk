@@ -95,6 +95,26 @@ code, pre, .mono { font-family: var(--mono); }
 /* The window for the class leaves out what only the presenter needs. */
 body.room #pdf, body.room #mode, body.room #notes-edit, body.room #shell-toggle { display: none !important; }
 .step-name { font-family: var(--mono); font-weight: 600; white-space: nowrap; }
+.walk-picker { flex: none; min-width: 8.5em; max-width: 13em; font: inherit; padding: 4px 6px; border: 1px solid var(--rule); border-radius: 6px; background: var(--bg); color: var(--ink); }
+/* With several walks, the menu needs room: the tools go to a second row, so the step buttons keep theirs. */
+body.walks .bar { flex-wrap: wrap; row-gap: 6px; }
+body.walks .tools { margin-left: auto; }
+/* A tutorial: the moves of the step, a row of their own under the step bar. */
+body.has-moves .bar { flex-wrap: wrap; row-gap: 6px; }
+.moves { flex-basis: 100%; display: flex; align-items: center; gap: 3px; min-width: 0; }
+.moves .label { color: var(--ink-3); font-size: 0.85em; margin-right: 6px; }
+.moves button { min-width: 34px; padding: 2px 6px; font-family: var(--mono); font-size: 0.86em; color: var(--ink-2); }
+.moves button.done { background: var(--accent-soft); color: var(--ink); }
+.moves button.here { background: var(--accent); border-color: var(--accent); color: var(--surface); font-weight: 600; }
+.moves .move-subject { margin-left: 10px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+/* In the notes: one section for each move. The moves still to make are grayed, and their buttons do nothing. */
+.p-move { margin: 0.6em 0; padding-left: 10px; border-left: 3px solid transparent; }
+.p-move.here { border-left-color: var(--accent); }
+.p-move.later { opacity: 0.45; }
+.p-move h3 { font-family: var(--mono); font-size: 0.95em; margin: 0.4em 0; }
+.p-files { display: flex; flex-wrap: wrap; gap: 4px; margin: 0.2em 0 0.8em; }
+.p-files button { font-family: var(--mono); font-size: 0.85em; padding: 2px 8px; }
+.walk-title { font-weight: 600; white-space: nowrap; max-width: 16em; overflow: hidden; text-overflow: ellipsis; }
 .step-subject { color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tools { display: flex; gap: 4px; flex: none; align-items: center; }
 /* --discard-edits: say so, and warn when there are edits a move will throw away */

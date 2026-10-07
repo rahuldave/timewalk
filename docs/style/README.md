@@ -26,6 +26,8 @@ Keep the text of these headings. A link from another page uses each one as an an
 | terminals.md | A long command and a move |
 | terminals.md | The shells' environment |
 | page.md | Several windows |
+| walks.md | The checks |
+| walks.md | Tutorial walks |
 | slides.md | A PDF of the slides |
 | class.md | If a window stops answering |
 
@@ -67,7 +69,12 @@ only that page could not know it.
 | recipe | A task in a `justfile`, run with `just` |
 | the demo | The sample project, timewalk-demo |
 | the edits watcher | The part of the server that looks for edits each second |
-| walk | A replay of the history of a project, with notes and slides, that students work through |
+| walk | A replay of the history of a project, with notes and slides, that students work through. One class can have several walks |
+| table of contents | `toc.toml`, the file in the class folder that lists the walks of a class |
+| the walk menu | The menu at the left of the step bar that changes the walk, with `--toc` |
+| narrative | A walk of tagged steps, with nothing between them |
+| tutorial | A walk of tagged steps and the small commits between them |
+| move | One small commit of a step in a tutorial, named `step-NN.N` |
 | kit, walk kit | The repository of a walk, for example `bla-walk`: notes, slides, `justfile` and `.gitignore` |
 | `repo/`, `worktree/` | The two folders of a kit that git ignores: the clone of the project, and the replay copy |
 | class repository | Your own material for a class, for example `bla-class`, kept private |

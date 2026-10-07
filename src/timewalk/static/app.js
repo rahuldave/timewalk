@@ -8,6 +8,8 @@ const $ = (id) => document.getElementById(id);
 const PAGE = Math.random().toString(36).slice(2);   // tells this window's own requests apart from another window's
 // The window for the class, opened by the Room button, or by an address with room=1: no cues, no clock band.
 const ROOM = new URLSearchParams(location.search).get("room") === "1";
+let refreshing = null;     // the refresh() that runs now; declared here, as refresh() runs during the first await
+let refreshAgain = false;  // another refresh() was asked for while it ran
 // The panes whose scroll every window shares, and the time until which a pane's scrolls come from elsewhere.
 const SCROLLERS = { slide: "slide", file: "file-body", notes: "notes-body" };
 const following = {};
@@ -46,17 +48,36 @@ const ui = {
   editing: null,          // while the notes are edited: the step, and its section as it was read
   notesPath: null,
   skew: 0,                // the server's clock minus this one's
+  askedMove: null,        // in a tutorial, the move this window last asked for, until the page redraws
+  shellToggledHere: false, // this window turned Shell on or off: it gives the shells its size
 };
 
 // ---------- steps ----------
 
-async function refresh() {
+/** Draw the page from the server's state. Calls that come while one runs are folded into one more run after it. */
+function refresh() {
+  if (refreshing) { refreshAgain = true; return refreshing; }
+  refreshing = (async () => {
+    try {
+      do { refreshAgain = false; await drawFromState(); } while (refreshAgain);
+    } finally {
+      refreshing = null;
+    }
+  })();
+  return refreshing;
+}
+
+async function drawFromState() {
   ui.state = await api("/api/state");
+  ui.askedMove = null;
   ui.layout = ui.state.layout;
   applyShell(ui.state.shell);
   ui.skew = ui.state.now - Date.now() / 1000;
   drawSteps();
+  drawMoves();
+  drawWalks();
   const drawn = drawSlides();
+  if (!ui.state.has_notes) ui.notes = {};   // a walk without notes shows none, not the last walk's
   await Promise.all([loadTree(), loadRecipes(), ui.state.has_notes ? loadNotes() : null]);
   if (ui.open) await openFile(ui.open, ui.view, false);
   drawNotes();
@@ -98,8 +119,9 @@ function drawSteps() {
     return item;
   }));
   const here = current === null ? null : steps[current];
-  $("step-name").textContent = here ? here.name : "between steps";
-  $("step-subject").textContent = here ? here.subject : "The working copy is not at one of the steps. Choose a step to return.";
+  const made = ui.state.move ? ui.state.moves[ui.state.move - 1] : null;   // in a tutorial, the last move made
+  $("step-name").textContent = here ? (made ? made.name : here.name) : "between steps";
+  $("step-subject").textContent = here ? (made ? made.subject : here.subject) : "The working copy is not at one of the steps. Choose a step to return.";
   $("note").hidden = !(here && here.note);
   $("note").textContent = here ? here.note : "";
   $("prev").disabled = current === null || current === 0;
@@ -112,15 +134,62 @@ async function move(to, setAside = false) {
   if (to < 0 || to >= ui.state.steps.length) return;
   hideNotice();
   try {
-    await api("/api/move", { to, set_aside: setAside });
+    await api("/api/move", { to, name: ui.state.steps[to].name, set_aside: setAside });
     // the server tells every page it moved, this one included; refresh() runs from the event
   } catch (error) {
-    if (error.body?.edits?.length && error.message === "uncommitted edits") askAboutEdits(to, error.body.edits);
+    if (error.body?.edits?.length && error.message === "uncommitted edits") askAboutEdits(() => move(to, true), error.body.edits);
     else showNotice(error.message, true);
   }
 }
 
-function askAboutEdits(to, edits) {
+/** A tutorial: the moves of the step, as a row of buttons. Start is before the first move. Only the next move is open. */
+function drawMoves() {
+  const { moves = [], move } = ui.state;
+  document.body.classList.toggle("has-moves", moves.length > 0);
+  const row = $("moves");
+  row.hidden = !moves.length;
+  if (!moves.length) return;
+  const label = document.createElement("span");
+  label.className = "label";
+  label.textContent = "Moves";
+  const buttons = [{ name: "Start", subject: "Before the first move of this step" }, ...moves].map((m, number) => {
+    const button = document.createElement("button");
+    button.textContent = number ? String(number) : "Start";
+    button.title = number ? `${m.name}: ${m.subject} (Shift+Right, Shift+Left)` : m.subject;
+    button.className = number === move ? "here" : number < move ? "done" : "";
+    if (number === move) button.setAttribute("aria-current", "step");
+    button.disabled = number > move + 1;
+    button.onclick = () => goMove(number);
+    return button;
+  });
+  const subject = document.createElement("span");
+  subject.className = "move-subject";
+  subject.textContent = move ? moves[move - 1].subject : `${moves.length} moves to make`;
+  row.replaceChildren(label, ...buttons, subject);
+}
+
+/** Moves asked for one after another reach the server in that order, one at a time. */
+let moveQueue = Promise.resolve();
+function goMove(number, setAside = false) {
+  moveQueue = moveQueue.then(() => makeMove(number, setAside));
+  return moveQueue;
+}
+
+async function makeMove(number, setAside) {
+  const { moves = [], current } = ui.state;
+  if (!moves.length || current === null || number < 0 || number > moves.length) return;
+  hideNotice();
+  ui.askedMove = { step: current, move: number };   // a second key press before the page redraws counts from here
+  try {
+    await api("/api/move", { to: current, name: ui.state.steps[current].name, move: number, set_aside: setAside });
+  } catch (error) {
+    ui.askedMove = null;
+    if (error.body?.edits?.length && error.message === "uncommitted edits") askAboutEdits(() => goMove(number, true), error.body.edits);
+    else showNotice(error.message, true);
+  }
+}
+
+function askAboutEdits(goOn, edits) {
   const notice = $("notice");
   notice.className = "notice";
   notice.replaceChildren();
@@ -129,7 +198,7 @@ function askAboutEdits(to, edits) {
   const go = document.createElement("button");
   go.textContent = "Set the edits aside and move";
   go.title = "Runs git stash, so the edits can be brought back with git stash pop";
-  go.onclick = () => move(to, true);
+  go.onclick = goOn;
   const stay = document.createElement("button");
   stay.textContent = "Stay here";
   stay.onclick = hideNotice;
@@ -186,18 +255,38 @@ function applyShell(on) {
     ui.roomSized = false;
     for (const entry of ui.terms.values()) { entry.adopted = null; entry.term.options.fontSize = ui.size; }
   }
-  for (const entry of ui.terms.values()) requestAnimationFrame(() => { fitTerminal(entry); if (ROOM && ui.shell) entry.sendSize(true); });
+  // On, the Room sizes each shell; the window that turned it on gives its size until a Room does. Off, the window that
+  // turned it off gives the size again. Only that one, so that two windows do not race.
+  const mine = ui.shellToggledHere;
+  ui.shellToggledHere = false;
+  for (const entry of ui.terms.values()) requestAnimationFrame(() => { fitTerminal(entry); if (ROOM ? ui.shell : mine) entry.sendSize(true); });
 }
 
 /** Fit a terminal to its pane; or, when it follows the Room's size, take those rows and columns and scale the font to fit. */
 function fitTerminal(entry) {
   if (entry.el.hidden) return;
-  if (!entry.adopted) { entry.fit.fit(); return; }
+  if (!entry.adopted) {
+    // Not fit.fit(): it skips a size equal to the last one it fitted, though the Room's size may have come between.
+    const size = entry.fit.proposeDimensions();
+    if (size && (size.cols !== entry.term.cols || size.rows !== entry.term.rows)) entry.term.resize(size.cols, size.rows);
+    return;
+  }
   const { rows, cols } = entry.adopted;
   entry.term.options.fontSize = ui.size;
   const room = entry.fit.proposeDimensions();
   if (room) entry.term.options.fontSize = Math.max(6, Math.floor(ui.size * Math.min(room.cols / cols, room.rows / rows) * 2) / 2);
   if (entry.term.cols !== cols || entry.term.rows !== rows) entry.term.resize(cols, rows);
+}
+
+/** The Room window that sized a shell closed: this window fits the shell to itself again, and gives it its size. */
+function dropRoomSize(event) {
+  if (ROOM) return;
+  const entry = ui.terms.get(event.track);
+  if (!entry) return;
+  entry.adopted = null;
+  entry.term.options.fontSize = ui.size;
+  ui.roomSized = [...ui.terms.values()].some((other) => other.adopted);
+  requestAnimationFrame(() => { fitTerminal(entry); entry.sendSize(true); });
 }
 
 /** The Room window sized a shell, in Shell mode: this window shows it at the same rows and columns. */
@@ -210,8 +299,15 @@ function followSize(event) {
   fitTerminal(entry);
 }
 
-async function showSlide(to) {
-  try { await api("/api/slide", { to }); } catch (error) { showNotice(error.message, true); }
+async function showSlide(to, setAside = false) {
+  try {
+    const here = ui.state.current === null ? null : ui.state.steps[ui.state.current]?.name;
+    await api("/api/slide", { to, step: here, set_aside: setAside });
+  } catch (error) {
+    // In a tutorial with sync, a slide can make a move: with edits, ask first, as a move does.
+    if (error.body?.edits?.length && error.message === "uncommitted edits") askAboutEdits(() => showSlide(to, true), error.body.edits);
+    else showNotice(error.message, true);
+  }
 }
 
 // ---------- files ----------
@@ -457,14 +553,21 @@ function startTerminal(id) {
   const ws = socket("/ws/term/" + id);
   ws.binaryType = "arraybuffer";
   // A shell has one size. The window you last typed in sets it; a window that only shows the shell leaves it alone,
-  // so two windows of different sizes do not fight over it. In Shell mode the Room window sets it instead.
-  const sendSize = (force = false) => {
+  // so two windows of different sizes do not fight over it. In Shell mode the Room window sets it instead, and the
+  // server keeps that size while Shell is on.
+  const sendSize = (force = false, opening = false) => {
     if (ws.readyState !== WebSocket.OPEN) return;
     if (ui.shell && ROOM) return ws.send(JSON.stringify({ type: "resize", rows: term.rows, cols: term.cols, room: true }));
-    if (ui.shell && ui.roomSized) return;
-    if (force || ui.keysToTerminal) ws.send(JSON.stringify({ type: "resize", rows: term.rows, cols: term.cols }));
+    if (ui.shell && ui.roomSized && !force) return;   // asked anyway, the server answers with the Room's size
+    if (force || ui.keysToTerminal) ws.send(JSON.stringify({ type: "resize", rows: term.rows, cols: term.cols, opening }));
   };
-  ws.onopen = () => { fitTerminal(entry); sendSize(true); };
+  ws.onopen = () => {
+    // A window opened, or reloaded, in Shell mode takes the size the Room gave this shell, if it gave one.
+    const given = !ROOM && ui.shell && ui.state?.room_sizes?.[id];
+    if (given) { ui.roomSized = true; entry.adopted = { rows: given[0], cols: given[1] }; }
+    fitTerminal(entry);
+    sendSize(!ROOM, true);   // a size for a new shell; the server keeps the size a shell already has. The Room: only in Shell mode
+  };
   ws.onmessage = (event) => {
     term.write(typeof event.data === "string" ? event.data : new Uint8Array(event.data));
     // A tab that printed something while another was in front gets a dot, so a finished run is noticed.
@@ -577,7 +680,7 @@ function wireControls() {
   $("slide-first").onclick = () => showSlide(0);
   $("slide-next").onclick = () => showSlide(ui.state.slide + 1);
   for (const button of $("layouts").querySelectorAll("button")) button.onclick = () => show({ layout: button.dataset.layout });
-  $("shell-toggle").onclick = () => show({ shell: !ui.shell });
+  $("shell-toggle").onclick = () => { ui.shellToggledHere = true; show({ shell: !ui.shell }); };
   for (const view of ["file", "diff", "edits"]) $("view-" + view).onclick = () => ui.open && show({ path: ui.open, view });
   $("theme").onclick = () => { ui.theme = ui.theme === "dark" ? "light" : "dark"; applyAppearance(); restartTerminals(); };
   $("larger").onclick = () => { ui.size = Math.min(ui.size + 1, 26); applyAppearance(); resizeTerminalText(); };
@@ -590,17 +693,32 @@ function wireControls() {
   };
   document.addEventListener("keydown", (event) => {
     if (event.metaKey || event.ctrlKey) return;
-    // Alt with Enter, 1, 2, 3, ` or N: the toggles. Read by the key's place, so that a Mac's Option characters do not
+    // Alt with Enter, 1, 2, 3, ` or \: the toggles. Read by the key's place, so that a Mac's Option characters do not
     // get in the way, and with Alt, so that they work even when a terminal has the keys.
     if (event.altKey && !event.shiftKey) {
       const layouts = { Digit1: "slides", Digit2: "split", Digit3: "code" };
       let used = true;
-      if (event.code === "Enter") show({ shell: !ui.shell });
+      if (event.code === "Enter") { ui.shellToggledHere = true; show({ shell: !ui.shell }); }
       else if (layouts[event.code]) { if (ui.state?.has_slides) show({ layout: layouts[event.code] }); }
       else if (event.code === "Backquote") { if (ui.state?.has_slides) show({ layout: ui.layout === "slides" ? "code" : "slides" }); }
-      else if (event.code === "KeyN") { if (!$("notes-toggle").hidden) $("notes-toggle").click(); }
+      else if (event.code === "Backslash") { if (!$("notes-toggle").hidden) $("notes-toggle").click(); }   // not N: Option+N types ~ on some Macs
       else used = false;
       if (used) { event.preventDefault(); event.stopPropagation(); return; }
+    }
+    // Shift+Right and Shift+Left: the next and the previous move of a tutorial. With Alt too, inside a terminal.
+    if (event.shiftKey && (event.key === "ArrowRight" || event.key === "ArrowLeft") && ui.state?.moves?.length) {
+      const target = event.target instanceof Element ? event.target : document.body;
+      // A text field keeps Shift+arrows (and Option+Shift+arrows, which select words); a terminal gives them up with Alt.
+      // (A terminal takes its keys through a textarea of its own: that one is the terminal, not a text field.)
+      const inTerminal = !!target.closest(".term-pane");
+      if (!inTerminal && target.closest("textarea, select, [contenteditable], input:not([type=checkbox]):not([type=radio])")) return;
+      if (!event.altKey && inTerminal) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.repeat) return;
+      const from = ui.askedMove?.step === ui.state.current ? ui.askedMove.move : ui.state.move ?? 0;
+      goMove(from + (event.key === "ArrowRight" ? 1 : -1));
+      return;
     }
     // Shift+Up and Shift+Down: the first and the last slide of the step. Other keys with Shift are left alone.
     if (event.shiftKey) {
@@ -622,14 +740,17 @@ function wireControls() {
       const pane = paneUnderMouse();
       if (pane) { event.preventDefault(); scrollPane(pane, event.key === "Home" ? "top" : "bottom"); }
     }
-    if (event.key === "ArrowRight") { event.preventDefault(); $("next").click(); }
-    if (event.key === "ArrowLeft") { event.preventDefault(); $("prev").click(); }
+    // A held key repeats: one move per press, so a held arrow does not queue a run of checkouts.
+    if (event.key === "ArrowRight") { event.preventDefault(); if (!event.repeat) $("next").click(); }
+    if (event.key === "ArrowLeft") { event.preventDefault(); if (!event.repeat) $("prev").click(); }
     // With one slide or a document, plain Up and Down are left to scroll.
     // On a document, plain Up and Down scroll it, even when the step has other slides. Alt with them changes slide.
     const onDoc = isDoc(ui.state?.slides?.[ui.state?.slide]);
     const changeSlide = event.altKey || (manySlides && !onDoc);
-    if (event.key === "ArrowDown" && changeSlide) { event.preventDefault(); $("slide-next").click(); }
-    if (event.key === "ArrowUp" && changeSlide) { event.preventDefault(); $("slide-prev").click(); }
+    // In a tutorial with sync a slide can make a move: one per press there, as with Left and Right.
+    const once = !(event.repeat && ui.state?.moves?.length && ui.state?.sync);
+    if (event.key === "ArrowDown" && changeSlide) { event.preventDefault(); if (once) $("slide-next").click(); }
+    if (event.key === "ArrowUp" && changeSlide) { event.preventDefault(); if (once) $("slide-prev").click(); }
     if (event.defaultPrevented) event.stopPropagation();   // a key used here is not also typed into a terminal
   }, true);   // capture: seen before the terminal, which keeps the keys it handles to itself
   // drag the bar between the reader and the terminal
@@ -742,6 +863,34 @@ async function openRoom() {
   else if (note) showNotice(note);
 }
 
+/** The walks of a table of contents: a dropdown in your window, the walk's title in the Room window. */
+function drawWalks() {
+  const { walks = [], walk } = ui.state;
+  const picker = $("walk-picker");
+  picker.hidden = ROOM || walks.length < 2;
+  $("walk-title").hidden = !ROOM || !walk;
+  document.body.classList.toggle("walks", walks.length > 1);
+  $("walk-title").textContent = walk ? walk.title : "";
+  if (picker.hidden) return;
+  picker.replaceChildren(...walks.map((w) => new Option(w.title, w.id, false, w.id === walk?.id)));
+}
+
+async function changeWalk(id, setAside = false) {
+  if (ui.editing) {
+    showNotice("Save or cancel your edit of the notes before you change the walk.", true);
+    $("walk-picker").value = ui.state.walk?.id;
+    return;
+  }
+  hideNotice();
+  try {
+    await api("/api/walk", { id, set_aside: setAside });   // the server tells every window; refresh() runs from the event
+  } catch (error) {
+    $("walk-picker").value = ui.state.walk?.id;
+    if (error.body?.edits?.length && error.message === "uncommitted edits") askAboutEdits(() => changeWalk(id, true), error.body.edits);
+    else showNotice(error.message, true);
+  }
+}
+
 function drawTools() {
   const { has_notes: hasNotes, has_slides: hasSlides } = ui.state;
   const shown = hasNotes && !notesHidden.get();
@@ -780,7 +929,7 @@ async function makePdf() {
 function startEditing() {
   const here = ui.state.current === null ? null : ui.state.steps[ui.state.current];
   if (!here) return;
-  ui.editing = { step: here.name, base: ui.notes[here.name]?.raw || "" };
+  ui.editing = { step: here.name, base: ui.notes[here.name]?.raw || "", walk: ui.state.walk?.id ?? null };
   $("notes-text").value = ui.editing.base;
   $("notes-file").textContent = (ui.notesPath || "").split("/").pop();
   $("notes-file").title = ui.notesPath || "";
@@ -798,9 +947,9 @@ function stopEditing() {
 }
 
 async function saveNotes() {
-  const { step, base } = ui.editing;
+  const { step, base, walk } = ui.editing;
   try {
-    await api("/api/notes", { step, base, text: $("notes-text").value });
+    await api("/api/notes", { step, base, walk, text: $("notes-text").value });
     stopEditing();
     await loadNotes();
     drawNotes();
@@ -830,21 +979,71 @@ function drawNotes() {
   // The prose and the commands, in the order of the notes file: each command is a button where it is written.
   const box = $("notes");
   box.replaceChildren();
+  // In a tutorial, each move has a section: done, here (the last move made), or later, grayed until you get there.
+  const { moves = [], move: made } = ui.state;
+  let into = box;       // where the parts go: the notes, or the section of a move
+  let later = false;    // whether the section is of a move still to make
+  let files = [];       // the files of that move's commit, for a files: line
+  let owner = 0;        // the move whose section it is
   let group = null;   // the buttons of a run of commands, one after another in the file
   for (const part of mine?.parts || []) {
+    if (part.kind === "move") {
+      const number = moves.findIndex((m) => m.name === part.name) + 1;
+      later = moves.length > 0 && number > 0 && number > made;
+      files = number ? moves[number - 1].files : [];
+      owner = number;
+      into = document.createElement("section");
+      into.className = "p-move " + (!number || !moves.length ? "" : number === made ? "here" : number < made ? "done" : "later");
+      into.dataset.move = String(number);
+      const heading = document.createElement("h3");
+      heading.textContent = part.title ? `${part.name} ${part.title}` : part.name;
+      into.append(heading);
+      box.append(into);
+      group = null;
+      continue;
+    }
+    if (part.kind === "files") {
+      const list = document.createElement("div");
+      list.className = "p-files";
+      for (const file of files) {
+        const button = document.createElement("button");
+        button.textContent = file.path;
+        // "What changed" compares the move on show with the one before, so only its own files open there.
+        const view = file.status !== "A" && owner === made ? "diff" : "file";
+        button.title = view === "diff" ? "Changed in this move. Opens what changed" : "Opens the file";
+        button.disabled = later;
+        button.onclick = () => show({ path: file.path, view });
+        list.append(button);
+      }
+      into.append(list);
+      group = null;
+      continue;
+    }
     if (part.kind === "text") {
       const prose = document.createElement("div");
       prose.innerHTML = renderMarkdown(part.text);
-      box.append(prose);
+      into.append(prose);
       group = null;
       continue;
     }
     if (!group) {
       group = document.createElement("div");
       group.className = "p-commands";
-      box.append(group);
+      into.append(group);
     }
-    group.append(commandButton(part));
+    const button = commandButton(part);
+    button.disabled = later;
+    group.append(button);
+  }
+  // When the move changes, scroll the notes, and only the notes, to its section, in every window alike. A window with
+  // the notes hidden does it when they show.
+  const step = here?.name ?? null;
+  const section = box.querySelector(".p-move.here");
+  const scroller = $("notes-body");
+  if (made != null && section && scroller.offsetParent && (ui.drawnMove?.step !== step || ui.drawnMove?.move !== made)) {
+    following.notes = Date.now() + 300;   // each window scrolls itself, so this scroll is not sent on
+    scroller.scrollTop += section.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+    ui.drawnMove = { step, move: made };
   }
   if (!box.children.length) box.innerHTML = `<p class="p-empty">${!here ? "" : ui.notesPath
     ? `No notes for ${escapeHtml(here.name)} in ${escapeHtml(ui.notesPath.split("/").pop())}. Click Edit to write them, or add a section headed "## ${escapeHtml(here.name)}".`
@@ -896,7 +1095,7 @@ function drawBand() {
 // ---------- start ----------
 
 $("clock-start").onclick = () => api("/api/clock", { action: ui.state.clock ? "reset" : "start" });
-$("notes-toggle").onclick = () => { notesHidden.set(!notesHidden.get()); drawTools(); };
+$("notes-toggle").onclick = () => { notesHidden.set(!notesHidden.get()); drawTools(); if (ui.state && !ui.editing) drawNotes(); };
 $("cues-toggle").onclick = () => { cuesHidden.set(!cuesHidden.get()); drawTools(); };
 $("room").hidden = ROOM;
 $("room").onclick = openRoom;
@@ -905,6 +1104,7 @@ $("fullscreen").onclick = () => document.documentElement.requestFullscreen().cat
 document.addEventListener("fullscreenchange", () => { $("fullscreen").hidden = !ROOM || !!document.fullscreenElement; });
 if (ROOM) { document.title = "timewalk room"; document.body.classList.add("room"); }
 $("pdf").onclick = makePdf;
+$("walk-picker").onchange = () => changeWalk($("walk-picker").value);
 $("run-on-click").onchange = () => settings.set("run-on-click", $("run-on-click").checked);
 $("notes-edit").onclick = startEditing;
 $("notes-cancel").onclick = stopEditing;
@@ -926,8 +1126,16 @@ window.timewalkTerminals = () => [...ui.terms].map(([id, { term, el, paused }]) 
   return { id, shown: !el.hidden, drawing: !paused, rows: term.rows, cols: term.cols, fontSize: term.options.fontSize,
            scrolledBack: Math.round(term.viewportY), tail };
 });
+// For tests: a hash of what one terminal's canvas shows, to tell whether it drew. Costly, so asked for one terminal at a time.
+window.timewalkPicture = (id) => {
+  const canvas = ui.terms.get(id)?.el.querySelector("canvas");
+  if (!canvas) return null;
+  let hash = 0;
+  for (const c of canvas.toDataURL()) hash = (hash * 31 + c.charCodeAt(0)) | 0;
+  return hash;
+};
 const events = onEvents(async (event) => {
-  if (event.type === "moved") { hideNotice(); await refresh(); }
+  if (event.type === "moved" || event.type === "walk") { hideNotice(); await refresh(); }
   if (event.type === "refused") { showNotice("timewalk refused this window. If it restarted, open the new address that it printed.", true); return; }
   if (event.type === "reconnected") {
     // The server came back, or the network did: look again, and open the terminals whose sockets closed.
@@ -944,6 +1152,7 @@ const events = onEvents(async (event) => {
   if (event.type === "notes" && !ui.editing) { await loadNotes(); drawNotes(); drawBand(); }
   if (event.type === "clock") { ui.state = await api("/api/state"); ui.skew = ui.state.now - Date.now() / 1000; drawBand(); }
   if (event.type === "size") { followSize(event); return; }
+  if (event.type === "unsized") { dropRoomSize(event); return; }
   if (event.type === "show") {
     if (event.layout && event.layout !== ui.layout) applyLayout(event.layout);
     if (typeof event.shell === "boolean") applyShell(event.shell);

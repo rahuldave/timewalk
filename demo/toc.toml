@@ -1,0 +1,16 @@
+# The walks of the demo. The first is the default. Every path is read from this folder.
+# Run it with: just demo-walks
+
+[[walk]]
+id = "story"
+title = "The demo, step by step"
+kind = "narrative"
+notes = "notes.md"
+slides = "slides/slides.toml"
+
+[[walk]]
+id = "checks"
+title = "Only the checks"
+kind = "narrative"
+folder = "walks/checks"            # its notes.md, and slides/slides.toml, are in this folder
+steps = ["step-02", "step-03"]     # two of the five steps

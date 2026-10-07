@@ -33,7 +33,9 @@ import argparse
 import asyncio
 import contextlib
 import fcntl
+import itertools
 import json
+import math
 import os
 import pty
 import re
@@ -50,6 +52,7 @@ import webbrowser
 from collections import deque
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from urllib.parse import unquote
 
 import uvicorn
 from starlette.applications import Starlette
@@ -72,8 +75,17 @@ def git(
     cwd: Path,  # Directory to run git in
     *args: str,  # Arguments to git
 ) -> str:  # What git printed, without the trailing newline
-    "Run git and return its output, raising `GitError` with git's own message when it fails."
-    done = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    """Run git and return its output, raising `GitError` with git's own message when it fails.
+
+    Another git in the same copy, such as the edits watcher's `git status` or a shell prompt's, holds `index.lock` for
+    a moment; a command that meets it waits a little and runs again.
+    """
+    # A stash is never run twice: it may have stored the edits before it met the lock.
+    for wait in (0.1, 0.2, 0.4, None) if args[:1] != ("stash",) else (None,):
+        done = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+        if done.returncode == 0 or wait is None or "index.lock" not in done.stderr:
+            break
+        time.sleep(wait)
     if done.returncode != 0:
         raise GitError(done.stderr.strip() or done.stdout.strip() or f"git {' '.join(args)} failed")
     return done.stdout.rstrip("\n")
@@ -88,6 +100,62 @@ class Step:
     sha: str  # The commit
     subject: str  # First line of the commit message
     note: str  # The annotated tag's message, or the rest of the commit message. Public: the audience sees it
+
+
+@dataclass
+class Move:
+    "One small commit inside a step of a tutorial: the class makes the step one move at a time."
+
+    name: str  # The step's name and the move's number, such as `step-02.1`
+    sha: str  # The commit
+    subject: str  # First line of the commit message, which starts with the name and a colon, except on the step's own commit
+
+
+def step_moves(
+    main: Path,  # The repository
+    steps: list[Step],  # The steps of the walk
+) -> list[list[Move]]:  # For each step, its moves in order; empty for a step of one commit, and for the first step
+    """Find the moves of each step: the commits after the step before it, on the first-parent line, up to the step's own.
+
+    A step of one commit has no moves. The first step has none either: it is where the walk starts.
+    """
+    moves: list[list[Move]] = [[]]
+    for before, step in itertools.pairwise(steps):
+        raw = git(main, "log", "--first-parent", "--reverse", "--format=%H%x00%s", f"{before.sha}..{step.sha}")
+        commits = [line.split("\x00", 1) for line in raw.splitlines() if line]
+        moves.append([Move(f"{step.name}.{n}", sha, subject) for n, (sha, subject) in enumerate(commits, 1)] if len(commits) > 1 else [])
+    return moves
+
+
+def tag_steps(
+    main: Path,  # The repository
+    pattern: str,  # Glob for tag names
+) -> list[Step]:  # Steps in tag-name order
+    "Read the tags that mark steps. An annotated tag's message becomes the step's note."
+    fmt = "%(refname:short)%00%(objecttype)%00%(objectname)%00%(*objectname)%00%(contents)%01"
+    raw = git(main, "for-each-ref", f"--format={fmt}", "--sort=refname", f"refs/tags/{pattern}")
+    steps = []
+    for record in filter(None, (r.strip("\n") for r in raw.split("\x01"))):
+        name, kind, sha, peeled, contents = record.split("\x00")
+        commit = peeled if kind == "tag" else sha
+        note = contents.strip() if kind == "tag" else ""
+        steps.append(Step(len(steps), name, commit, git(main, "log", "-1", "--format=%s", commit), note))
+    return steps
+
+
+def pick_steps(
+    steps: list[Step],  # Every step that the tags give
+    names: list[str] | None,  # The names to keep, or None for all
+) -> list[Step]:  # The steps kept, in their order, numbered again from 0
+    "Keep some steps, for a walk on one part of the history. A name that is not a step raises GitError."
+    if names is None:
+        return steps
+    known = {step.name for step in steps}
+    missing = [name for name in names if name not in known]
+    if missing:
+        raise GitError(f"these steps are not tags of the repository: {', '.join(missing)}")
+    kept = [step for step in steps if step.name in set(names)]
+    return [Step(i, s.name, s.sha, s.subject, s.note) for i, s in enumerate(kept)]
 
 
 class Repo:
@@ -110,25 +178,60 @@ class Repo:
         self.discard = discard
         self.replay = Path(replay).resolve() if replay is not None else None
         self.main = Path(git(main, "rev-parse", "--show-toplevel"))
-        self.steps = self._commit_steps() if commits else self._tag_steps(tags)
+        self.steps = self._commit_steps() if commits else tag_steps(self.main, tags)
         if not self.steps:
             raise GitError(f"no steps found: no tags match {tags!r}. Use --commits to step through commits instead.")
         self.work = self.main if in_place else self._replay_copy()
+        self.moves: list[list[Move]] = [[] for _ in self.steps]  # For a tutorial, the moves of each step
+        self.at: tuple[int, int] | None = None  # In a tutorial, the step and move the last move went to
+        self.files_of: dict[str, list[dict]] = {}  # The files each move's commit added or changed, by commit
 
-    def _tag_steps(
+    def select(
         self,
-        pattern: str,  # Glob for tag names
-    ) -> list[Step]:  # Steps in tag-name order
-        "Read the tags that mark steps. An annotated tag's message becomes the step's note."
-        fmt = "%(refname:short)%00%(objecttype)%00%(objectname)%00%(*objectname)%00%(contents)%01"
-        raw = git(self.main, "for-each-ref", f"--format={fmt}", "--sort=refname", f"refs/tags/{pattern}")
-        steps = []
-        for record in filter(None, (r.strip("\n") for r in raw.split("\x01"))):
-            name, kind, sha, peeled, contents = record.split("\x00")
-            commit = peeled if kind == "tag" else sha
-            note = contents.strip() if kind == "tag" else ""
-            steps.append(Step(len(steps), name, commit, git(self.main, "log", "-1", "--format=%s", commit), note))
-        return steps
+        tags: str,  # Glob for the tags that mark the walk's steps
+        names: list[str] | None = None,  # The steps of the walk, or None for every tag that matches
+        tutorial: bool = False,  # Find the moves between the steps, for a tutorial
+    ) -> None:
+        "Use the steps of another walk. The working copy does not move; `move` does that."
+        steps = pick_steps(tag_steps(self.main, tags), names)
+        if not steps:
+            raise GitError(f"no steps found: no tags match {tags!r}")
+        self.steps = steps
+        self.moves = step_moves(self.main, steps) if tutorial else [[] for _ in steps]
+        self.at = None
+
+    def commit_at(
+        self,
+        index: int,  # A step
+        move: int | None,  # A move of it: 0 is before its first move, which is the step before; None for a step without moves
+    ) -> str:  # The commit the working copy stands on there
+        "Find the commit of a place in a tutorial: a step, and how many of its moves are made."
+        if not self.moves[index] or move is None:
+            return self.steps[index].sha
+        return self.steps[index - 1].sha if move == 0 else self.moves[index][move - 1].sha
+
+    def position(self) -> tuple[int | None, int | None]:  # The step, and the move within it (None for a step without moves)
+        """Say where the working copy stands: on a step, and in a tutorial on one of its moves.
+
+        A step's last move is the step's own commit, and its move 0 is the step before, so one commit can be two
+        places. The place the last move went to wins, while the working copy is still there.
+        """
+        head = git(self.work, "rev-parse", "HEAD")
+        if self.at is not None and self.commit_at(*self.at) == head:
+            return self.at
+        if self.at is None and any(self.moves):
+            kept = self.kept_place(head)  # after a restart: the place the last run left, if the copy is still there
+            if kept is not None:
+                self.at = kept
+                return kept
+        for step in self.steps:
+            if step.sha == head:
+                return step.index, (len(self.moves[step.index]) if self.moves[step.index] else None)
+        for index, moves in enumerate(self.moves):
+            for number, move in enumerate(moves, 1):
+                if move.sha == head:
+                    return index, number
+        return None, None
 
     def _commit_steps(self) -> list[Step]:  # Steps in history order, oldest first
         "Use every commit on the current branch's first-parent history as a step."
@@ -153,10 +256,40 @@ class Repo:
         git(self.main, "worktree", "add", "--detach", str(path), self.steps[0].sha)
         return path
 
-    def current(self) -> int | None:  # Index of the step the working copy is at, if it is exactly at one
+    def place_file(self) -> Path:  # Where a tutorial notes its place, in the replay copy's own git folder, outside its files
+        "Name the file that keeps a tutorial's place across a restart: move 0 of a step and the step before are one commit."
+        folder = Path(git(self.work, "rev-parse", "--git-dir"))
+        return (folder if folder.is_absolute() else self.work / folder) / "timewalk-place.json"
+
+    def keep_place(self) -> None:
+        "Write down the tutorial's place, with the commit it stands on; at a step without moves, forget the place written before."
+        if self.at is None or not self.moves[self.at[0]]:
+            with contextlib.suppress(OSError, GitError):
+                self.place_file().unlink(missing_ok=True)
+            return
+        with contextlib.suppress(OSError, GitError):
+            self.place_file().write_text(json.dumps({"head": self.commit_at(*self.at), "step": self.steps[self.at[0]].name, "move": self.at[1]}))
+
+    def kept_place(
+        self,
+        head: str,  # The commit the working copy stands on
+    ) -> tuple[int, int] | None:  # The place written down for that commit, if any and still valid
+        "Read the place a tutorial wrote down, if the working copy is still on its commit."
+        try:
+            kept = json.loads(self.place_file().read_text())
+        except (OSError, ValueError, GitError):
+            return None
+        names = [step.name for step in self.steps]
+        if not isinstance(kept, dict) or kept.get("head") != head or kept.get("step") not in names:
+            return None
+        index, move = names.index(kept["step"]), kept.get("move")
+        if not self.moves[index] or not isinstance(move, int) or not 0 <= move <= len(self.moves[index]) or self.commit_at(index, move) != head:
+            return None
+        return index, move
+
+    def current(self) -> int | None:  # Index of the step the working copy is at, if it is exactly at one or at one of its moves
         "Say which step the working copy stands on."
-        head = git(self.work, "rev-parse", "HEAD")
-        return next((s.index for s in self.steps if s.sha == head), None)
+        return self.position()[0]
 
     def edits(self) -> list[str]:  # Paths of tracked files with uncommitted changes
         "List tracked files that differ from the step. Untracked files are not edits and are never touched."
@@ -178,30 +311,50 @@ class Repo:
         self,
         index: int,  # Step to move to
         set_aside: bool = False,  # Stash uncommitted edits first instead of refusing
+        here: str | None = None,  # The name of the step the copy is at, for the stash, when the steps just changed
+        move: int | None = None,  # In a tutorial, the move of the step to go to; default: 0, the start of the step
+        anywhere: bool = False,  # Go to that move without the order: a return to a walk, to the place it was left at
     ) -> None:
-        """Move the working copy to a step. Edits are stashed, never discarded; untracked files are left alone.
+        """Move the working copy to a step, or to a move of a step. Edits are stashed, never discarded; untracked files are left alone.
 
         With `discard`, the move is `git checkout -f`: edits to tracked files are thrown away, and an untracked
         file is replaced only where the step has a file of that name. Every other untracked file still stays.
+
+        A tutorial goes through a step's moves in order: one forward at a time, and back to any of them.
         """
         if not 0 <= index < len(self.steps):
             raise GitError(f"there is no step {index}")
-        target = self.steps[index]
+        moves = self.moves[index]
+        place = (index, (move or 0) if moves else None)
+        if moves:
+            if not 0 <= place[1] <= len(moves):
+                raise GitError(f"{self.steps[index].name} has no move {place[1]}")
+            step_now, move_now = self.position()
+            furthest = (move_now or 0) + 1 if step_now == index else 0
+            if step_now is not None and place[1] > furthest and not anywhere:
+                raise GitError(f"make the moves of {self.steps[index].name} in order: the next is {self.steps[index].name}.{furthest}")
+        target = self.commit_at(*place)
         if self.discard:
-            git(self.work, "checkout", "--force", "--detach", "--quiet", target.sha)
+            git(self.work, "checkout", "--force", "--detach", "--quiet", target)
+            self.at = place
+            self.keep_place()
             return
         # First the untracked files in the way, so that a move that cannot happen does not stash the edits away.
         untracked = set(git(self.work, "ls-files", "--others").splitlines())
-        in_the_way = sorted(untracked & set(git(self.work, "ls-tree", "-r", "--name-only", target.sha).splitlines()))
+        in_the_way = sorted(untracked & set(git(self.work, "ls-tree", "-r", "--name-only", target).splitlines()))
         if in_the_way:
             raise GitError("these untracked files exist where the step has a file, and will not be overwritten: " + ", ".join(in_the_way[:5]))
         if self.edits():
             if not set_aside:
                 raise GitError("uncommitted edits")
-            now = self.current()
-            label = self.steps[now].name if now is not None else "an unknown step"
+            step_now, move_now = self.position()
+            label = here or (self.steps[step_now].name if step_now is not None else "an unknown step")
+            if here is None and move_now:
+                label = self.moves[step_now][move_now - 1].name  # in a tutorial, the move made
             git(self.work, "stash", "push", "--message", f"timewalk: edits made at {label}")
-        git(self.work, "checkout", "--detach", "--quiet", target.sha)
+        git(self.work, "checkout", "--detach", "--quiet", target)
+        self.at = place
+        self.keep_place()
 
     def changes(
         self,
@@ -214,14 +367,41 @@ class Repo:
         out = git(self.work, "diff", "--name-status", "--no-renames", self.steps[index - 1].sha, step.sha)
         return {path: status[0] for status, path in (line.split("\t", 1) for line in out.splitlines() if line)}
 
+    def span(self) -> tuple[str, str] | None:  # The commits before and after what the place on show changed; None at the first step
+        """Say what "Changes in this step" compares: a step with the step before, or in a tutorial a move with the move before.
+
+        At move 0 of a step, nothing of it is made yet, so both commits are the same.
+        """
+        index, move = self.position()
+        if index is None:
+            return None
+        if move is not None:
+            return self.commit_at(index, max(move - 1, 0)), self.commit_at(index, move)
+        return (self.steps[index - 1].sha, self.steps[index].sha) if index else None
+
+    def move_files(
+        self,
+        move: Move,  # A move of a tutorial
+    ) -> list[dict]:  # The files its commit added or changed, each as {path, status}
+        "List the files a move's commit added or changed, for a `files:` line of the notes. A commit's files never change, so once."
+        if move.sha not in self.files_of:
+            out = git(self.work, "diff-tree", "--no-commit-id", "--name-status", "-r", "--no-renames", move.sha)
+            self.files_of[move.sha] = [{"path": path, "status": status[0]}
+                                       for status, path in (line.split("\t", 1) for line in out.splitlines() if line) if status[0] != "D"]
+        return self.files_of[move.sha]
+
     def tree(self) -> dict:  # Files of the working copy, with what the current step did to each
-        "Describe the working copy: its tracked files and which of them the current step changed."
-        index = self.current()
-        changed = self.changes(index) if index is not None else {}
+        "Describe the working copy: its tracked files and which of them the current step, or move, changed."
+        index, span = self.current(), self.span()
+        if index is None:
+            changed = {}
+        elif span is None:
+            changed = self.changes(index)
+        else:
+            out = git(self.work, "diff", "--name-status", "--no-renames", *span)
+            changed = {path: status[0] for status, path in (line.split("\t", 1) for line in out.splitlines() if line)}
         files = [{"path": p, "status": changed.get(p, "")} for p in git(self.work, "ls-files").splitlines()]
-        stat = ""
-        if index:
-            stat = git(self.work, "diff", "--shortstat", self.steps[index - 1].sha, self.steps[index].sha).strip()
+        stat = git(self.work, "diff", "--shortstat", *span).strip() if span else ""
         return {"files": files, "deleted": sorted(p for p, s in changed.items() if s == "D"), "summary": stat, "edits": self.edits()}
 
     def read(
@@ -232,6 +412,9 @@ class Repo:
         path = (self.work / relative).resolve()
         if not path.is_relative_to(self.work.resolve()) or not path.is_file():
             return {"path": relative, "missing": True}
+        size = path.stat().st_size
+        if size > MAX_FILE_BYTES:
+            return {"path": relative, "skipped": f"{size:,} bytes, too large to show"}
         data = path.read_bytes()
         if len(data) > MAX_FILE_BYTES:
             return {"path": relative, "skipped": f"{len(data):,} bytes, too large to show"}
@@ -243,11 +426,11 @@ class Repo:
         self,
         relative: str,  # Path inside the working copy
     ) -> str:  # Unified diff of this file between the previous step and the current one
-        "Show what the current step did to one file."
-        index = self.current()
-        if not index:
+        "Show what the current step, or in a tutorial the current move, did to one file."
+        span = self.span()
+        if span is None:
             return ""
-        return git(self.work, "diff", "--no-color", self.steps[index - 1].sha, self.steps[index].sha, "--", relative)
+        return git(self.work, "diff", "--no-color", *span, "--", relative)
 
     def edit_diff(
         self,
@@ -260,8 +443,11 @@ class Repo:
 
     def state(self) -> dict:  # Everything a page needs to draw its header
         "Summarise where the working copy is."
+        index, move = self.position()
+        moves = self.moves[index] if index is not None else []
         return {"main": str(self.main), "work": str(self.work), "in_place": self.work == self.main,
-                "discard": self.discard, "steps": [asdict(s) for s in self.steps], "current": self.current(),
+                "discard": self.discard, "steps": [asdict(s) for s in self.steps], "current": index,
+                "move": move, "moves": [{**asdict(m), "files": self.move_files(m)} for m in moves],
                 "edits": self.edits()}
 
 
@@ -305,19 +491,25 @@ def parse_notes(
                               the first is still going
         main$ git log         a command for the terminal in the repository you started from
         > Say: ...            a cue; shown with the prose, set apart in its own shade
+        ### step-02.1 Title   in a tutorial, starts the notes of one move of the step, which is one commit
+        files:                in a tutorial, the files that the move's commit added or changed, each a link
 
     Every other line is prose, shown as written. Inside a fenced code block every line is prose, so a `$ ` line
     there is code to read, not a command. `parts` keeps the prose and the commands in the order of the file, so the
-    page can show each command where it is written. `raw` keeps the section as written, for editing.
+    page can show each command where it is written. `raw` keeps the section as written, for editing. A move's
+    heading is a part of its own, `{"kind": "move", "name": "step-02.1", "title": ...}`, and the parts after it
+    belong to that move; the heading stays in `text`, as a Markdown heading, for the PDF.
     """
     notes: dict[str, dict] = {}
     current: dict | None = None
+    name = ""  # the step whose section this is
     fence: str | None = None  # the fence character while inside a fenced code block, ` or ~
     for line in text.splitlines():
         mark = re.match(r"^\s*(```+|~~~+)", line)
         heading = re.match(r"^##\s+(\S+)", line) if fence is None else None
         if heading:
-            current = notes.setdefault(heading.group(1), {"time": None, "commands": [], "text": [], "raw": [], "parts": []})
+            name = heading.group(1)
+            current = notes.setdefault(name, {"time": None, "commands": [], "text": [], "raw": [], "parts": []})
             title = line[heading.end():].strip()
             if title:
                 current["title"] = title
@@ -329,11 +521,17 @@ def parse_notes(
         current["raw"].append(line)
         planned = re.match(r"^time:\s*(\d+):(\d\d)\s*$", line.strip()) if fence is None else None
         command = re.match(r"^\s*(main|runs[2-9]?)?\$\s+(.+)$", line) if fence is None else None
+        move = re.match(rf"^###\s+({re.escape(name)}\.\d+)(?:\s+(.*))?$", line) if fence is None else None
         if mark:
             fence = mark.group(1)[0] if fence is None else (None if mark.group(1)[0] == fence else fence)
         parts = current["parts"]
         if planned:
             current["time"] = int(planned.group(1)) * 60 + int(planned.group(2))
+        elif move:
+            current["text"].append(line)
+            parts.append({"kind": "move", "name": move.group(1), "title": (move.group(2) or "").strip()})
+        elif fence is None and line.strip() == "files:" and any(part["kind"] == "move" for part in parts):
+            parts.append({"kind": "files"})
         elif command:
             entry = {"track": command.group(1) or "replay", "text": command.group(2).strip()}
             current["commands"].append(entry)
@@ -348,7 +546,7 @@ def parse_notes(
         entry["text"] = "\n".join(entry["text"]).strip()
         entry["raw"] = "\n".join(entry["raw"]).strip("\n")
         entry["parts"] = [p for p in ({**p, "text": p["text"].strip("\n")} if p["kind"] == "text" else p for p in entry["parts"])
-                          if p["kind"] == "command" or p["text"].strip()]
+                          if p["kind"] != "text" or p["text"].strip()]
     return notes
 
 
@@ -432,9 +630,26 @@ def expand_entry(
     return [f"{path}#{n}" for n in range(1, count + 1)]
 
 
+def rebase_entry(
+    entry: str,  # One slide, as the manifest names it, relative to the manifest's folder
+    folder: Path,  # The manifest's folder
+    root: Path,  # The folder that the page serves slides from
+) -> str | None:  # The same slide, relative to root; None when it lies outside root
+    "Name a slide from the folder the page serves, so that a manifest may use slides from another slides folder."
+    path, hash_, fragment = entry.partition("#")
+    if "://" in path:
+        return entry
+    full = os.path.normpath(folder / path)
+    base = os.path.normpath(root)
+    if os.path.commonpath([full, base]) != base:
+        return None
+    return Path(os.path.relpath(full, base)).as_posix() + hash_ + fragment
+
+
 def load_slides(
     manifest: Path | None,  # The slides manifest, a TOML file
-) -> dict[str, list[str]]:  # Step name to its slides, in order, one entry per slide
+    root: Path | None = None,  # The folder the page serves slides from; default: the manifest's folder
+) -> dict[str, list[str]]:  # Step name to its slides, in order, one entry per slide, relative to root
     """Read the manifest that says which slides go with which step.
 
         deck = "talk.md"                                  # optional: the deck that bare numbers refer to
@@ -450,21 +665,28 @@ def load_slides(
     A step under [docs] shows that file as one document in the slide pane, instead of any slides: it is not split
     at `---`, and it scrolls. In the list it is the single entry `walkthrough.md#doc`, which [slides] may also use.
 
-    Each entry is a path beside the manifest. A Markdown file holds one slide or several, separated by lines
+    Each entry is a path from the manifest's folder. A Markdown file holds one slide or several, separated by lines
     that are exactly `---`. Images are slides of their own. A PDF page is written `deck.pdf#page=3`, and a slide
-    of an HTML deck with whatever fragment that deck uses, such as `deck.html#/3`.
+    of an HTML deck with whatever fragment that deck uses, such as `deck.html#/3`. With a table of contents, the
+    page serves slides from the class folder, `root`: an entry may then name a slide in another slides folder of the
+    class, such as `../../../slides/talk.md#2`. An entry outside root is left out; `timewalk-check` reports it.
     """
     if manifest is None or not manifest.is_file():
         return {}
     data = tomllib.loads(manifest.read_text(encoding="utf-8"))
     deck = str(data.get("deck", ""))
+    folder = manifest.parent
+    base = root or folder
     out = {}
     for step, entries in data.get("slides", {}).items():
         if isinstance(entries, list):
-            out[step] = [slide for entry in entries for slide in expand_entry(entry, manifest.parent, deck)]
+            slides = (rebase_entry(slide, folder, base) for entry in entries for slide in expand_entry(entry, folder, deck))
+            out[step] = [slide for slide in slides if slide is not None]
     for step, doc in data.get("docs", {}).items():
         if isinstance(doc, str) and doc.strip():
-            out[step] = [doc.strip().partition("#")[0] + "#doc"]
+            rebased = rebase_entry(doc.strip().partition("#")[0] + "#doc", folder, base)
+            if rebased is not None:
+                out[step] = [rebased]
     return out
 
 
@@ -524,6 +746,9 @@ class Terminal:
         self.scrollback: deque[bytes] = deque()
         self.scrollback_size = 0
         self.size = (30, 110)
+        self.room_size: tuple[int, int] | None = None  # In Shell mode, the size the Room window gave; it wins over the others
+        self.room_socket = None  # The Room window's socket that gave it; when that socket closes, the size is forgotten
+        self.sized = False  # Whether a window has given the shell a size; a window that only opens it then leaves it alone
         self.line = 0  # the length of the command line as typed, -1 if unknown: see typed_line
 
     def start(self) -> None:
@@ -632,15 +857,17 @@ class Hub:
 def content_marks(
     notes_path: Path | None,  # The notes file, if there is one
     slides_path: Path | None,  # The slides manifest, if there is one
+    root: Path | None = None,  # The folder slides are served from; default: the manifest's folder
 ) -> tuple:  # Each file with its modification time and size
     "Fingerprint the notes, the manifest and every slide file it names, to see when one of them is edited."
     files = [path for path in (notes_path, slides_path) if path is not None]
     if slides_path is not None and slides_path.is_file():
+        base = root or slides_path.parent
         try:
-            entries = {entry.split("#")[0] for slides in load_slides(slides_path).values() for entry in slides}
+            entries = {entry.split("#")[0] for slides in load_slides(slides_path, base).values() for entry in slides}
         except (OSError, ValueError):
             entries = set()
-        files += [slides_path.parent / entry for entry in sorted(entries) if "://" not in entry]
+        files += [base / entry for entry in sorted(entries) if "://" not in entry]
     marks = []
     for path in files:
         try:
@@ -652,15 +879,14 @@ def content_marks(
 
 
 async def watch_content(
-    notes_path: Path | None,  # The notes file, if there is one
-    slides_path: Path | None,  # The slides manifest, if there is one
+    paths,  # A function that gives the notes file, the slides manifest and the folder slides are served from, now
     hub: "Hub",  # Where to announce changes
     every: float = 1.0,  # Seconds between looks
 ) -> None:
     "Tell every page when the notes or a slide changes, so an edit in your editor shows at once, without a reload."
     seen = None
     while True:
-        now = await asyncio.to_thread(content_marks, notes_path, slides_path)
+        now = await asyncio.to_thread(content_marks, *paths())
         if seen is not None and now != seen:
             await hub.tell({"type": "content"})
         seen = now
@@ -695,9 +921,17 @@ def make_app(
     watch_every: float = 1.0,  # Seconds between looks for edits in the working copy
     show_clock: bool = False,  # Show the clock band on the page
     any_host: bool = False,  # Accept requests addressed to any host name, when timewalk listens beyond this machine
+    walks: list | None = None,  # The walks of a table of contents, the default first; each has its own notes and slides
+    root: Path | None = None,  # With walks: the class folder, where every walk's slides are served from
+    start_walk: str | None = None,  # With walks: the id of the walk to start on, instead of the first
 ) -> Starlette:  # The web application
     "Build the web application: the two pages, the read-only repository API, the terminals, and the event hub."
     terminals: dict[str, Terminal] = {}
+    walks = walks or []
+    first = next((w for w in walks if w.id == start_walk), walks[0]) if walks else None
+    # The walk on show, and its files. Without a table of contents there is one walk, with no id, the files given.
+    active: dict = {"walk": first, "notes": first.notes if first else notes_path, "slides": first.slides if first else slides_path,
+                    "root": root if walks else (slides_path.parent if slides_path else None)}
 
     def terminal_for(
         name: str,  # Tab name: replay, runs, runs2 to runs9, main, assistant, or extra-N
@@ -716,6 +950,8 @@ def make_app(
     # Where each step was left: its slide, and how far down its slide, notes and open file were scrolled, as
     # fractions. A move back to a step brings it all back. Kept while the server runs.
     memory: dict[str, dict] = {}
+    # With several walks, each keeps its own memory and the step it was left at; `memory` holds the walk on show.
+    left: dict[str, tuple[dict, str | None]] = {}
 
     def remember(step: str | None, **what) -> None:
         "Note where a step is: its slide, or the scroll of one pane."
@@ -724,10 +960,38 @@ def make_app(
             memory[step].update({k: v for k, v in what.items() if k != "scroll"})
             memory[step]["scroll"].update(what.get("scroll", {}))
 
-    def slides_now() -> list[str]:  # The slides of the step the working copy is at
-        "Read the manifest afresh, so slides can be edited while presenting."
+    def deck_now() -> tuple[list[str], list[int]]:  # The slides of the step on show, and the move each belongs to (0: the step's own)
+        """Read the manifest afresh, so slides can be edited while presenting.
+
+        In a tutorial, a step's deck is its own slides, then the slides of each of its moves, in order.
+        """
         index = repo.current()
-        return load_slides(slides_path).get(repo.steps[index].name, []) if index is not None else []
+        if index is None:
+            return [], []
+        listed = load_slides(active["slides"], active["root"])
+        deck = list(listed.get(repo.steps[index].name, []))
+        owners = [0] * len(deck)
+        for number, move in enumerate(repo.moves[index], 1):
+            own = listed.get(move.name, [])
+            deck += own
+            owners += [number] * len(own)
+        return deck, owners
+
+    def slides_now() -> list[str]:  # The slides of the step the working copy is at
+        "The deck of the step on show."
+        return deck_now()[0]
+
+    def synced() -> bool:  # Whether slides and moves follow each other
+        "Say whether going to a move shows its slides, and going to a move's slide makes that move. The manifest's `sync` wins over the walk's."
+        manifest = active["slides"]
+        if manifest is not None and manifest.is_file():
+            try:
+                value = tomllib.loads(manifest.read_text(encoding="utf-8")).get("sync")
+            except tomllib.TOMLDecodeError:
+                value = None
+            if isinstance(value, bool):
+                return value
+        return bool(active["walk"] and active["walk"].sync)
     hosts = {f"127.0.0.1:{port}", f"localhost:{port}"}
 
     def allowed(
@@ -775,17 +1039,41 @@ def make_app(
             await files(scope, receive, revalidated)
         return serve
 
+    # With several walks, slides are served from the class folder, but only from the walks' slides folders: the
+    # class folder also holds the notes, with their private cues, and the table of contents.
+    slide_folders = [os.path.realpath(w.slides.parent) for w in walks if w.slides is not None]
+    private = {os.path.realpath(w.notes) for w in walks if w.notes is not None}  # never served, wherever they are
+
+    def slides_only(files: StaticFiles):
+        "Serve a file of the class folder only if it lies in a slides folder of a walk."
+        async def serve(scope, receive, send) -> None:
+            if scope["type"] == "http" and walks:
+                path, mounted = scope["path"], scope.get("root_path", "")
+                path = path[len(mounted):] if mounted and path.startswith(mounted) else path   # as StaticFiles reads it
+                # realpath: a link in a slides folder that leads out of it is outside too.
+                wanted = os.path.realpath(os.path.join(str(active["root"]), unquote(path).lstrip("/")))
+                served = any(os.path.commonpath([wanted, folder]) == folder for folder in slide_folders)
+                if not served or wanted in private or os.path.basename(wanted) == "toc.toml":
+                    await Response("Not a slide.", status_code=404)(scope, receive, send)
+                    return
+            await files(scope, receive, send)
+        return serve
+
     @guarded
     async def state(request: Request) -> dict:
         "Where the working copy is, the list of steps, the slides of this step, and the clock."
-        deck = slides_now()
+        deck, owners = deck_now()
         showing["slide"] = min(showing["slide"], max(len(deck) - 1, 0))
         where = repo.state()
         showing["step"] = repo.steps[where["current"]].name if where["current"] is not None else None
         return {**where, "clock": clock["started"], "now": time.time(), "slides": deck, "slide": showing["slide"],
                 "restore": memory.get(showing["step"] or "", {}).get("scroll", {}),
-                "has_slides": bool(load_slides(slides_path)), "has_notes": notes_path is not None, "show_clock": show_clock, "layout": showing["layout"], "path": showing["path"],
-                "view": showing["view"], "track": showing["track"], "shell": showing["shell"]}
+                "has_slides": bool(load_slides(active["slides"], active["root"])), "has_notes": active["notes"] is not None, "show_clock": show_clock, "layout": showing["layout"], "path": showing["path"],
+                "view": showing["view"], "track": showing["track"], "shell": showing["shell"],
+                "room_sizes": {name: term.room_size for name, term in terminals.items() if showing["shell"] and term.room_size},
+                "slide_moves": owners, "sync": synced(),
+                "walk": {"id": active["walk"].id, "title": active["walk"].title, "kind": active["walk"].kind} if active["walk"] else None,
+                "walks": [{"id": w.id, "title": w.title, "kind": w.kind} for w in walks]}
 
     @guarded
     async def tree(request: Request) -> dict:
@@ -801,11 +1089,20 @@ def make_app(
 
     @guarded
     async def move(request: Request) -> dict:
-        "Move to another step and tell every page."
+        "Move to another step, or in a tutorial to a move of a step, and tell every page."
         body = await request.json()
-        repo.move(int(body["to"]), set_aside=bool(body.get("set_aside")))
-        showing["step"] = repo.steps[int(body["to"])].name
+        to, number = int(body["to"]), body.get("move")
+        if body.get("name") is not None and not (0 <= to < len(repo.steps) and repo.steps[to].name == body["name"]):
+            raise GitError(f"the steps changed while you asked for {body['name']}; ask again")  # another window changed the walk
+        repo.move(to, set_aside=bool(body.get("set_aside")), move=int(number) if number is not None else None)
+        showing["step"] = repo.steps[to].name
         showing["slide"] = memory.get(showing["step"], {}).get("slide", 0)   # back where you left this step
+        if repo.moves[to] and synced():
+            owners = deck_now()[1]
+            place = int(number or 0)
+            earlier = [i for i, owner in enumerate(owners) if owner < place]
+            # The move's first slide; for a move without slides, the last slide before it, so that Down goes on, not back.
+            showing["slide"] = owners.index(place) if place in owners else (earlier[-1] if earlier else 0)
         await hub.tell({"type": "moved"})
         # The shells at the step are now at another commit. An idle one draws its prompt again, to show the new HEAD.
         for term in terminals.values():
@@ -814,11 +1111,66 @@ def make_app(
         return repo.state()
 
     @guarded
-    async def slide(request: Request) -> dict:
-        "Show another of this step's slides and tell every page."
+    async def change_walk(request: Request) -> dict:
+        "Show another walk, in every window: its steps, notes and slides. The working copy moves to where that walk was left."
         body = await request.json()
-        deck = slides_now()
-        showing["slide"] = min(max(int(body["to"]), 0), max(len(deck) - 1, 0))
+        walk = next((w for w in walks if w.id == body.get("id")), None)
+        if walk is None:
+            raise GitError(f"there is no walk called {body.get('id')}")
+        if walk is active["walk"]:
+            return repo.state()
+        before = repo.steps
+        here = showing["step"]  # the step on show, named in the walk on show, for a stash of edits
+        step_now, move_now = repo.position()
+        if move_now:
+            here = repo.moves[step_now][move_now - 1].name  # in a tutorial, the move made
+        before_moves, before_at = repo.moves, repo.at
+        repo.select(walk.tags, walk.steps, tutorial=walk.kind == "tutorial")
+        names = [step.name for step in repo.steps]
+        saved, step, number = left.get(walk.id, ({}, None, None))
+        index = names.index(step) if step in names else 0
+        number = number if step in names and repo.moves[index] and isinstance(number, int) and 0 <= number <= len(repo.moves[index]) else None
+        try:
+            repo.move(index, set_aside=bool(body.get("set_aside")), here=here, move=number, anywhere=True)
+        except GitError:
+            repo.steps, repo.moves, repo.at = before, before_moves, before_at  # the walk on show stays, with its steps and place
+            raise
+        left[active["walk"].id] = (dict(memory), showing["step"], move_now)
+        memory.clear()
+        memory.update(saved)
+        active.update(walk=walk, notes=walk.notes, slides=walk.slides)
+        showing["step"] = names[index]
+        showing["slide"] = memory.get(showing["step"], {}).get("slide", 0)
+        await hub.tell({"type": "walk"})
+        for term in terminals.values():
+            if term.cwd == repo.work:
+                term.refresh_prompt()
+        return repo.state()
+
+    @guarded
+    async def slide(request: Request) -> dict:
+        "Show another of this step's slides and tell every page. With sync, a slide of another move makes that move."
+        body = await request.json()
+        if body.get("step") is not None and body["step"] != showing["step"]:
+            raise GitError(f"the step changed while you asked for a slide of {body['step']}; ask again")  # another window moved
+        deck, owners = deck_now()
+        to = min(max(int(body["to"]), 0), max(len(deck) - 1, 0))
+        index, number = repo.position()
+        owner = owners[to] if to < len(owners) else 0
+        if index is not None and number is not None and owner and owner != number and synced():
+            if owner > number + 1:
+                # That slide is past the next move: make the next move only, and show its first slide, or stay if it has none.
+                owner = number + 1
+                to = owners.index(owner) if owner in owners else showing["slide"]
+            repo.move(index, set_aside=bool(body.get("set_aside")), move=owner)   # refuses a move with edits, until set aside
+            showing["slide"] = to
+            remember(showing["step"], slide=to)
+            await hub.tell({"type": "moved"})
+            for term in terminals.values():
+                if term.cwd == repo.work:
+                    term.refresh_prompt()
+            return {"slide": to, "slides": deck}
+        showing["slide"] = to
         remember(showing["step"], slide=showing["slide"])
         await hub.tell({"type": "slide"})
         return {"slide": showing["slide"], "slides": deck}
@@ -831,22 +1183,26 @@ def make_app(
     @guarded
     async def notes(request: Request) -> dict:
         "The notes, read afresh, so the file can be edited while the class runs."
-        if notes_path is None or not notes_path.is_file():
-            return {"notes": {}, "path": str(notes_path) if notes_path else None}
-        return {"notes": parse_notes(notes_path.read_text(encoding="utf-8")), "path": str(notes_path)}
+        if active["notes"] is None or not active["notes"].is_file():
+            return {"notes": {}, "path": str(active["notes"]) if active["notes"] else None}
+        return {"notes": parse_notes(active["notes"].read_text(encoding="utf-8")), "path": str(active["notes"])}
 
     @guarded
     async def save_notes(request: Request) -> dict:
         "Write one step's section of the notes file, if nobody changed that section since the page read it."
-        if notes_path is None:
-            raise GitError("timewalk was started without --notes, so there is no notes file to save to")
+        notes_file = active["notes"]
+        if notes_file is None:
+            raise GitError("this walk has no notes file to save to")
         body = await request.json()
+        began = next((w for w in walks if w.id == body.get("walk")), None)
+        if active["walk"] is not None and body.get("walk") != active["walk"].id and (began is None or began.notes != active["notes"]):
+            raise GitError(f"the walk changed to {active['walk'].title} since you began this edit. Copy your text, and edit again in its walk")
         step, text, base = str(body["step"]), str(body["text"]), str(body.get("base", ""))
-        current = notes_path.read_text(encoding="utf-8") if notes_path.is_file() else ""
+        current = notes_file.read_text(encoding="utf-8") if notes_file.is_file() else ""
         now = parse_notes(current).get(step, {}).get("raw", "")
         if now.strip() != base.strip():
-            raise GitError(f"the notes for {step} changed in {notes_path.name} since this page read them. Copy your text, reload, and edit again")
-        notes_path.write_text(replace_section(current, step, text), encoding="utf-8")
+            raise GitError(f"the notes for {step} changed in {notes_file.name} since this page read them. Copy your text, reload, and edit again")
+        notes_file.write_text(replace_section(current, step, text), encoding="utf-8")
         await hub.tell({"type": "notes"})
         return {"ok": True}
 
@@ -854,12 +1210,13 @@ def make_app(
         "Make a PDF of the slides, one page each and no notes, and send it to download."
         if not allowed(request):
             return JSONResponse({"error": "missing or wrong token"}, status_code=403)
-        if slides_path is None:
+        if active["slides"] is None:
             return JSONResponse({"error": "there are no slides to put in a PDF"}, status_code=404)
         from timewalk import slides_pdf  # imported here: slides_pdf imports this module
 
         try:
-            data = await asyncio.to_thread(slides_pdf.make_pdf, slides_path, notes_path, repo.main.name, False)
+            title = active["walk"].title if active["walk"] else repo.main.name
+            data = await asyncio.to_thread(slides_pdf.make_pdf, active["slides"], active["notes"], title, False, None, active["root"])
         except SystemExit as exc:
             return JSONResponse({"error": str(exc)}, status_code=500)
         except Exception as exc:  # a browser that fails to start, a page that fails to draw: say what happened
@@ -880,6 +1237,9 @@ def make_app(
             showing["layout"] = body["layout"]
         if isinstance(body.get("shell"), bool):
             showing["shell"] = body["shell"]
+            if not body["shell"]:
+                for term in terminals.values():
+                    term.room_size = None  # out of Shell mode, the window you type in sets the size again
         if body.get("path"):
             showing["path"], showing["view"] = str(body["path"]), body.get("view") or "file"
             if showing["layout"] == "slides":
@@ -933,14 +1293,31 @@ def make_app(
                 if message["type"] == "input":
                     term.write(message["data"])
                 elif message["type"] == "resize":
-                    term.resize(int(message["rows"]), int(message["cols"]))
-                    if message.get("room"):
+                    try:
+                        rows, cols = int(message["rows"]), int(message["cols"])
+                    except (KeyError, TypeError, ValueError, OverflowError):
+                        continue
+                    if not (0 < rows <= 1000 and 0 < cols <= 2000):
+                        continue
+                    if showing["shell"] and message.get("room"):
                         # In Shell mode the Room window sizes the shell; the other windows take the same rows and columns.
-                        await hub.tell({"type": "size", "track": socket.path_params["name"], "rows": term.size[0], "cols": term.size[1]})
+                        term.room_size, term.room_socket, term.sized = (rows, cols), socket, True
+                        term.resize(rows, cols)
+                    elif not (showing["shell"] and term.room_size):
+                        # A window that only opened the shell gives its size to a new shell, not to one already sized.
+                        if not (message.get("opening") and term.sized):
+                            term.resize(rows, cols)
+                            term.sized = True
+                        continue
+                    # The Room's size stands while Shell is on: a window that asks for another size is told it again.
+                    await hub.tell({"type": "size", "track": socket.path_params["name"], "rows": term.size[0], "cols": term.size[1]})
         except WebSocketDisconnect:
             pass
         finally:
             term.clients.discard(socket)
+            if term.room_socket is socket:
+                term.room_size = term.room_socket = None  # the Room window went away: the other windows size the shell again
+                await hub.tell({"type": "unsized", "track": socket.path_params["name"]})
 
     async def events(socket: WebSocket) -> None:
         "Keep a window informed of moves, and of what another window asked to show."
@@ -956,10 +1333,12 @@ def make_app(
                     message = json.loads(await socket.receive_text())
                 except ValueError:
                     continue
+                if not isinstance(message, dict):
+                    continue
                 if message.get("type") == "scroll" and message.get("pane") == "term":
                     # A terminal scrolled back: the other windows scroll the same shell back as many lines. Not remembered.
                     lines = message.get("lines")
-                    if not isinstance(lines, (int, float)) or isinstance(lines, bool):
+                    if not isinstance(lines, (int, float)) or isinstance(lines, bool) or not math.isfinite(lines):
                         continue
                     relay = {"type": "scroll", "pane": "term", "track": str(message.get("track", "")), "lines": max(int(lines), 0)}
                     for page in list(hub.pages):
@@ -970,7 +1349,13 @@ def make_app(
                                 hub.pages.discard(page)
                     continue
                 if message.get("type") == "scroll" and message.get("pane") in ("slide", "file", "notes"):
-                    at = min(max(float(message.get("at", 0)), 0.0), 1.0)
+                    try:
+                        at = float(message.get("at", 0))
+                    except (TypeError, ValueError, OverflowError):
+                        continue
+                    if not math.isfinite(at):
+                        continue
+                    at = min(max(at, 0.0), 1.0)
                     # Remember it for this step: the slide's scroll with its slide, the file's with its path.
                     place = {"slide": [showing["slide"], at], "notes": at, "file": [showing["path"], at]}[message["pane"]]
                     remember(showing["step"], scroll={message["pane"]: place})
@@ -986,15 +1371,15 @@ def make_app(
             hub.pages.discard(socket)
 
     mounts = [Mount("/static", behind_token(StaticFiles(directory=HERE / "static")))]
-    if slides_path is not None:
-        mounts.append(Mount("/slides", behind_token(StaticFiles(directory=slides_path.parent))))
+    if active["root"] is not None:
+        mounts.append(Mount("/slides", behind_token(slides_only(StaticFiles(directory=active["root"])))))
 
     @contextlib.asynccontextmanager
     async def lifespan(app: Starlette):
         "Watch the working copy for edits, and the notes and slides for changes, while the server runs."
         watchers = [asyncio.create_task(watch_edits(repo, hub, watch_every))]
-        if notes_path is not None or slides_path is not None:
-            watchers.append(asyncio.create_task(watch_content(notes_path, slides_path, hub, watch_every)))
+        if any(w.notes or w.slides for w in walks) or active["notes"] is not None or active["slides"] is not None:
+            watchers.append(asyncio.create_task(watch_content(lambda: (active["notes"], active["slides"], active["root"]), hub, watch_every)))
         try:
             yield
         finally:
@@ -1009,6 +1394,7 @@ def make_app(
         Route("/api/file", file),
         Route("/api/move", move, methods=["POST"]),
         Route("/api/slide", slide, methods=["POST"]),
+        Route("/api/walk", change_walk, methods=["POST"]),
         Route("/api/recipes", just_recipes),
         Route("/api/notes", notes),
         Route("/api/notes", save_notes, methods=["POST"]),
@@ -1028,6 +1414,8 @@ def main() -> None:
     parser.add_argument("repo", type=Path, nargs="?", default=Path.cwd(), help="the repository to browse (default: here)")
     parser.add_argument("--notes", type=Path, help="a Markdown file of notes, the script of each step, in one `## step-name` section per step; outside the repository")
     parser.add_argument("--slides", type=Path, help="a TOML manifest of slides: [slides] step-name = [\"file.md\", \"deck.pdf#page=2\"]")
+    parser.add_argument("--toc", type=Path, help="a table of contents, toc.toml, of several walks, each with its own notes and slides; in place of --notes and --slides")
+    parser.add_argument("--walk", help="with --toc: the id of the walk to start on (default: the first)")
     parser.add_argument("--tags", default="step-*", help="glob for the tags that mark steps (default: step-*)")
     parser.add_argument("--commits", action="store_true", help="step through the commits of the current branch instead of tags")
     parser.add_argument("--replay", type=Path, help="where to put the replay copy (default: <repo>-replay, beside the repository)")
@@ -1041,16 +1429,44 @@ def main() -> None:
     parser.add_argument("--no-open", action="store_true", help="do not open the browser")
     args = parser.parse_args()
 
+    walks, root, start = [], None, None
+    if args.toc:
+        from timewalk.walks import TocError, load_toc  # imported here: walks imports this module
+
+        if args.notes or args.slides or args.commits or args.tags != "step-*":
+            raise SystemExit("timewalk: give --toc, or --notes, --slides and --tags; with --toc each walk names its own")
+        try:
+            walks = load_toc(args.toc.resolve())
+        except TocError as exc:
+            raise SystemExit(f"timewalk: {exc}") from None
+        root = args.toc.resolve().parent
+        start = next((w for w in walks if w.id == args.walk), None) if args.walk else walks[0]
+        if start is None:
+            raise SystemExit(f"timewalk: {args.toc} has no walk called {args.walk}; it has {', '.join(w.id for w in walks)}")
+    elif args.walk:
+        raise SystemExit("timewalk: --walk needs --toc")
     try:
-        repo = Repo(args.repo.resolve(), tags=args.tags, commits=args.commits, in_place=args.in_place, discard=args.discard_edits,
-                    replay=args.replay)
+        repo = Repo(args.repo.resolve(), tags=start.tags if start else args.tags, commits=args.commits, in_place=args.in_place,
+                    discard=args.discard_edits, replay=args.replay)
+        if start is not None and (start.steps is not None or start.kind == "tutorial"):
+            repo.select(start.tags, start.steps, tutorial=start.kind == "tutorial")
     except GitError as exc:
         raise SystemExit(f"timewalk: {exc}") from None
     notes_path = args.notes.resolve() if args.notes else None
     slides_path = args.slides.resolve() if args.slides else None
-    if notes_path is not None and notes_inside(repo, notes_path):
-        raise SystemExit(f"timewalk: the notes file {notes_path} is inside the repository or its replay copy. Keep the notes "
-                         "outside it: a move would change them, or throw your edits away.")
+    for path in [notes_path, *(w.notes for w in walks)]:
+        if path is not None and notes_inside(repo, path):
+            raise SystemExit(f"timewalk: the notes file {path} is inside the repository or its replay copy. Keep the notes "
+                             "outside it: a move would change them, or throw your edits away.")
+    if walks:
+        from timewalk.walks import check
+
+        errors, warnings = check(walks, repo.main, root, repo.work)
+        for line in warnings:
+            print(f"timewalk: warning: {line}")
+        if errors:
+            raise SystemExit("timewalk: the walks of " + str(args.toc) + " have errors; fix them, then start again:\n" +
+                             "\n".join(f"  {line}" for line in errors))
     local = args.host in ("127.0.0.1", "localhost", "::1")
     with socket.socket(socket.AF_INET6 if ":" in args.host else socket.AF_INET) as probe:
         # As uvicorn binds: the connections of a timewalk just stopped linger a minute, and must not stop a restart.
@@ -1071,12 +1487,15 @@ def main() -> None:
         print(f"timewalk: WARNING: listening on {args.host}, beyond this machine. Anyone who can reach port {args.port} and has the")
         print("timewalk: address below can run commands as you. The connection is not encrypted. An SSH tunnel is safer.")
     print(f"timewalk: open       {address}")
-    if notes_path is not None:
+    if walks:
+        print(f"timewalk: {len(walks)} walks in {args.toc}; starting on {start.id}")
+    if notes_path is not None or walks:
         print(f"timewalk: for the class, without the cues: {address}&cues=off")
     sys.stdout.flush()
     if not args.no_open and local:
         webbrowser.open(address)
-    uvicorn.run(make_app(repo, token, args.port, notes_path, args.assistant, slides_path, show_clock=args.clock, any_host=not local),
+    uvicorn.run(make_app(repo, token, args.port, notes_path, args.assistant, slides_path, show_clock=args.clock, any_host=not local,
+                         walks=walks, root=root, start_walk=start.id if start else None),
                 host=args.host, port=args.port, log_level="warning")
 
 

@@ -1,0 +1,8 @@
+# The slides of the walk "Only the checks". It has no slide files of its own. It uses the slides of the
+# main walk, from the folder demo/slides, two folders up.
+
+[slides]
+step-02 = ["../../../slides/talk.md#4"]
+
+[docs]
+step-03 = "../../../slides/formatting.md"

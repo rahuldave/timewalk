@@ -16,6 +16,11 @@ demo:
     git submodule update --init demo/timewalk-demo
     uv run timewalk demo/timewalk-demo --notes demo/notes.md --slides demo/slides/slides.toml --discard-edits --clock
 
+# Browse the sample repository with its two walks, from demo/toc.toml. The dropdown in the step bar changes the walk
+demo-walks:
+    git submodule update --init demo/timewalk-demo
+    uv run timewalk demo/timewalk-demo --toc demo/toc.toml --discard-edits --clock
+
 # Make a PDF of the slides, the notes, or both: just pdf slides/slides.toml --notes notes.md --with-notes
 [positional-arguments]
 pdf *args:

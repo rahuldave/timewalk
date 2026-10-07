@@ -31,7 +31,7 @@ export function onEvents(handler) {
     ws.onmessage = (e) => handler(JSON.parse(e.data));
     ws.onclose = (event) => {
       lost = true;
-      if (event.code === 4403) { handler({ type: "refused" }); return; }
+      if (event.code === 4403) { handler({ type: "refused" }); return; }   // a new token: timewalk restarted, retrying cannot help
       setTimeout(connect, 1500);
     };
   };
@@ -56,7 +56,10 @@ export const settings = {
 
 /** Two digits for a step chip: its position in the sequence. */
 export function stepLabel(step) {
-  return String(step.index).padStart(2, "0");
+  // A tag such as step-04b gives 04b, so a walk that skips steps keeps their numbers. Anything else, a commit's
+  // short hash say, gives its place in the walk.
+  const numbered = /^[A-Za-z][\w.]*-(\d+[a-z]?)$/.exec(step.name);
+  return numbered ? numbered[1] : String(step.index).padStart(2, "0");
 }
 
 /** Render Markdown for notes and slides. Relative image paths are resolved against `base`. */
@@ -147,9 +150,15 @@ function renderWithCommands(box, text, base, command) {
   }
 }
 
+const drawing = new WeakMap();   // container -> the number of its latest draw
+
 /** Draw one slide into a container. An entry is a path beside the manifest, with an optional #fragment:
  *  `deck.md#3` is the third slide of a Markdown file, `deck.pdf#page=3` a page of a PDF. Resolves when it is drawn. */
 export async function drawSlide(container, entry, { command = null } = {}) {
+  // Two draws into one container can overlap, for example a change of walk and a change of slide: each one waits
+  // for its file. Only the latest draw may put its slide in, so the pane never shows two slides at once.
+  const ticket = (drawing.get(container) || 0) + 1;
+  drawing.set(container, ticket);
   container.replaceChildren();
   if (!entry) return;
   const [path, fragment] = String(entry).split("#");
@@ -160,8 +169,9 @@ export async function drawSlide(container, entry, { command = null } = {}) {
     box.className = fragment === "doc" ? "slide-md slide-doc" : "slide-md";
     try {
       const response = await fetch(url, { cache: "no-store" });
-      if (!response.ok) throw new Error(`${path} was not found beside the slides manifest`);
+      if (!response.ok) throw new Error(`${path} was not found, or is not in a slides folder`);
       const text = await response.text();
+      if (drawing.get(container) !== ticket) return;   // a later draw has taken the container
       if (fragment === "doc") {
         // A document is shown whole, as ordinary Markdown: a --- line is a rule, not a new slide.
         renderWithCommands(box, text, url.slice(0, url.lastIndexOf("/") + 1), command);
@@ -174,6 +184,7 @@ export async function drawSlide(container, entry, { command = null } = {}) {
       if (!(number >= 1 && number <= slides.length)) throw new Error(`${path} has ${slides.length} slide${slides.length === 1 ? "" : "s"}; the manifest asks for number ${fragment}`);
       renderWithCommands(box, slides[number - 1], url.slice(0, url.lastIndexOf("/") + 1), command);
     } catch (error) { box.innerHTML = `<p class="empty">${escapeHtml(error.message)}</p>`; }
+    if (drawing.get(container) !== ticket) return;   // a failed draw that a later one overtook adds nothing either
     container.append(box);
     await Promise.all([...box.querySelectorAll("img")].map((img) => img.decode().catch(() => {})));
   } else if (["png", "jpg", "jpeg", "gif", "svg", "webp"].includes(ext)) {

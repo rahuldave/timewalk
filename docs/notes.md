@@ -39,6 +39,8 @@ main$ git log --oneline
 | `runs$ command` | The same, in the **Runs** tab |
 | `runs2$ command` to `runs9$ command` | The same, in one more Runs tab, which opens the first time a line uses it. Use it for a second long command while the first command still runs |
 | `main$ command` | The same, in the **Main** tab, in your repository |
+| `### step-name.N Title` | In a tutorial walk: starts the notes of one move. See [Several walks](walks.md#tutorial-walks) |
+| `files:` | In a move of a tutorial: the files that the commit of the move added or changed. Each one opens in the reader |
 | other lines | Markdown text to read |
 
 timewalk shows every line of the notes, cues included. If some cues are only for you, remove them from the

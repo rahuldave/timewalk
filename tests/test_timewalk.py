@@ -369,13 +369,6 @@ def test_saving_a_section_skips_headings_inside_fenced_code() -> None:
     assert timewalk.replace_section(text, "step-02", "two") == "## step-01 One\n\n```\n## step-02 in code\n```\n\nafter\n\n## step-02 Two\ntwo\n"
 
 
-def test_a_fence_before_the_first_step_is_read_as_save_reads_it() -> None:
-    "A fenced example of a heading before the first step is code for the parser too."
-    text = "# Notes\n\n```\n## step-01 an example\n```\n\n## step-01 Real\none\n\n## step-02 Two\ntwo\n"
-    notes = timewalk.parse_notes(text)
-    assert notes["step-01"]["text"] == "one" and notes["step-02"]["text"] == "two"
-
-
 # ---------- recipes ----------
 
 
@@ -582,6 +575,8 @@ def test_sockets_need_the_token(served: TestClient) -> None:
         with served.websocket_connect(path) as socket, pytest.raises(WebSocketDisconnect) as refused:
             socket.receive_text()
         assert refused.value.code == 4403
+    state = served.get("/api/state", params={"t": TOKEN})
+    assert state.status_code == 200
 
 
 def test_a_page_load_lets_its_assets_through(served: TestClient) -> None:
@@ -905,11 +900,22 @@ def test_a_terminal_scroll_reaches_the_other_windows(served: TestClient) -> None
 
 
 def test_the_room_window_sizes_a_shell_and_tells_the_others(served: TestClient) -> None:
-    "A resize marked as the Room's sets the shell's size and is announced; any other resize is not."
+    "In Shell mode the Room's size stands: another window's resize is answered with it. Off, the Room's size is forgotten."
+    auth = {"t": TOKEN}
     with served.websocket_connect(f"/ws/events?t={TOKEN}") as window, served.websocket_connect(f"/ws/term/runs?t={TOKEN}") as shell:
-        shell.send_json({"type": "resize", "rows": 30, "cols": 100})
+        shell.send_json({"type": "resize", "rows": 30, "cols": 100, "room": True})   # not in Shell mode: an ordinary resize
+        served.post("/api/show", params=auth, json={"shell": True})
+        assert window.receive_json()["shell"] is True
         shell.send_json({"type": "resize", "rows": 40, "cols": 160, "room": True})
         assert window.receive_json() == {"type": "size", "track": "runs", "rows": 40, "cols": 160}
+        shell.send_json({"type": "resize", "rows": 20, "cols": 80})
+        assert window.receive_json() == {"type": "size", "track": "runs", "rows": 40, "cols": 160}, "told the Room's size again"
+        assert served.get("/api/state", params=auth).json()["room_sizes"] == {"runs": [40, 160]}
+        served.post("/api/show", params=auth, json={"shell": False})
+        assert window.receive_json()["shell"] is False
+        shell.send_json({"type": "resize", "rows": 20, "cols": 80})
+        shell.send_json({"type": "resize", "rows": float("inf"), "cols": 80})   # ignored, and the socket stays
+    assert served.get("/api/state", params=auth).json()["room_sizes"] == {}
 
 
 def test_the_command_line_is_followed_from_what_is_typed() -> None:
@@ -966,7 +972,7 @@ def test_the_content_watcher_announces_an_edited_slide(tmp_path: Path) -> None:
 
     async def scenario() -> list[dict]:
         hub = Listener()
-        watcher = asyncio.create_task(timewalk.watch_content(notes, manifest, hub, every=0.05))
+        watcher = asyncio.create_task(timewalk.watch_content(lambda: (notes, manifest, None), hub, every=0.05))
         await asyncio.sleep(0.2)
         assert hub.heard == []
         (tmp_path / "talk.md").write_text("# One, edited at length\n")
@@ -1018,3 +1024,514 @@ def test_runs_tabs_stop_at_nine(served: TestClient) -> None:
     "`runs2` to `runs9` exist; `runs1` and `runs10` are not names of anything."
     for name in ("runs1", "runs10", "runs0"):
         assert served.post("/api/type", params={"t": TOKEN}, json={"track": name, "text": "echo no"}).status_code == 409
+
+
+# ---------- several walks ----------
+
+
+@pytest.fixture
+def class_folder(tmp_path: Path) -> Path:
+    "A class folder with two walks: the narrative of every step, and a walk on step-01 and step-03 that borrows a slide."
+    root = tmp_path / "class"
+    (root / "slides").mkdir(parents=True)
+    (root / "slides" / "talk.md").write_text("# One\n\n---\n\n# Two\n\n---\n\n# Three\n\n---\n\n# Four\n")
+    (root / "slides" / "slides.toml").write_text('[slides]\nstep-00 = ["talk.md#1"]\nstep-01 = ["talk.md#2"]\nstep-02 = ["talk.md#3"]\nstep-03 = ["talk.md#4"]\n')
+    (root / "notes.md").write_text("## step-00 Start\nSay hi.\n\n## step-01 A file\n\n## step-02 Tests\n\n## step-03 Tidy\n")
+    part = root / "walks" / "part"
+    (part / "slides").mkdir(parents=True)
+    (part / "slides" / "own.md").write_text("# Only here\n")
+    (part / "slides" / "slides.toml").write_text('[slides]\nstep-01 = ["../../../slides/talk.md#2", "own.md"]\nstep-03 = ["own.md"]\n')
+    (part / "notes.md").write_text("## step-01 The file, again\nThe part walk.\n\n## step-03 Tidy, again\n")
+    (root / "toc.toml").write_text('[[walk]]\nid = "narrative"\ntitle = "Every step"\nnotes = "notes.md"\nslides = "slides/slides.toml"\n\n'
+                                   '[[walk]]\nid = "part"\ntitle = "A part"\nfolder = "walks/part"\nsteps = ["step-01", "step-03"]\n')
+    return root
+
+
+def test_a_table_of_contents_lists_walks_with_their_files(class_folder: Path) -> None:
+    "Paths come from the table's folder; a walk with a folder has notes.md and slides/slides.toml in it."
+    from timewalk.walks import load_toc
+
+    narrative, part = load_toc(class_folder / "toc.toml")
+    assert (narrative.id, narrative.kind, narrative.notes, narrative.steps) == ("narrative", "narrative", class_folder / "notes.md", None)
+    assert part.slides == class_folder / "walks" / "part" / "slides" / "slides.toml" and part.steps == ["step-01", "step-03"]
+
+
+@pytest.mark.parametrize("toc, says", [
+    ('[[walk]]\nid = "a"\ncolour = "red"\n', "has the key colour, which a walk does not have"),
+    ('[[walk]]\nid = "a"\n\n[[walk]]\nid = "a"\n', "the id a is used twice"),
+    ('[[walk]]\nid = "a b"\n', "needs an id of letters, digits"),
+    ('[[walk]]\nid = "a"\nkind = "lecture"\n', "kind = 'lecture'"),
+    ('[[walk]]\nid = "a"\nsteps = ["step-01"]\ntags = "x-*"\n', "give steps or tags, not both"),
+    ('title = "x"\n[[walk]]\nid = "a"\n', "has title, which a table of contents does not have"),
+    ('', "lists no walk"),
+])
+def test_a_table_of_contents_with_a_mistake_says_which(tmp_path: Path, toc: str, says: str) -> None:
+    "A mistake in toc.toml stops with a sentence that names the file and the key."
+    from timewalk.walks import TocError, load_toc
+
+    (tmp_path / "toc.toml").write_text(toc)
+    with pytest.raises(TocError, match=re.escape(says)):
+        load_toc(tmp_path / "toc.toml")
+
+
+def test_a_walk_names_slides_from_the_class_folder(class_folder: Path) -> None:
+    "With the class folder as root, a borrowed slide and a walk's own slide are both named from the root; one outside is left out."
+    manifest = class_folder / "walks" / "part" / "slides" / "slides.toml"
+    assert timewalk.load_slides(manifest, class_folder)["step-01"] == ["slides/talk.md#2", "walks/part/slides/own.md#1"]
+    assert timewalk.rebase_entry("../../../../elsewhere.md#1", manifest.parent, class_folder) is None
+    assert timewalk.load_slides(class_folder / "slides" / "slides.toml")["step-00"] == ["talk.md#1"], "without a root, as before"
+
+
+def test_the_checks_pass_a_good_class_and_name_each_mistake(class_folder: Path, sample: Path) -> None:
+    "A good class has no errors. Each mistake gives one error that names the walk, the step and the file."
+    from timewalk.walks import check, load_toc
+
+    assert check(load_toc(class_folder / "toc.toml"), sample, class_folder) == ([], [])
+    part = class_folder / "walks" / "part"
+    (part / "notes.md").write_text("## step-01 x\n\n## step-02 not in this walk\n")
+    (part / "slides" / "slides.toml").write_text('[slides]\nstep-01 = ["../../../slides/talk.md#9", "gone.md"]\nstep-02 = ["own.md"]\n')
+    errors, warnings = check(load_toc(class_folder / "toc.toml"), sample, class_folder)
+    assert "walk part: notes.md has a section ## step-02, which is not a step of the walk" in errors
+    assert "walk part: slides.toml has an entry for step-02, which is not a step of the walk" in errors
+    assert "walk part: step-03 has no entry in slides.toml; give it at least one slide" in errors
+    assert "walk part: step-01: ../../../slides/talk.md has 4 slides; the entry asks for slide 9" in errors
+    assert "walk part: step-01: gone.md does not exist" in errors
+    assert "walk part: step-03 has no section in notes.md" in warnings
+    (part / "slides" / "slides.toml").write_text('[slides]\nstep-01 = ["../../../../outside.md"]\nstep-03 = ["own.md"]\n')
+    errors, _ = check(load_toc(class_folder / "toc.toml"), sample, class_folder)
+    assert any("outside.md is outside the class folder" in e for e in errors)
+
+
+def test_a_picture_inside_a_markdown_slide_counts_as_used(class_folder: Path, sample: Path) -> None:
+    "A picture that a used Markdown slide shows is used; one that nothing shows is a warning."
+    from timewalk.walks import check, load_toc
+
+    (class_folder / "slides" / "shown.svg").write_text("<svg/>")
+    (class_folder / "slides" / "spare.svg").write_text("<svg/>")
+    (class_folder / "slides" / "talk.md").write_text("# One\n\n![a picture](shown.svg)\n\n---\n\n# Two\n\n---\n\n# Three\n\n---\n\n# Four\n")
+    _, warnings = check(load_toc(class_folder / "toc.toml"), sample, class_folder)
+    assert warnings == ["slides/spare.svg is in a slides folder, and no walk uses it"]
+
+
+@pytest.fixture
+def walked(repo: timewalk.Repo, class_folder: Path) -> TestClient:
+    "Serve the sample repository with the two walks of the class folder."
+    from timewalk.walks import load_toc
+
+    app = timewalk.make_app(repo, TOKEN, PORT, assistant="", walks=load_toc(class_folder / "toc.toml"), root=class_folder)
+    return TestClient(app, headers=HOST)
+
+
+def test_a_change_of_walk_changes_the_steps_notes_and_slides(walked: TestClient, repo: timewalk.Repo) -> None:
+    "The state lists the walks; a change of walk gives its steps, notes and slides, and goes back where the other walk was left."
+    auth = {"t": TOKEN}
+    state = walked.get("/api/state", params=auth).json()
+    assert [w["id"] for w in state["walks"]] == ["narrative", "part"] and state["walk"]["id"] == "narrative"
+    walked.post("/api/move", params=auth, json={"to": 2})
+    assert walked.get("/slides/slides/talk.md", params=auth).status_code == 200, "slides are served from the class folder"
+    with walked.websocket_connect(f"/ws/events?t={TOKEN}") as window:
+        walked.post("/api/walk", params=auth, json={"id": "part"})
+        assert window.receive_json() == {"type": "walk"}
+    state = walked.get("/api/state", params=auth).json()
+    assert [s["name"] for s in state["steps"]] == ["step-01", "step-03"] and state["current"] == 0
+    assert state["slides"] == ["slides/talk.md#2", "walks/part/slides/own.md#1"]
+    assert walked.get("/api/notes", params=auth).json()["notes"]["step-01"]["title"] == "The file, again"
+    walked.post("/api/walk", params=auth, json={"id": "narrative"})
+    state = walked.get("/api/state", params=auth).json()
+    assert state["current"] == 2 and state["steps"][2]["name"] == "step-02", "the narrative comes back at the step it was left at"
+    assert walked.post("/api/walk", params=auth, json={"id": "nowhere"}).status_code == 409
+
+
+def test_a_change_of_walk_with_edits_asks_first_and_keeps_the_walk(walked: TestClient, repo: timewalk.Repo) -> None:
+    "An edit stops the change of walk, as it stops a move; the walk and its steps stay. With set_aside, the edit is stashed."
+    auth = {"t": TOKEN}
+    walked.post("/api/move", params=auth, json={"to": 1})
+    (repo.work / "src" / "greet.py").write_text("# an edit\n")
+    refused = walked.post("/api/walk", params=auth, json={"id": "part"})
+    assert refused.status_code == 409 and refused.json()["edits"] == ["src/greet.py"]
+    assert walked.get("/api/state", params=auth).json()["walk"]["id"] == "narrative" and len(repo.steps) == 4
+    assert walked.post("/api/walk", params=auth, json={"id": "part", "set_aside": True}).status_code == 200
+    assert "timewalk: edits made at step-01" in run_git(repo.work, "stash", "list")
+
+
+TUTORIAL = [
+    (None, "step-00: the start", {"README.md": "# t\n"}),
+    (None, "step-01.1: a", {"a.txt": "a\n"}),
+    (None, "step-01.2: b", {"b.txt": "b\n", "README.md": "# t, with b\n"}),
+    ("step-01", "step-01: c", {"c.txt": "c\n"}),
+    ("step-02", "step-02: d", {"d.txt": "d\n"}),
+]
+
+
+@pytest.fixture
+def tutorial(
+    tmp_path: Path,  # pytest's temporary directory
+) -> timewalk.Repo:  # A repository whose step-01 is made of three moves, as a tutorial walks it
+    "Build a history with small commits before step-01, and open it as a tutorial."
+    main = tmp_path / "tut"
+    main.mkdir()
+    run_git(main, "init", "--quiet", "--initial-branch", "main")
+    run_git(main, "config", "user.name", "test")
+    run_git(main, "config", "user.email", "test@example.invalid")
+    for number, (tag, subject, files) in enumerate(TUTORIAL):
+        for path, text in files.items():
+            (main / path).write_text(text)
+        run_git(main, "add", "--all")
+        run_git(main, "commit", "--quiet", "--message", subject)
+        if number == 0:
+            run_git(main, "tag", "--annotate", "step-00", "--message", "The start.")
+        if tag:
+            run_git(main, "tag", "--annotate", tag, "--message", subject)
+    repo = timewalk.Repo(main)
+    repo.select("step-*", None, tutorial=True)
+    return repo
+
+
+def test_a_tutorial_finds_the_moves_between_the_steps(tutorial: timewalk.Repo) -> None:
+    "A step's moves are the commits after the step before, its own included; a step of one commit, and the first, have none."
+    assert [[m.name for m in moves] for moves in tutorial.moves] == [[], ["step-01.1", "step-01.2", "step-01.3"], []]
+    assert tutorial.moves[1][-1].sha == tutorial.steps[1].sha, "the last move is the step's own commit"
+    assert [m.subject for m in tutorial.moves[1]] == ["step-01.1: a", "step-01.2: b", "step-01: c"]
+
+
+def test_a_tutorial_makes_the_moves_in_order(tutorial: timewalk.Repo) -> None:
+    "A step starts before its first move; the moves go forward one at a time, and back to any of them."
+    tutorial.move(1)
+    assert tutorial.position() == (1, 0) and tutorial.current() == 1
+    assert run_git(tutorial.work, "rev-parse", "HEAD") == tutorial.steps[0].sha, "move 0 is the step before"
+    assert tutorial.tree()["summary"] == "" and tutorial.span()[0] == tutorial.span()[1], "nothing of the step is made yet"
+    with pytest.raises(timewalk.GitError, match=r"in order: the next is step-01\.1"):
+        tutorial.move(1, move=2)
+    tutorial.move(1, move=1)
+    tutorial.move(1, move=2)
+    assert tutorial.position() == (1, 2)
+    assert {f["path"]: f["status"] for f in tutorial.tree()["files"] if f["status"]} == {"b.txt": "A", "README.md": "M"}, "what this move changed"
+    assert "+# t, with b" in tutorial.diff("README.md")
+    tutorial.move(1, move=3)
+    assert tutorial.position() == (1, 3) and run_git(tutorial.work, "rev-parse", "HEAD") == tutorial.steps[1].sha
+    tutorial.move(1, move=1)
+    assert tutorial.position() == (1, 1), "back to an earlier move is allowed"
+    with pytest.raises(timewalk.GitError, match="in order"):
+        tutorial.move(1, move=3)
+    tutorial.move(2)
+    assert tutorial.position() == (2, None), "a step of one commit has no moves, and stands on its tag"
+
+
+def test_the_state_of_a_tutorial_lists_the_moves_and_their_files(tutorial: timewalk.Repo) -> None:
+    "At a step with moves, the state gives the move made and each move with the files its commit added or changed."
+    tutorial.move(1)
+    tutorial.move(1, move=1)
+    state = tutorial.state()
+    assert state["current"] == 1 and state["move"] == 1
+    assert [(m["name"], [f["path"] for f in m["files"]]) for m in state["moves"]] == [
+        ("step-01.1", ["a.txt"]), ("step-01.2", ["README.md", "b.txt"]), ("step-01.3", ["c.txt"])]
+
+
+def test_a_tutorial_after_a_restart_finds_its_move_from_the_commit(tutorial: timewalk.Repo) -> None:
+    "Without a remembered place, a move's commit says which move it is, and a step's commit is its last move."
+    tutorial.move(1)
+    tutorial.move(1, move=1)
+    tutorial.at = None
+    assert tutorial.position() == (1, 1)
+    run_git(tutorial.work, "checkout", "--quiet", "--detach", tutorial.steps[1].sha)
+    assert tutorial.position() == (1, 3)
+
+
+def test_notes_give_each_move_a_part_and_a_files_line() -> None:
+    "A ### heading with the step's name and a number starts a move; files: is a part; another ### is prose."
+    parts = timewalk.parse_notes("## step-01 S\nIntro.\n### step-01.1 A\nfiles:\n$ ls\n### Aside\ntext\n### step-01.2\n")["step-01"]["parts"]
+    assert parts == [{"kind": "text", "text": "Intro."}, {"kind": "move", "name": "step-01.1", "title": "A"}, {"kind": "files"},
+                     {"kind": "command", "track": "replay", "text": "ls"}, {"kind": "text", "text": "### Aside\ntext"},
+                     {"kind": "move", "name": "step-01.2", "title": ""}]
+
+
+@pytest.fixture
+def tutorial_class(tmp_path: Path) -> Path:
+    "A class folder with one tutorial walk, its notes and slides."
+    folder = tmp_path / "tclass"
+    (folder / "slides").mkdir(parents=True)
+    (folder / "toc.toml").write_text('[[walk]]\nid = "tut"\nkind = "tutorial"\nnotes = "notes.md"\nslides = "slides/slides.toml"\n')
+    (folder / "notes.md").write_text("## step-00\n\n## step-01\n### step-01.1 A\n### step-01.2 B\n### step-01.3 C\n\n## step-02\n")
+    (folder / "slides" / "deck.md").write_text("# zero\n---\n# one\n---\n# m1\n---\n# m2\n---\n# m3\n---\n# two\n")
+    (folder / "slides" / "slides.toml").write_text('[slides]\nstep-00 = ["deck.md#1"]\nstep-01 = ["deck.md#2"]\n"step-01.1" = ["deck.md#3"]\n'
+                                                  '"step-01.2" = ["deck.md#4"]\n"step-01.3" = ["deck.md#5"]\nstep-02 = ["deck.md#6"]\n')
+    return folder
+
+
+def test_the_checks_of_a_tutorial(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
+    "Each move needs a ### section, in the order of the commits, and a commit's subject starts with its move's name."
+    from timewalk.walks import check, load_toc
+
+    errors, warnings = check(load_toc(tutorial_class / "toc.toml"), tutorial.main, tutorial_class)
+    assert (errors, warnings) == ([], [])
+    (tutorial_class / "notes.md").write_text("## step-00\n\n## step-01\n### step-01.2 B\n### step-01.1 A\n### step-01.4 D\n\n## step-02\n")
+    (tutorial_class / "slides" / "slides.toml").write_text('[slides]\nstep-00 = ["deck.md#1"]\nstep-01 = ["deck.md#2"]\n"step-01.9" = ["deck.md#3"]\nstep-02 = ["deck.md#6"]\n')
+    errors, _ = check(load_toc(tutorial_class / "toc.toml"), tutorial.main, tutorial_class)
+    assert "walk tut: notes.md has a section ### step-01.4, which is not a move of step-01" in errors
+    assert "walk tut: step-01.3 has no section ### step-01.3 in notes.md" in errors
+    assert "walk tut: the ### sections of step-01 in notes.md are not in the order of the commits: step-01.2, step-01.1" in errors
+    assert "walk tut: slides.toml has an entry for step-01.9, which is not a step or a move of the walk" in errors
+    assert not any("has the subject" in e for e in errors), "the subjects are right"
+
+
+def test_a_wrong_subject_is_an_error(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
+    "A move whose commit subject does not start with its name is named, with the subject to write."
+    from timewalk.walks import check, load_toc
+
+    run_git(tutorial.main, "checkout", "--quiet", "--detach", tutorial.steps[0].sha)
+    run_git(tutorial.main, "commit", "--quiet", "--allow-empty", "--message", "an untidy subject")
+    run_git(tutorial.main, "commit", "--quiet", "--allow-empty", "--message", "step-01: the end")
+    run_git(tutorial.main, "tag", "--force", "--annotate", "step-01", "--message", "again")
+    run_git(tutorial.main, "tag", "--delete", "step-02")
+    (tutorial_class / "notes.md").write_text("## step-00\n\n## step-01\n### step-01.1 A\n### step-01.2 B\n")
+    (tutorial_class / "slides" / "slides.toml").write_text('[slides]\nstep-00 = ["deck.md#1"]\nstep-01 = ["deck.md#2"]\n')
+    errors, _ = check(load_toc(tutorial_class / "toc.toml"), tutorial.main, tutorial_class)
+    assert any("move step-01.1, has the subject 'an untidy subject'; start it with 'step-01.1:'" in e for e in errors), errors
+
+
+@pytest.fixture
+def tutored(tutorial: timewalk.Repo, tutorial_class: Path) -> TestClient:
+    "Serve the tutorial with its class folder."
+    from timewalk.walks import load_toc
+
+    app = timewalk.make_app(tutorial, TOKEN, PORT, assistant="", walks=load_toc(tutorial_class / "toc.toml"), root=tutorial_class)
+    return TestClient(app, headers=HOST)
+
+
+def test_slides_and_moves_follow_each_other_with_sync(tutored: TestClient, tutorial_class: Path) -> None:
+    "A step's deck is its slides, then each move's; a move shows its first slide, and a move's slide makes that move, in order."
+    auth = {"t": TOKEN}
+    tutored.post("/api/move", params=auth, json={"to": 1})
+    state = tutored.get("/api/state", params=auth).json()
+    assert state["slides"] == [f"slides/deck.md#{n}" for n in (2, 3, 4, 5)] and state["slide_moves"] == [0, 1, 2, 3] and state["sync"]
+    assert state["move"] == 0 and state["walk"]["kind"] == "tutorial"
+    assert tutored.post("/api/move", params=auth, json={"to": 1, "move": 1}).status_code == 200
+    assert tutored.get("/api/state", params=auth).json()["slide"] == 1, "the move's first slide"
+    assert tutored.post("/api/slide", params=auth, json={"to": 2}).status_code == 200
+    assert tutored.get("/api/state", params=auth).json()["move"] == 2, "a slide of the next move makes that move"
+    refused = tutored.post("/api/move", params=auth, json={"to": 1, "move": 3 + 1})
+    assert refused.status_code == 409
+    tutored.post("/api/slide", params=auth, json={"to": 0})
+    assert tutored.get("/api/state", params=auth).json()["move"] == 2, "the step's own slide makes no move"
+    tutored.post("/api/move", params=auth, json={"to": 1, "move": 0})
+    assert tutored.post("/api/slide", params=auth, json={"to": 3}).status_code == 200
+    state = tutored.get("/api/state", params=auth).json()
+    assert (state["move"], state["slide"]) == (1, 1), "a slide two moves ahead makes the next move only, and shows its slide"
+    assert tutored.post("/api/move", params=auth, json={"to": 1, "name": "step-00", "move": 1}).status_code == 409, "the name must be the step's"
+    tutored.post("/api/move", params=auth, json={"to": 2})
+    tutored.post("/api/move", params=auth, json={"to": 1})
+    state = tutored.get("/api/state", params=auth).json()
+    assert (state["move"], state["slide"]) == (0, 0), "back at a step, its own first slide, not a later move's"
+    manifest = tutorial_class / "slides" / "slides.toml"
+    manifest.write_text("sync = false\n" + manifest.read_text())   # before [slides], or it would be a key of that table
+    assert tutored.post("/api/slide", params=auth, json={"to": 3}).status_code == 200
+    assert tutored.get("/api/state", params=auth).json()["move"] == 0, "without sync, slides and moves are apart"
+
+
+def test_the_page_serves_slides_but_not_the_notes_of_the_class_folder(walked: TestClient) -> None:
+    "Slides come from the walks' slides folders only: the notes, with their private cues, and the table stay unserved."
+    auth = {"t": TOKEN}
+    assert walked.get("/slides/slides/talk.md", params=auth).status_code == 200
+    assert walked.get("/slides/walks/part/slides/own.md", params=auth).status_code == 200
+    for path in ("notes.md", "toc.toml", "walks/part/notes.md", "slides/../notes.md", "slides/%2e%2e/notes.md"):
+        assert walked.get(f"/slides/{path}", params=auth).status_code == 404, path
+
+
+def test_save_names_its_walk_and_is_refused_in_another(walked: TestClient, class_folder: Path) -> None:
+    "An edit begun in one walk is not saved into another walk's notes after a window changed the walk."
+    auth = {"t": TOKEN}
+    walked.post("/api/walk", params=auth, json={"id": "part"})
+    refused = walked.post("/api/notes", params=auth, json={"walk": "narrative", "step": "step-03", "base": "Tidy, again", "text": "mine"})
+    assert refused.status_code == 409 and "the walk changed" in refused.json()["error"]
+    assert "mine" not in (class_folder / "walks" / "part" / "notes.md").read_text()
+    assert walked.post("/api/notes", params=auth, json={"walk": "part", "step": "step-03", "base": "", "text": "ours"}).status_code == 200
+
+
+def test_a_walk_folder_without_notes_or_slides_is_allowed(class_folder: Path, sample: Path) -> None:
+    "In a folder, notes.md and slides/slides.toml are each optional; a missing folder is a mistake."
+    from timewalk.walks import TocError, check, load_toc
+
+    (class_folder / "walks" / "part" / "notes.md").unlink()
+    part = load_toc(class_folder / "toc.toml")[1]
+    assert part.notes is None and part.slides is not None
+    errors, _ = check(load_toc(class_folder / "toc.toml"), sample, class_folder)
+    assert errors == []
+    (class_folder / "toc.toml").write_text('[[walk]]\nid = "x"\nfolder = "walks/none"\n')
+    with pytest.raises(TocError, match="its folder walks/none does not exist"):
+        load_toc(class_folder / "toc.toml")
+
+
+@pytest.mark.parametrize("manifest, says", [
+    ('slides = ["talk.md"]\n', "has slides that is not a table"),
+    ('[slides]\nstep-00 = "talk.md#1"\n', "step-00 in slides.toml must be a list in brackets"),
+])
+def test_a_manifest_of_the_wrong_shape_is_a_sentence_not_a_traceback(class_folder: Path, sample: Path, manifest: str, says: str) -> None:
+    "The checks name the mistake in a manifest whose tables or lists have the wrong shape."
+    from timewalk.walks import check, load_toc
+
+    (class_folder / "slides" / "slides.toml").write_text(manifest)
+    errors, _ = check(load_toc(class_folder / "toc.toml"), sample, class_folder)
+    assert any(says in e for e in errors), errors
+
+
+def test_a_tutorial_takes_every_step_and_a_files_line_outside_a_move_is_prose(tmp_path: Path) -> None:
+    "A tutorial with steps = [...] is refused; files: before any move is an ordinary line of the notes."
+    from timewalk.walks import TocError, load_toc
+
+    (tmp_path / "toc.toml").write_text('[[walk]]\nid = "t"\nkind = "tutorial"\nsteps = ["step-01"]\n')
+    with pytest.raises(TocError, match="a tutorial takes every step"):
+        load_toc(tmp_path / "toc.toml")
+    parts = timewalk.parse_notes("## step-01\nfiles:\n- one\n")["step-01"]["parts"]
+    assert parts == [{"kind": "text", "text": "files:\n- one"}]
+
+
+def test_a_tutorial_keeps_its_place_across_a_restart(tutorial: timewalk.Repo) -> None:
+    "Move 0 of a step and the step before are one commit; the place written in the replay copy's git folder tells them apart."
+    tutorial.move(1)
+    assert tutorial.position() == (1, 0)
+    again = timewalk.Repo(tutorial.main)
+    again.select("step-*", None, tutorial=True)
+    assert again.position() == (1, 0), "not step-00, which stands on the same commit"
+    assert not (again.work / "timewalk-place.json").exists(), "the place is not a file of the replay copy"
+
+
+def test_a_failed_change_of_walk_keeps_the_place_in_a_tutorial(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
+    "An edit refuses the change of walk; the tutorial stays at the same move."
+    from timewalk.walks import load_toc
+
+    (tutorial_class / "toc.toml").write_text((tutorial_class / "toc.toml").read_text() + '\n[[walk]]\nid = "plain"\n')
+    walks = load_toc(tutorial_class / "toc.toml")
+    client = TestClient(timewalk.make_app(tutorial, TOKEN, PORT, assistant="", walks=walks, root=tutorial_class), headers=HOST)
+    auth = {"t": TOKEN}
+    client.post("/api/move", params=auth, json={"to": 1})
+    tutorial.place_file().unlink()   # so that only the restore of the place in memory can keep it
+    (tutorial.work / "README.md").write_text("an edit\n")
+    assert client.post("/api/walk", params=auth, json={"id": "plain"}).status_code == 409
+    state = client.get("/api/state", params=auth).json()
+    assert (state["current"], state["move"]) == (1, 0)
+
+
+def test_a_window_that_only_opens_a_shell_keeps_its_size(served: TestClient) -> None:
+    "A size sent on opening goes to a new shell only; the Room's size is forgotten when its socket closes."
+    auth = {"t": TOKEN}
+    with served.websocket_connect(f"/ws/term/runs?t={TOKEN}") as first:
+        first.send_json({"type": "resize", "rows": 30, "cols": 100, "opening": True})
+        first.send_json({"type": "input", "data": "echo one-$((6*7)) $(stty size)\r"})
+        seen = ""
+        while "one-42 30 100" not in seen:
+            data = first.receive()
+            seen += data.get("text") or (data.get("bytes") or b"").decode("utf-8", "replace")
+        with served.websocket_connect(f"/ws/term/runs?t={TOKEN}") as second:
+            second.send_json({"type": "resize", "rows": 11, "cols": 50, "opening": True})
+            second.send_json({"type": "input", "data": "echo two-$((6*7)) $(stty size)\r"})
+            while "two-42 30 100" not in seen:
+                data = first.receive()
+                seen += data.get("text") or (data.get("bytes") or b"").decode("utf-8", "replace")
+    served.post("/api/show", params=auth, json={"shell": True})
+    with served.websocket_connect(f"/ws/term/runs?t={TOKEN}") as room:
+        room.send_json({"type": "resize", "rows": 50, "cols": 160, "room": True})
+        for _ in range(50):
+            if served.get("/api/state", params=auth).json()["room_sizes"]:
+                break
+            time.sleep(0.05)
+        assert served.get("/api/state", params=auth).json()["room_sizes"] == {"runs": [50, 160]}
+    for _ in range(50):
+        if not served.get("/api/state", params=auth).json()["room_sizes"]:
+            break
+        time.sleep(0.05)
+    assert served.get("/api/state", params=auth).json()["room_sizes"] == {}, "the Room window went away"
+
+
+
+def test_the_checks_keep_the_notes_out_of_what_the_page_serves(class_folder: Path, sample: Path) -> None:
+    "A manifest at the top of the class folder, notes in a slides folder, and a picture outside every slides folder are errors."
+    from timewalk.walks import check, load_toc
+
+    (class_folder / "slides" / "talk.md").write_text("# One\n\n![p](../pictures/p.png)\n\n---\n\n# Two\n\n---\n\n# Three\n\n---\n\n# Four\n")
+    (class_folder / "pictures").mkdir()
+    (class_folder / "pictures" / "p.png").write_bytes(b"png")
+    errors, _ = check(load_toc(class_folder / "toc.toml"), sample, class_folder)
+    assert any("shows ../pictures/p.png, which is not in a slides folder" in e for e in errors), errors
+    (class_folder / "slides.toml").write_text('[slides]\nstep-00 = ["slides/talk.md#1"]\n')
+    (class_folder / "walks" / "part" / "slides" / "notes.md").write_text("## step-01\n")
+    (class_folder / "toc.toml").write_text('[[walk]]\nid = "top"\nnotes = "notes.md"\nslides = "slides.toml"\n\n'
+                                           '[[walk]]\nid = "part"\nnotes = "walks/part/slides/notes.md"\nslides = "walks/part/slides/slides.toml"\n'
+                                           'steps = ["step-01", "step-03"]\n')
+    errors, _ = check(load_toc(class_folder / "toc.toml"), sample, class_folder)
+    assert any("a slides manifest is at the top of the class folder" in e for e in errors), errors
+    assert any("walk part: its notes" in e and "are in a slides folder" in e for e in errors), errors
+
+
+def test_a_link_in_a_slides_folder_to_the_notes_is_not_served(walked: TestClient, class_folder: Path) -> None:
+    "A link inside a slides folder that leads to the notes is refused like the notes themselves."
+    (class_folder / "slides" / "link.md").symlink_to(class_folder / "notes.md")
+    assert walked.get("/slides/slides/link.md", params={"t": TOKEN}).status_code == 404
+
+
+def test_a_fence_before_the_first_step_is_read_as_save_reads_it() -> None:
+    "A fenced example of a heading before the first step is code for the parser too."
+    text = "# Notes\n\n```\n## step-01 an example\n```\n\n## step-01 Real\none\n\n## step-02 Two\ntwo\n"
+    notes = timewalk.parse_notes(text)
+    assert notes["step-01"]["text"] == "one" and notes["step-02"]["text"] == "two"
+
+
+def test_a_move_without_slides_keeps_the_slide_before_it_and_down_goes_on(tutored: TestClient, tutorial_class: Path) -> None:
+    "Move 2 has no slides: it shows move 1's slide, and Down then makes move 3, never undoing move 2."
+    auth = {"t": TOKEN}
+    (tutorial_class / "slides" / "slides.toml").write_text('[slides]\nstep-00 = ["deck.md#1"]\nstep-01 = ["deck.md#2"]\n"step-01.1" = ["deck.md#3"]\n'
+                                                          '"step-01.3" = ["deck.md#5"]\nstep-02 = ["deck.md#6"]\n')
+    tutored.post("/api/move", params=auth, json={"to": 1})
+    tutored.post("/api/move", params=auth, json={"to": 1, "move": 1})
+    tutored.post("/api/move", params=auth, json={"to": 1, "move": 2})
+    state = tutored.get("/api/state", params=auth).json()
+    assert (state["move"], state["slide"]) == (2, 1)
+    tutored.post("/api/slide", params=auth, json={"to": 2, "step": "step-01"})
+    state = tutored.get("/api/state", params=auth).json()
+    assert (state["move"], state["slide"]) == (3, 2)
+    refused = tutored.post("/api/slide", params=auth, json={"to": 0, "step": "step-02"})
+    assert refused.status_code == 409 and "the step changed" in refused.json()["error"]
+
+
+def test_a_step_without_moves_forgets_the_place_written_before(tutorial: timewalk.Repo) -> None:
+    "Go to step-01's start, then back to step-00: after a restart, the copy is at step-00, not at step-01's start."
+    tutorial.move(1)
+    tutorial.move(0)
+    again = timewalk.Repo(tutorial.main)
+    again.select("step-*", None, tutorial=True)
+    assert again.position() == (0, None)
+
+
+def test_a_return_to_a_tutorial_comes_back_to_its_move(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
+    "Leave a tutorial at a move, visit another walk, come back: the same move, and the stash names the move."
+    from timewalk.walks import load_toc
+
+    (tutorial_class / "toc.toml").write_text((tutorial_class / "toc.toml").read_text() + '\n[[walk]]\nid = "plain"\n')
+    client = TestClient(timewalk.make_app(tutorial, TOKEN, PORT, assistant="", walks=load_toc(tutorial_class / "toc.toml"),
+                                          root=tutorial_class), headers=HOST)
+    auth = {"t": TOKEN}
+    client.post("/api/move", params=auth, json={"to": 1})
+    client.post("/api/move", params=auth, json={"to": 1, "move": 1})
+    client.post("/api/move", params=auth, json={"to": 1, "move": 2})
+    (tutorial.work / "a.txt").write_text("an edit\n")
+    assert client.post("/api/walk", params=auth, json={"id": "plain", "set_aside": True}).status_code == 200
+    assert "timewalk: edits made at step-01.2" in run_git(tutorial.work, "stash", "list")
+    client.post("/api/walk", params=auth, json={"id": "tut"})
+    state = client.get("/api/state", params=auth).json()
+    assert (state["current"], state["move"]) == (1, 2)
+
+
+def test_two_walks_that_share_a_notes_file_can_both_save(repo: timewalk.Repo, class_folder: Path) -> None:
+    "An edit begun in one walk saves after a change to another walk with the same notes file; with another file, it is refused."
+    from timewalk.walks import load_toc
+
+    (class_folder / "toc.toml").write_text((class_folder / "toc.toml").read_text() +
+                                           '\n[[walk]]\nid = "again"\nnotes = "notes.md"\nslides = "slides/slides.toml"\n')
+    client = TestClient(timewalk.make_app(repo, TOKEN, PORT, assistant="", walks=load_toc(class_folder / "toc.toml"), root=class_folder),
+                        headers=HOST)
+    auth = {"t": TOKEN}
+    client.post("/api/walk", params=auth, json={"id": "again"})
+    saved = client.post("/api/notes", params=auth, json={"walk": "narrative", "step": "step-02", "base": "", "text": "shared"})
+    assert saved.status_code == 200 and "shared" in (class_folder / "notes.md").read_text()
+    client.post("/api/walk", params=auth, json={"id": "part"})
+    refused = client.post("/api/notes", params=auth, json={"walk": "narrative", "step": "step-03", "base": "Tidy, again", "text": "x"})
+    assert refused.status_code == 409

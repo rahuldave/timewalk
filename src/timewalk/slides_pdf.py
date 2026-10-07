@@ -139,10 +139,11 @@ def deck_of(
     title: str,  # The deck's title, for the footer
     with_notes: bool = False,  # Print each step's notes after its slides
     brand: dict | None = None,  # What `load_brand` returned, or None for no brand
+    root: Path | None = None,  # The folder slides are named from; default: the manifest's folder
 ) -> dict:  # The deck: its title, its brand and, per step, the step's title, slides and notes
     "Describe the whole deck, step by step."
     parsed = parse_notes(notes.read_text(encoding="utf-8")) if notes and notes.is_file() else {}
-    slides = load_slides(manifest) if manifest else {}
+    slides = load_slides(manifest, root) if manifest else {}
     names = set(slides) | (set(parsed) if with_notes else set())
     # In step-name order, as timewalk orders the steps, so a step under [docs] falls among the [slides] steps.
     steps = [{"name": name, "title": parsed.get(name, {}).get("title", ""), "slides": slides.get(name, []),
@@ -270,13 +271,14 @@ def make_pdf(
     title: str,  # A title for the footer of every page
     with_notes: bool = False,  # Print each step's notes after its slides
     brand: Path | None = None,  # A brand's folder, or its brand.toml, for the look of the PDF; None for no brand
+    root: Path | None = None,  # The class folder, when a walk names slides from other slides folders; default: the manifest's folder
 ) -> bytes:  # The PDF
     "Make the whole PDF: draw it in a browser, copy in PDF pages, and join the parts in step order."
     look = load_brand(brand) if brand else None
-    deck = deck_of(manifest, notes, title, with_notes, look)
+    deck = deck_of(manifest, notes, title, with_notes, look, root)
     if not any(step["slides"] or step["notes"] for step in deck["steps"]):
         raise SystemExit("slides_pdf: there is nothing to print: no slides, and no notes")
-    folder = manifest.parent if manifest else None
+    folder = root or (manifest.parent if manifest else None)
     server, port = serve(deck, folder, look["folder"] if look else None)
     try:
         docs = [entry for step in deck["steps"] for entry in step["slides"] if entry.endswith("#doc")]
@@ -303,8 +305,27 @@ def main() -> None:
     parser.add_argument("--with-notes", action="store_true", help="print each step's notes after its slides, cues and commands included")
     parser.add_argument("--title", default="", help="a title for the footer of every page")
     parser.add_argument("--brand", type=Path, help="a brand: a folder with a brand.toml, its logo and fonts, for the look of the PDF (default: no brand)")
+    parser.add_argument("--toc", type=Path, help="a table of contents, toc.toml: take the slides and notes of one of its walks, in place of MANIFEST and --notes")
+    parser.add_argument("--walk", help="with --toc: the id of the walk (default: the first)")
     args = parser.parse_args()
 
+    root = None
+    if args.toc:
+        from timewalk.walks import TocError, load_toc
+
+        if args.manifest or args.notes:
+            raise SystemExit("slides_pdf: give --toc, or a manifest and --notes, not both")
+        try:
+            walks = load_toc(args.toc.resolve())
+        except TocError as error:
+            raise SystemExit(f"slides_pdf: {error}") from None
+        walk = next((w for w in walks if w.id == args.walk), None) if args.walk else walks[0]
+        if walk is None:
+            raise SystemExit(f"slides_pdf: {args.toc} has no walk called {args.walk}; it has {', '.join(w.id for w in walks)}")
+        args.manifest, args.notes, root = walk.slides, walk.notes, args.toc.resolve().parent
+        args.title = args.title or walk.title
+    elif args.walk:
+        raise SystemExit("slides_pdf: --walk needs --toc")
     manifest = args.manifest.resolve() if args.manifest else None
     notes = args.notes.resolve() if args.notes else None
     if manifest is not None and not manifest.is_file():
@@ -312,7 +333,7 @@ def main() -> None:
     if manifest is None and not (notes and args.with_notes):
         raise SystemExit("slides_pdf: give a slides manifest, or --notes with --with-notes, or both")
     brand = args.brand.resolve() if args.brand else None
-    data = make_pdf(manifest, notes, args.title or (manifest or notes).parent.name, args.with_notes, brand)
+    data = make_pdf(manifest, notes, args.title or (manifest or notes).parent.name, args.with_notes, brand, root)
     output = (args.output or Path("build") / ("slides.pdf" if manifest else "notes.pdf")).resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_bytes(data)

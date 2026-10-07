@@ -58,6 +58,13 @@ If you start timewalk with `--discard-edits`, the bar also says "Moves discard e
 edits, the note becomes a red warning with a count of the edited files. The next move throws those
 edits away. See [Live edits](edits.md#with---discard-edits).
 
+If you start timewalk with `--toc`, a menu at the left of the bar lists the walks of the class. A walk is
+one path through the history, with its own notes and slides. Choose a walk, and every window changes to
+its steps. The Room window shows the title of the walk in place of the menu. See [Several walks](walks.md).
+
+In a tutorial walk, a step can have moves, which are the small commits before its tag. A row of moves then
+shows under the bar. See [Tutorial walks](walks.md#tutorial-walks).
+
 ## The buttons on the right of the bar
 
 | Button | Does |
@@ -201,11 +208,12 @@ Without a window for the class, Shell mode keeps that rule too.
 | Up, Down | The previous or next slide, when the step has more than one. On a document, or with one slide, they scroll |
 | Alt with an arrow | Moves the step or the slide, from anywhere, a terminal included |
 | Shift+Up, Shift+Down | The first or the last slide of the step |
+| Shift+Right, Shift+Left | In a tutorial: the next or the previous move. In a terminal, add Alt |
 | Home, End | The top or the bottom of the slide, the file or the notes under the mouse |
 | Alt+Enter | **Shell** on or off |
 | Alt+1, Alt+2, Alt+3 | **Slides**, **Both**, **Code** |
 | Alt+\` | **Slides** or **Code**: from one to the other |
-| Alt+N | Shows or hides the notes, in this window |
+| Alt+\\ | Shows or hides the notes, in this window. Not Alt+N, which types ~ on some Mac keyboards |
 
 The Alt keys work everywhere, a terminal included. On a Mac, Alt is the Option key.
 
