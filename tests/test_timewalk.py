@@ -878,6 +878,40 @@ def test_a_scroll_in_one_window_reaches_the_other_windows(served: TestClient) ->
         assert theirs.receive_json() == {"type": "scroll", "pane": "slide", "at": 1.0}
 
 
+def test_the_shell_toggle_is_shared_by_every_window(served: TestClient) -> None:
+    "Shell is kept by the server, like the layout: the state says so, and every window hears of a change."
+    auth = {"t": TOKEN}
+    assert served.get("/api/state", params=auth).json()["shell"] is False
+    with served.websocket_connect(f"/ws/events?t={TOKEN}") as window:
+        served.post("/api/show", params=auth, json={"shell": True})
+        event = window.receive_json()
+        assert event["type"] == "show" and event["shell"] is True
+    assert served.get("/api/state", params=auth).json()["shell"] is True
+    served.post("/api/show", params=auth, json={"shell": "yes"})  # not a yes or no: ignored
+    assert served.get("/api/state", params=auth).json()["shell"] is True
+    served.post("/api/show", params=auth, json={"layout": "code"})
+    assert served.get("/api/state", params=auth).json()["shell"] is True, "a layout leaves the Shell toggle as it is"
+
+
+def test_a_terminal_scroll_reaches_the_other_windows(served: TestClient) -> None:
+    "A terminal scrolled back by some lines: the other windows hear the shell and the lines; a bad count is ignored."
+    auth = f"?t={TOKEN}"
+    with served.websocket_connect("/ws/events" + auth) as mine, served.websocket_connect("/ws/events" + auth) as theirs:
+        mine.send_json({"type": "scroll", "pane": "term", "track": "replay", "lines": "many"})
+        mine.send_json({"type": "scroll", "pane": "term", "track": "replay", "lines": -3})
+        assert theirs.receive_json() == {"type": "scroll", "pane": "term", "track": "replay", "lines": 0}
+        mine.send_json({"type": "scroll", "pane": "term", "track": "runs", "lines": 12})
+        assert theirs.receive_json() == {"type": "scroll", "pane": "term", "track": "runs", "lines": 12}
+
+
+def test_the_room_window_sizes_a_shell_and_tells_the_others(served: TestClient) -> None:
+    "A resize marked as the Room's sets the shell's size and is announced; any other resize is not."
+    with served.websocket_connect(f"/ws/events?t={TOKEN}") as window, served.websocket_connect(f"/ws/term/runs?t={TOKEN}") as shell:
+        shell.send_json({"type": "resize", "rows": 30, "cols": 100})
+        shell.send_json({"type": "resize", "rows": 40, "cols": 160, "room": True})
+        assert window.receive_json() == {"type": "size", "track": "runs", "rows": 40, "cols": 160}
+
+
 def test_the_command_line_is_followed_from_what_is_typed() -> None:
     "timewalk knows the command line is empty after Enter, Ctrl-C or Ctrl-U, and is unsure after an arrow key."
     assert timewalk.typed_line(0, "ls") == 2

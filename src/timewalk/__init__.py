@@ -711,7 +711,8 @@ def make_app(
     hub = Hub()
     clock: dict[str, float | None] = {"started": None}
     # What every window shows, kept here so that all the windows on the page agree.
-    showing: dict = {"slide": 0, "layout": "split", "path": None, "view": "file", "track": "replay", "step": None}
+    # `shell` is the Shell toggle: the terminals take the space of the slides and the files, in every window.
+    showing: dict = {"slide": 0, "layout": "split", "path": None, "view": "file", "track": "replay", "step": None, "shell": False}
     # Where each step was left: its slide, and how far down its slide, notes and open file were scrolled, as
     # fractions. A move back to a step brings it all back. Kept while the server runs.
     memory: dict[str, dict] = {}
@@ -784,7 +785,7 @@ def make_app(
         return {**where, "clock": clock["started"], "now": time.time(), "slides": deck, "slide": showing["slide"],
                 "restore": memory.get(showing["step"] or "", {}).get("scroll", {}),
                 "has_slides": bool(load_slides(slides_path)), "has_notes": notes_path is not None, "show_clock": show_clock, "layout": showing["layout"], "path": showing["path"],
-                "view": showing["view"], "track": showing["track"]}
+                "view": showing["view"], "track": showing["track"], "shell": showing["shell"]}
 
     @guarded
     async def tree(request: Request) -> dict:
@@ -873,10 +874,12 @@ def make_app(
 
     @guarded
     async def show(request: Request) -> dict:
-        "Change what both pages show: the layout, the open file and its view, the terminal tab in front."
+        "Change what both pages show: the layout, the Shell toggle, the open file and its view, the terminal tab in front."
         body = await request.json()
         if body.get("layout") in ("slides", "split", "code"):
             showing["layout"] = body["layout"]
+        if isinstance(body.get("shell"), bool):
+            showing["shell"] = body["shell"]
         if body.get("path"):
             showing["path"], showing["view"] = str(body["path"]), body.get("view") or "file"
             if showing["layout"] == "slides":
@@ -884,7 +887,7 @@ def make_app(
         if body.get("track") and terminal_for(str(body["track"])) is not None:
             showing["track"] = str(body["track"])
         await hub.tell({"type": "show", **{k: body[k] for k in ("path", "view", "track", "layout", "from", "focus") if k in body},
-                        "layout": showing["layout"]})
+                        "layout": showing["layout"], "shell": showing["shell"]})
         return {"ok": True}
 
     @guarded
@@ -897,7 +900,7 @@ def make_app(
             raise GitError(f"there is no terminal called {track}")
         term.write(body["text"] + ("\r" if body.get("enter", True) else ""))
         showing["track"] = track
-        await hub.tell({"type": "show", "track": track, "from": body.get("from", ""), "focus": "sender", "layout": showing["layout"]})
+        await hub.tell({"type": "show", "track": track, "from": body.get("from", ""), "focus": "sender", "layout": showing["layout"], "shell": showing["shell"]})
         return {"ok": True}
 
     @guarded
@@ -931,6 +934,9 @@ def make_app(
                     term.write(message["data"])
                 elif message["type"] == "resize":
                     term.resize(int(message["rows"]), int(message["cols"]))
+                    if message.get("room"):
+                        # In Shell mode the Room window sizes the shell; the other windows take the same rows and columns.
+                        await hub.tell({"type": "size", "track": socket.path_params["name"], "rows": term.size[0], "cols": term.size[1]})
         except WebSocketDisconnect:
             pass
         finally:
@@ -949,6 +955,19 @@ def make_app(
                 try:
                     message = json.loads(await socket.receive_text())
                 except ValueError:
+                    continue
+                if message.get("type") == "scroll" and message.get("pane") == "term":
+                    # A terminal scrolled back: the other windows scroll the same shell back as many lines. Not remembered.
+                    lines = message.get("lines")
+                    if not isinstance(lines, (int, float)) or isinstance(lines, bool):
+                        continue
+                    relay = {"type": "scroll", "pane": "term", "track": str(message.get("track", "")), "lines": max(int(lines), 0)}
+                    for page in list(hub.pages):
+                        if page is not socket:
+                            try:
+                                await page.send_json(relay)
+                            except Exception:
+                                hub.pages.discard(page)
                     continue
                 if message.get("type") == "scroll" and message.get("pane") in ("slide", "file", "notes"):
                     at = min(max(float(message.get("at", 0)), 0.0), 1.0)

@@ -15,15 +15,16 @@ keeps the shared state, and it sends each change to every window.
 |---|---|---|
 | The step | If the notes show | The theme, dark or light |
 | The slide | If the cues show | The text size |
-| Slides, Both or Code | Which terminal has the keyboard | The height of the terminals |
+| Slides, Both or Code, and Shell | Which terminal has the keyboard | The height of the terminals |
 | The open file, and its view | | If a click on a command runs it |
-| The scroll position of the slide, the file and the notes | | The widths of the slides, the file list and the notes |
+| The scroll position of the slide, the file, the notes and each terminal | | The widths of the slides, the file list and the notes |
 | The terminal tab in front | | |
 | The terminals themselves: the same shells | | |
 
 When you scroll a slide, a file or the notes, every other window scrolls to the same place. Because the
 windows can differ in size, the place is a fraction of the whole. Half way down in one window is half way
-down in every window. To teach with one window for you and one for the class, see [Teach a class](class.md).
+down in every window. A terminal is different. When you scroll a terminal back, every other window scrolls the
+same shell back by the same number of lines. To teach with one window for you and one for the class, see [Teach a class](class.md).
 
 Each step also remembers where you left it. Move from step 6 to step 7 and back, and step 6 comes back at
 the same slide. The slide, the notes and the open file also come back at the same scroll. A step that you have
@@ -66,6 +67,7 @@ edits away. See [Live edits](edits.md#with---discard-edits).
 | **Room** | Opens the window for the class: on the projector at full size where the browser allows it, with no cues and no clock band. See [Teach a class](class.md) |
 | **Full screen** | Only in the window for the class. Fills the screen with that window |
 | **PDF** | Makes a PDF of the slides, one page each, and downloads it |
+| **Shell** | Gives the terminals the space of the slides, the file list and the reader, in every window. The notes stay. Press it again to go back. See [Shell](#shell) |
 | **Slides**, **Both**, **Code** | Choose what fills the page, in every window |
 | **A−**, **A+** | Change the size of all the text in this window. The terminals use the same size |
 | **Dark**, **Light** | Change the theme of this window |
@@ -178,6 +180,19 @@ If a recipe needs an argument, the click types the command but does not run it. 
 command. The page highlights the recipes that are new at this step. If **Main** is in front, the buttons
 show the recipes of your repository. A folder with no `justfile` shows no recipe buttons.
 
+## Shell
+
+**Shell** gives the terminals the whole space of the slides, the file list and the reader. Use it when the
+class works in the shell for a while. Every window follows, as with the layout. The notes column stays. Press
+**Shell** again, or Alt+Enter, and the page shows the layout that it had before.
+
+![Shell: the terminal fills the space of the slides and the files, and the notes stay](images/shell.png)
+
+In Shell mode, the window for the class sets the size of each shell. The class reads the projector, so the
+shell takes the rows and columns of the projector. Your window shows the same rows and columns, and makes its
+text smaller or larger to fit them. When Shell is off, the window that you last typed in sets the size again.
+Without a window for the class, Shell mode keeps that rule too.
+
 ## The keyboard
 
 | Key | Does |
@@ -187,6 +202,12 @@ show the recipes of your repository. A folder with no `justfile` shows no recipe
 | Alt with an arrow | Moves the step or the slide, from anywhere, a terminal included |
 | Shift+Up, Shift+Down | The first or the last slide of the step |
 | Home, End | The top or the bottom of the slide, the file or the notes under the mouse |
+| Alt+Enter | **Shell** on or off |
+| Alt+1, Alt+2, Alt+3 | **Slides**, **Both**, **Code** |
+| Alt+\` | **Slides** or **Code**: from one to the other |
+| Alt+N | Shows or hides the notes, in this window |
+
+The Alt keys work everywhere, a terminal included. On a Mac, Alt is the Option key.
 
 The page keeps the arrow keys until you click into a terminal. Then the terminal has the keys, and a blue
 edge around it shows this. The arrows then move through the history of your shell.

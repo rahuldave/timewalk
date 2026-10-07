@@ -160,6 +160,13 @@ def shoot(browser, base: str, repo: timewalk.Repo) -> None:
     layout("code")
     save("layout-code")
 
+    # Shell: the terminals take the space of the slides and the files; the notes stay.
+    page.locator("#shell-toggle").click()
+    page.wait_for_timeout(600)
+    save("shell")
+    page.locator("#shell-toggle").click()
+    page.wait_for_timeout(600)
+
     # What a step changed: step-04 types the functions.
     at(4)
     open_file("greet.py", "diff")

@@ -104,6 +104,10 @@ Add these to the address that timewalk prints, after the token, with `&`.
 | Alt with an arrow | Moves the step or the slide, even inside a terminal or on a document |
 | Shift+Up, Shift+Down | The first or the last slide of the step |
 | Home, End | The top or the bottom of the slide, the file or the notes under the mouse |
+| Alt+Enter | **Shell** on or off, in every window |
+| Alt+1, Alt+2, Alt+3 | **Slides**, **Both**, **Code**, in every window |
+| Alt+\` | **Slides** or **Code**: from one to the other |
+| Alt+N | Shows or hides the notes, in this window |
 
 ## Requirements
 

@@ -68,7 +68,10 @@ so. Drag that window to the projector, and click **Full screen** in it.
 
 - **The size of a shell.** A shell has one size, and the window that you last typed in sets it. If you
   type in your window, the projector shows the output at the width of your laptop's terminal. To fit the
-  projector again, click once into the terminal of the window for the class.
+  projector again, click once into the terminal of the window for the class. In Shell mode, the window for
+  the class sets the size by itself.
+- **Shell.** When the class works in the shell for a while, press **Shell** or Alt+Enter. The terminals fill
+  the space of the slides and the files in both windows. See [The page](page.md#shell).
 - **A reload.** A reload of either window keeps its choices for cues and notes. If you close the window
   for the class, click **Room** again.
 - **A video call.** Share only the window for the class, and not your whole screen.

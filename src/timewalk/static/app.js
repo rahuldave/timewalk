@@ -40,6 +40,8 @@ const ui = {
   theme: settings.get("theme", "light"),
   size: settings.get("size", 14),
   layout: "split",        // "slides", "split" or "code", as the server says; only used when there are slides
+  shell: false,           // the Shell toggle, as the server says: the terminals take the space of the slides and the files
+  roomSized: false,       // in Shell mode, whether a Room window has sized the shells; your window then follows it
   notes: {},              // the notes of every step, when timewalk has a notes file
   editing: null,          // while the notes are edited: the step, and its section as it was read
   notesPath: null,
@@ -51,6 +53,7 @@ const ui = {
 async function refresh() {
   ui.state = await api("/api/state");
   ui.layout = ui.state.layout;
+  applyShell(ui.state.shell);
   ui.skew = ui.state.now - Date.now() / 1000;
   drawSteps();
   const drawn = drawSlides();
@@ -159,13 +162,52 @@ function drawSlides() {
   $("slide-prev").disabled = slide <= 0;
   $("slide-first").hidden = slide <= 0;   // shown once you are past the first slide
   $("slide-next").disabled = slide >= slides.length - 1;
-  for (const entry of ui.terms.values()) if (!entry.el.hidden) requestAnimationFrame(() => entry.fit.fit());
+  for (const entry of ui.terms.values()) requestAnimationFrame(() => fitTerminal(entry));
   return drawSlide($("slide"), slides[slide], { command: commandButton });   // a $ line on a slide is a button, as in the notes
 }
 
 function applyLayout(layout) {
   ui.layout = layout;
   drawSlides();
+}
+
+// ---------- the Shell toggle ----------
+// Shell gives the terminals the space of the slides, the file list and the reader, in every window; the server keeps
+// it, as it keeps the layout. A shell has one size. In Shell mode the Room window sets it, since the projector is what
+// the class reads, and your window shows the same rows and columns, with its font scaled to fit.
+
+function applyShell(on) {
+  const was = ui.shell;
+  ui.shell = !!on;
+  document.body.classList.toggle("shell-mode", ui.shell);
+  $("shell-toggle").setAttribute("aria-pressed", String(ui.shell));
+  if (was === ui.shell) return;
+  if (!ui.shell) {
+    ui.roomSized = false;
+    for (const entry of ui.terms.values()) { entry.adopted = null; entry.term.options.fontSize = ui.size; }
+  }
+  for (const entry of ui.terms.values()) requestAnimationFrame(() => { fitTerminal(entry); if (ROOM && ui.shell) entry.sendSize(true); });
+}
+
+/** Fit a terminal to its pane; or, when it follows the Room's size, take those rows and columns and scale the font to fit. */
+function fitTerminal(entry) {
+  if (entry.el.hidden) return;
+  if (!entry.adopted) { entry.fit.fit(); return; }
+  const { rows, cols } = entry.adopted;
+  entry.term.options.fontSize = ui.size;
+  const room = entry.fit.proposeDimensions();
+  if (room) entry.term.options.fontSize = Math.max(6, Math.floor(ui.size * Math.min(room.cols / cols, room.rows / rows) * 2) / 2);
+  if (entry.term.cols !== cols || entry.term.rows !== rows) entry.term.resize(cols, rows);
+}
+
+/** The Room window sized a shell, in Shell mode: this window shows it at the same rows and columns. */
+function followSize(event) {
+  if (ROOM || !ui.shell) return;
+  ui.roomSized = true;
+  const entry = ui.terms.get(event.track);
+  if (!entry) return;
+  entry.adopted = { rows: event.rows, cols: event.cols };
+  fitTerminal(entry);
 }
 
 async function showSlide(to) {
@@ -393,7 +435,7 @@ function selectTab(id, focus = false) {
   for (const [other, { el }] of ui.terms) el.hidden = other !== id;
   drawRecipes();
   if (focus) ui.keysToTerminal = true;
-  requestAnimationFrame(() => { entry.fit.fit(); if (focus) { entry.term.focus(); entry.sendSize(true); } });
+  requestAnimationFrame(() => { fitTerminal(entry); if (focus) { entry.term.focus(); entry.sendSize(true); } });
 }
 
 function startTerminal(id) {
@@ -414,10 +456,14 @@ function startTerminal(id) {
   const ws = socket("/ws/term/" + id);
   ws.binaryType = "arraybuffer";
   // A shell has one size. The window you last typed in sets it; a window that only shows the shell leaves it alone,
-  // so two windows of different sizes do not fight over it.
-  const sendSize = (force = false) => (force || ui.keysToTerminal) && ws.readyState === WebSocket.OPEN &&
-    ws.send(JSON.stringify({ type: "resize", rows: term.rows, cols: term.cols }));
-  ws.onopen = () => { fit.fit(); sendSize(true); };
+  // so two windows of different sizes do not fight over it. In Shell mode the Room window sets it instead.
+  const sendSize = (force = false) => {
+    if (ws.readyState !== WebSocket.OPEN) return;
+    if (ui.shell && ROOM) return ws.send(JSON.stringify({ type: "resize", rows: term.rows, cols: term.cols, room: true }));
+    if (ui.shell && ui.roomSized) return;
+    if (force || ui.keysToTerminal) ws.send(JSON.stringify({ type: "resize", rows: term.rows, cols: term.cols }));
+  };
+  ws.onopen = () => { fitTerminal(entry); sendSize(true); };
   ws.onmessage = (event) => {
     term.write(typeof event.data === "string" ? event.data : new Uint8Array(event.data));
     // A tab that printed something while another was in front gets a dot, so a finished run is noticed.
@@ -433,8 +479,19 @@ function startTerminal(id) {
     setTimeout(() => { if (ui.terms.get(id) === entry) restartTerminals(); }, 2000);   // the server may still be there
   };
   term.onData((data) => ws.readyState === WebSocket.OPEN && ws.send(JSON.stringify({ type: "input", data })));
-  term.onResize(sendSize);
-  new ResizeObserver(() => { if (!el.hidden) fit.fit(); }).observe(el);
+  term.onResize(() => sendSize());
+  new ResizeObserver(() => fitTerminal(entry)).observe(el);
+  // A scroll back in this terminal: the other windows scroll the same shell back as many lines.
+  let scrollQueued = false;
+  term.onScroll(() => {
+    if (Date.now() < (following["term:" + id] || 0) || scrollQueued) return;
+    scrollQueued = true;
+    requestAnimationFrame(() => {
+      scrollQueued = false;
+      // `events` is declared after the first terminal starts; a scroll before then has no one to tell.
+      try { events.send({ type: "scroll", pane: "term", track: id, lines: Math.round(term.viewportY) }); } catch { /* not connected yet */ }
+    });
+  });
   const entry = { term, fit, ws, el, sendSize };
   ui.terms.set(id, entry);
   return entry;
@@ -450,7 +507,7 @@ function typeInto(id, text) {
 
 function resizeTerminalText() {
   // The text size changes on the live terminal. Making a new one would replay old output at a new width, which garbles it.
-  for (const { term, fit, el } of ui.terms.values()) { term.options.fontSize = ui.size; if (!el.hidden) fit.fit(); }
+  for (const entry of ui.terms.values()) { entry.term.options.fontSize = ui.size; fitTerminal(entry); }
 }
 
 function restartTerminals() {
@@ -494,6 +551,7 @@ function wireControls() {
   $("slide-first").onclick = () => showSlide(0);
   $("slide-next").onclick = () => showSlide(ui.state.slide + 1);
   for (const button of $("layouts").querySelectorAll("button")) button.onclick = () => show({ layout: button.dataset.layout });
+  $("shell-toggle").onclick = () => show({ shell: !ui.shell });
   for (const view of ["file", "diff", "edits"]) $("view-" + view).onclick = () => ui.open && show({ path: ui.open, view });
   $("theme").onclick = () => { ui.theme = ui.theme === "dark" ? "light" : "dark"; applyAppearance(); restartTerminals(); };
   $("larger").onclick = () => { ui.size = Math.min(ui.size + 1, 26); applyAppearance(); resizeTerminalText(); };
@@ -506,6 +564,18 @@ function wireControls() {
   };
   document.addEventListener("keydown", (event) => {
     if (event.metaKey || event.ctrlKey) return;
+    // Alt with Enter, 1, 2, 3, ` or N: the toggles. Read by the key's place, so that a Mac's Option characters do not
+    // get in the way, and with Alt, so that they work even when a terminal has the keys.
+    if (event.altKey && !event.shiftKey) {
+      const layouts = { Digit1: "slides", Digit2: "split", Digit3: "code" };
+      let used = true;
+      if (event.code === "Enter") show({ shell: !ui.shell });
+      else if (layouts[event.code]) { if (ui.state?.has_slides) show({ layout: layouts[event.code] }); }
+      else if (event.code === "Backquote") { if (ui.state?.has_slides) show({ layout: ui.layout === "slides" ? "code" : "slides" }); }
+      else if (event.code === "KeyN") { if (!$("notes-toggle").hidden) $("notes-toggle").click(); }
+      else used = false;
+      if (used) { event.preventDefault(); event.stopPropagation(); return; }
+    }
     // Shift+Up and Shift+Down: the first and the last slide of the step. Other keys with Shift are left alone.
     if (event.shiftKey) {
       const target = event.target instanceof Element ? event.target : document.body;
@@ -658,7 +728,7 @@ function drawTools() {
   $("cues-toggle").setAttribute("aria-pressed", String(!cuesHidden.get()));
   document.body.classList.toggle("hide-cues", cuesHidden.get());
   $("run-on-click").checked = settings.get("run-on-click", false);
-  for (const entry of ui.terms.values()) if (!entry.el.hidden) requestAnimationFrame(() => entry.fit.fit());
+  for (const entry of ui.terms.values()) requestAnimationFrame(() => fitTerminal(entry));
 }
 
 async function makePdf() {
@@ -821,6 +891,9 @@ await init();
 await refresh();
 selectTab(ui.state.track || "replay");
 if (ui.state.path) { await openFile(ui.state.path, ui.state.view); restorePlaces(ui.state.restore); }
+// For tests that drive the page: what each terminal shows, read only.
+window.timewalkTerminals = () => [...ui.terms].map(([id, { term, el }]) => ({ id, shown: !el.hidden, rows: term.rows, cols: term.cols,
+  fontSize: term.options.fontSize, scrolledBack: Math.round(term.viewportY) }));
 const events = onEvents(async (event) => {
   if (event.type === "moved") { hideNotice(); await refresh(); }
   if (event.type === "refused") { showNotice("timewalk refused this window. If it restarted, open the new address that it printed.", true); return; }
@@ -838,8 +911,10 @@ const events = onEvents(async (event) => {
   if (event.type === "slide") { ui.state = await api("/api/state"); drawSlides(); }
   if (event.type === "notes" && !ui.editing) { await loadNotes(); drawNotes(); drawBand(); }
   if (event.type === "clock") { ui.state = await api("/api/state"); ui.skew = ui.state.now - Date.now() / 1000; drawBand(); }
+  if (event.type === "size") { followSize(event); return; }
   if (event.type === "show") {
     if (event.layout && event.layout !== ui.layout) applyLayout(event.layout);
+    if (typeof event.shell === "boolean") applyShell(event.shell);
     if (event.path) await openFile(event.path, event.view || "file");
     // The window that asked gets the keys: a tab it clicked, or a command it typed from the notes.
     if (event.track) selectTab(event.track, event.from === PAGE);
@@ -865,6 +940,13 @@ for (const [pane, id] of Object.entries(SCROLLERS)) {
 }
 
 function followScroll(event) {
+  if (event.pane === "term") {
+    const entry = ui.terms.get(event.track);
+    if (!entry) return;
+    following["term:" + event.track] = Date.now() + 200;
+    entry.term.scrollLines(Math.round(entry.term.viewportY) - event.lines);
+    return;
+  }
   const el = $(SCROLLERS[event.pane] || "");
   if (!el) return;
   following[event.pane] = Date.now() + 200;

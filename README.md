@@ -49,6 +49,7 @@ the audience sees. Keep the notes file outside the repository. timewalk refuses 
 - **Terminals** at the step, for long runs, in your own repository, and with Claude Code.
 - **Notes**, the script of each step, with planned times and commands. A click types a command into its
   terminal. You can edit the notes on the page.
+- **Shell.** One button, or Alt+Enter, gives the terminals the space of the slides and the files, in every window.
 - **Keyboard.** Left and Right change the step, and Up and Down change the slide.
 
 ## What it will not do to your repository

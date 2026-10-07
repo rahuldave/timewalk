@@ -93,7 +93,7 @@ code, pre, .mono { font-family: var(--mono); }
 #step-list button.here { background: var(--accent); border-color: var(--accent); color: var(--surface); font-weight: 600; }
 .where { display: flex; align-items: baseline; gap: 10px; min-width: 0; flex: 1; overflow: hidden; }
 /* The window for the class leaves out what only the presenter needs. */
-body.room #pdf, body.room #mode, body.room #notes-edit { display: none !important; }
+body.room #pdf, body.room #mode, body.room #notes-edit, body.room #shell-toggle { display: none !important; }
 .step-name { font-family: var(--mono); font-weight: 600; white-space: nowrap; }
 .step-subject { color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tools { display: flex; gap: 4px; flex: none; align-items: center; }
@@ -325,3 +325,13 @@ body.no-slides-here .layouts button { opacity: 0.45; }
 .slide-md .slide-commands { align-items: flex-start; margin: 0.3em 0 0.8em; }
 .slide-md .slide-commands button { font-size: calc(var(--size) * 1.25); max-width: 100%; }
 .slide-md .slide-commands .track { margin-left: 1.5em; }
+
+/* The Shell toggle: the terminals take the space of the slides, the file list and the reader. The notes stay. */
+#shell-toggle[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); }
+body.shell-mode .panes, body.shell-mode .divider { display: none; }
+body.shell-mode .term-pane { flex: 1; height: auto; min-height: 0; }
+body.with-notes.shell-mode { grid-template-rows: auto auto auto auto 0 0 minmax(0, 1fr); }
+@media (max-width: 1000px) {
+  body.with-notes.shell-mode { grid-template-rows: auto auto auto auto 0 0 minmax(0, 1fr) var(--notes-height, 30vh); }
+}
+body.shell-mode .layouts { opacity: 0.55; }   /* Shell covers the layout; the layout comes back when Shell is off */
