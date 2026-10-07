@@ -19,13 +19,21 @@ export function socket(path) {
   return new WebSocket(`${scheme}://${location.host}${path}?t=${encodeURIComponent(token)}`);
 }
 
-/** Listen for server events (a move, a request to show something), reconnecting if the server restarts. */
+/** Listen for server events (a move, a request to show something), reconnecting if the connection drops.
+ *  After a reconnect the handler gets {type: "reconnected"}: what happened meanwhile was missed, so look again.
+ *  A refusal (code 4403) means timewalk restarted with a new token: the handler gets {type: "refused"}. */
 export function onEvents(handler) {
   let ws;
+  let lost = false;
   const connect = () => {
     ws = socket("/ws/events");
+    ws.onopen = () => { if (lost) { lost = false; handler({ type: "reconnected" }); } };
     ws.onmessage = (e) => handler(JSON.parse(e.data));
-    ws.onclose = () => setTimeout(connect, 1500);
+    ws.onclose = (event) => {
+      lost = true;
+      if (event.code === 4403) { handler({ type: "refused" }); return; }
+      setTimeout(connect, 1500);
+    };
   };
   connect();
   // send: tell the other windows something, such as a scroll, when the connection is open

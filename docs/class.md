@@ -78,8 +78,14 @@ so. Drag that window to the projector, and click **Full screen** in it.
 ## If a window stops answering
 
 In a long class, Chrome can stop answering in a window, and say that the page is unresponsive. It happens
-most in the window on the projector, in full screen. A projector that goes blank and comes back can come
-first, for example because of a loose cable or adapter. The cause is not known yet.
+most in the window on the projector, in full screen. Two causes are known:
+
+- **A zoomed window.** Before version 1.0.14, a terminal in a zoomed window, or on a scaled screen, made a
+  new picture of itself on every frame. That kept the window and the graphics card busy. Version 1.0.14 fixes it. To make text larger, use **A+**, which never had the problem.
+- **A projector that goes blank and comes back.** In two classes, the Mac log showed the external screen
+  connecting and disconnecting hundreds of times. Each time, the Mac waited for every open app to answer,
+  so each blank lasted seconds. The Mac had run for seven weeks without a restart. A restart stopped it.
+  Before a class, restart the Mac, quit the apps that you do not need, and keep a second cable or adapter.
 
 If a window stops answering, do these steps:
 
@@ -90,6 +96,10 @@ If a window stops answering, do these steps:
 
 Nothing is lost. The server keeps the step, the slide, the layout and the shells. The window comes back at
 the same place, with the recent output of each shell. A command that runs in a shell keeps running.
+
+If the network drops for a moment, each window connects again by itself, and its terminals too. If you
+stop timewalk and start it again, it prints a new address, and the old windows say so. Open the new
+address. timewalk can start again at once on the same port.
 
 A shell that prints very fast, for example a progress bar, keeps each window busy, even when its tab is
 not in front. If the windows become slow, stop the run, or let it print less often.

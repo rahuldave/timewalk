@@ -5,11 +5,11 @@
 Run timewalk from GitHub with uv, with no clone and no install:
 
 ```
-uvx --from git+https://github.com/rahuldave/timewalk@v1.0.13 timewalk [repo] [options]
-uvx --from git+https://github.com/rahuldave/timewalk@v1.0.13 timewalk-pdf [options]
+uvx --from git+https://github.com/rahuldave/timewalk@v1.0.14 timewalk [repo] [options]
+uvx --from git+https://github.com/rahuldave/timewalk@v1.0.14 timewalk-pdf [options]
 ```
 
-Or install the two commands once with `uv tool install git+https://github.com/rahuldave/timewalk@v1.0.13`. In a clone of timewalk, run them with
+Or install the two commands once with `uv tool install git+https://github.com/rahuldave/timewalk@v1.0.14`. In a clone of timewalk, run them with
 `uv run timewalk` and `uv run timewalk-pdf`.
 
 ## timewalk
@@ -31,7 +31,7 @@ timewalk [repo] [options]
 | `--clock` | Show the clock band on the page, in every window. The band shows the clock, the planned times and the next step. Off by default |
 | `--discard-edits` | A move drops edits to tracked files, and does not ask or stash them first. Use it for a replay copy that you throw away. timewalk refuses it with `--in-place`. See [Live edits](edits.md#with---discard-edits) |
 | `--assistant CMD` | The command the Claude tab starts. Default: `claude`. `''` for a plain shell |
-| `--port N` | The port to listen on. Default: 8765. If the port is in use, timewalk stops and says so. Then give another port |
+| `--port N` | The port to listen on. Default: 8765. If another program listens on the port, timewalk stops and says so. Then give another port. A timewalk that you just stopped does not block the port |
 | `--no-open` | Do not open the browser |
 
 ## timewalk-pdf

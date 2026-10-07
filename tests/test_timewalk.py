@@ -350,6 +350,32 @@ def test_an_untracked_file_is_never_overwritten(repo: timewalk.Repo) -> None:
     assert (repo.work / "justfile").read_text() == "mine\n"
 
 
+
+def test_a_move_refused_for_an_untracked_file_leaves_the_edits_in_place(repo: timewalk.Repo) -> None:
+    "The untracked file in the way is found before the edits are stashed, so a refused move does not hide the edits."
+    (repo.work / "justfile").write_text("mine\n")
+    (repo.work / "README.md").write_text("an edit\n")
+    with pytest.raises(timewalk.GitError, match="will not be overwritten"):
+        repo.move(1, set_aside=True)
+    assert (repo.work / "README.md").read_text() == "an edit\n" and run_git(repo.work, "stash", "list") == ""
+
+
+def test_saving_a_section_skips_headings_inside_fenced_code() -> None:
+    "A line that starts with ## inside fenced code is code: it neither ends a section nor starts one."
+    text = "## step-01 One\n\n```\n## step-02 in code\n```\n\nafter\n\n## step-02 Two\n\nkept\n"
+    out = timewalk.replace_section(text, "step-01", "new\n\n```\n## inside\n```")
+    assert out == "## step-01 One\nnew\n\n```\n## inside\n```\n\n## step-02 Two\n\nkept\n"
+    assert timewalk.parse_notes(out)["step-02"]["text"] == "kept"
+    assert timewalk.replace_section(text, "step-02", "two") == "## step-01 One\n\n```\n## step-02 in code\n```\n\nafter\n\n## step-02 Two\ntwo\n"
+
+
+def test_a_fence_before_the_first_step_is_read_as_save_reads_it() -> None:
+    "A fenced example of a heading before the first step is code for the parser too."
+    text = "# Notes\n\n```\n## step-01 an example\n```\n\n## step-01 Real\none\n\n## step-02 Two\ntwo\n"
+    notes = timewalk.parse_notes(text)
+    assert notes["step-01"]["text"] == "one" and notes["step-02"]["text"] == "two"
+
+
 # ---------- recipes ----------
 
 
@@ -549,10 +575,13 @@ def test_requests_to_another_host_are_refused(served: TestClient) -> None:
 
 
 def test_sockets_need_the_token(served: TestClient) -> None:
-    "A terminal or event socket without the token is closed before it is accepted."
+    "A terminal or event socket without the token is closed at once with code 4403, which a page can read; no shell starts."
+    from starlette.websockets import WebSocketDisconnect
+
     for path in ("/ws/term/replay", "/ws/events", "/ws/term/replay?t=wrong"):
-        with pytest.raises(Exception), served.websocket_connect(path):  # noqa: B017 - any refusal will do
-            pass
+        with served.websocket_connect(path) as socket, pytest.raises(WebSocketDisconnect) as refused:
+            socket.receive_text()
+        assert refused.value.code == 4403
 
 
 def test_a_page_load_lets_its_assets_through(served: TestClient) -> None:

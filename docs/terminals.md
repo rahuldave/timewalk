@@ -16,7 +16,7 @@ folder where the shell starts.
 
 A shell starts the first time you open its tab. The shell continues to run when you move between
 steps and when you reload the page. When a page connects again, it gets the recent output of the shell
-again.
+again. If the connection drops, the page connects again by itself.
 
 Every window on the page shows the same shells, and not copies of them. For example, you can open one
 window on the projector and one on your own screen. When you type in either window, the keys go to the one

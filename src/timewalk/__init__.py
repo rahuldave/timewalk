@@ -190,16 +190,17 @@ class Repo:
         if self.discard:
             git(self.work, "checkout", "--force", "--detach", "--quiet", target.sha)
             return
+        # First the untracked files in the way, so that a move that cannot happen does not stash the edits away.
+        untracked = set(git(self.work, "ls-files", "--others").splitlines())
+        in_the_way = sorted(untracked & set(git(self.work, "ls-tree", "-r", "--name-only", target.sha).splitlines()))
+        if in_the_way:
+            raise GitError("these untracked files exist where the step has a file, and will not be overwritten: " + ", ".join(in_the_way[:5]))
         if self.edits():
             if not set_aside:
                 raise GitError("uncommitted edits")
             now = self.current()
             label = self.steps[now].name if now is not None else "an unknown step"
             git(self.work, "stash", "push", "--message", f"timewalk: edits made at {label}")
-        untracked = set(git(self.work, "ls-files", "--others").splitlines())
-        in_the_way = sorted(untracked & set(git(self.work, "ls-tree", "-r", "--name-only", target.sha).splitlines()))
-        if in_the_way:
-            raise GitError("these untracked files exist where the step has a file, and will not be overwritten: " + ", ".join(in_the_way[:5]))
         git(self.work, "checkout", "--detach", "--quiet", target.sha)
 
     def changes(
@@ -322,6 +323,8 @@ def parse_notes(
                 current["title"] = title
             continue
         if current is None:
+            if mark:  # a fence before the first step counts too, as replace_section counts it
+                fence = mark.group(1)[0] if fence is None else (None if mark.group(1)[0] == fence else fence)
             continue
         current["raw"].append(line)
         planned = re.match(r"^time:\s*(\d+):(\d\d)\s*$", line.strip()) if fence is None else None
@@ -356,11 +359,19 @@ def replace_section(
 ) -> str:  # The notes file with that section replaced, or added at the end if the step had none
     "Put a new body under one step's `## step` heading, leaving every other line of the file as it was."
     lines = text.split("\n")
-    start = next((i for i, line in enumerate(lines) if re.match(rf"^##\s+{re.escape(step)}(\s|$)", line)), None)
+    fenced = set()  # lines inside fenced code: a "## " there is code, not a heading, as parse_notes reads it
+    fence: str | None = None
+    for i, line in enumerate(lines):
+        mark = re.match(r"^\s*(```+|~~~+)", line)
+        if fence is not None or mark:
+            fenced.add(i)
+        if mark:
+            fence = mark.group(1)[0] if fence is None else (None if mark.group(1)[0] == fence else fence)
+    start = next((i for i, line in enumerate(lines) if i not in fenced and re.match(rf"^##\s+{re.escape(step)}(\s|$)", line)), None)
     new = body.strip("\n").split("\n") if body.strip() else []
     if start is None:
         return text.rstrip("\n") + f"\n\n## {step}\n\n" + "\n".join(new) + "\n"
-    end = next((i for i in range(start + 1, len(lines)) if re.match(r"^##\s", lines[i])), len(lines))
+    end = next((i for i in range(start + 1, len(lines)) if i not in fenced and re.match(r"^##\s", lines[i])), len(lines))
     tail = lines[end:]
     return "\n".join(lines[:start + 1] + new + ([""] if tail else []) + tail).rstrip("\n") + "\n"
 
@@ -897,11 +908,16 @@ def make_app(
         await hub.tell({"type": "clock"})
         return {"clock": clock["started"], "now": time.time()}
 
+    async def refuse(socket: WebSocket) -> None:
+        "Refuse a socket with code 4403, which a page can read: a socket closed before its handshake only says it failed."
+        await socket.accept()
+        await socket.close(code=4403)
+
     async def terminal(socket: WebSocket) -> None:
         "Connect a page to one of the shells."
         term = terminal_for(socket.path_params["name"]) if allowed(socket) else None
         if term is None:
-            await socket.close(code=4403)
+            await refuse(socket)
             return
         await socket.accept()
         term.start()
@@ -923,7 +939,7 @@ def make_app(
     async def events(socket: WebSocket) -> None:
         "Keep a window informed of moves, and of what another window asked to show."
         if not allowed(socket):
-            await socket.close(code=4403)
+            await refuse(socket)
             return
         await socket.accept()
         hub.pages.add(socket)
@@ -1018,8 +1034,12 @@ def main() -> None:
                          "outside it: a move would change them, or throw your edits away.")
     local = args.host in ("127.0.0.1", "localhost", "::1")
     with socket.socket(socket.AF_INET6 if ":" in args.host else socket.AF_INET) as probe:
+        # As uvicorn binds: the connections of a timewalk just stopped linger a minute, and must not stop a restart.
+        # A port that another program listens on is still refused.
+        probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
             probe.bind((args.host, args.port))
+            probe.listen()
         except OSError as exc:
             raise SystemExit(f"timewalk: cannot listen on {args.host} port {args.port} ({exc.strerror}). If another timewalk "
                              "uses the port, stop it, or pass --port with another number.") from None

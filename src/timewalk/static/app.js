@@ -405,6 +405,12 @@ function startTerminal(id) {
   const fit = new FitAddon();
   term.loadAddon(fit);
   term.open(el);
+  // At a fractional device pixel ratio (a zoomed window, a scaled screen), ghostty-web's renderer never finds its canvas
+  // the right size, and makes a new canvas on every frame. A whole ratio, rounded up, stops that and keeps text sharp.
+  // It uses an internal of ghostty-web: check it after an update.
+  if (term.renderer && typeof term.renderer.devicePixelRatio === "number" && !Number.isInteger(term.renderer.devicePixelRatio)) {
+    term.renderer.devicePixelRatio = Math.ceil(term.renderer.devicePixelRatio);
+  }
   const ws = socket("/ws/term/" + id);
   ws.binaryType = "arraybuffer";
   // A shell has one size. The window you last typed in sets it; a window that only shows the shell leaves it alone,
@@ -420,7 +426,12 @@ function startTerminal(id) {
   };
   let opened = false;
   setTimeout(() => { opened = true; }, 1500);   // the replay of earlier output on connecting is not news
-  ws.onclose = () => term.write("\r\n[disconnected from timewalk]\r\n");
+  ws.onclose = (event) => {
+    entry.lost = true;
+    if (event.code === 4403) { term.write("\r\n[timewalk refused this window: if it restarted, open the new address it printed]\r\n"); return; }
+    term.write("\r\n[disconnected from timewalk; trying again]\r\n");
+    setTimeout(() => { if (ui.terms.get(id) === entry) restartTerminals(); }, 2000);   // the server may still be there
+  };
   term.onData((data) => ws.readyState === WebSocket.OPEN && ws.send(JSON.stringify({ type: "input", data })));
   term.onResize(sendSize);
   new ResizeObserver(() => { if (!el.hidden) fit.fit(); }).observe(el);
@@ -812,6 +823,12 @@ selectTab(ui.state.track || "replay");
 if (ui.state.path) { await openFile(ui.state.path, ui.state.view); restorePlaces(ui.state.restore); }
 const events = onEvents(async (event) => {
   if (event.type === "moved") { hideNotice(); await refresh(); }
+  if (event.type === "refused") { showNotice("timewalk refused this window. If it restarted, open the new address that it printed.", true); return; }
+  if (event.type === "reconnected") {
+    // The server came back, or the network did: look again, and open the terminals whose sockets closed.
+    if ([...ui.terms.values()].some((entry) => entry.lost)) restartTerminals();
+    await refresh();
+  }
   if (event.type === "edits") {
     await loadTree();
     if (ui.open) await openFile(ui.open, ui.view, false);

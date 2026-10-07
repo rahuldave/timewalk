@@ -94,7 +94,7 @@ Rahul set these rules. Each rule has tests. Do not weaken them.
 timewalk is a package, `src/timewalk`, built with hatchling from `pyproject.toml`. It gives two commands,
 `timewalk` and `timewalk-pdf`. Its dependencies are Starlette, uvicorn, websockets, Playwright and pypdf;
 the tests use the `dev` group. In a clone, run `uv run timewalk`. Users run it from GitHub with
-`uvx --from git+https://github.com/rahuldave/timewalk@v1.0.13 timewalk`, so it is not on PyPI, by Rahul's choice. When a change must reach users,
+`uvx --from git+https://github.com/rahuldave/timewalk@v1.0.14 timewalk`, so it is not on PyPI, by Rahul's choice. When a change must reach users,
 raise the version in `pyproject.toml`, tag the commit `vX.Y.Z`, push the tag, and update the pin in the
 docs and in the kits.
 
@@ -168,6 +168,12 @@ Rahul expects every change to the page to ship as a release, with its docs, in o
 
 ## Pitfalls met before
 
+- **`app.js` rounds up `term.renderer.devicePixelRatio`, an internal of ghostty-web.** At a fractional ratio (a
+  zoomed window, a scaled screen) the renderer made a new canvas on every frame, in every terminal of every
+  window. After an update of the vendored ghostty-web, check that the canvas is not resized every frame at a
+  ratio of 1.25.
+- **The port probe in `main()` sets `SO_REUSEADDR`, as uvicorn does.** Without it, a timewalk just stopped
+  blocked a restart on the same port for a minute, through connections in TIME_WAIT.
 - **Run the checks so that a failure stops you.** `just lint | tail -1` and `just style > /dev/null && ...; next`
   let failures through, and two releases went out with a lint error or a doc that failed the guide. Run
   `just test`, `uvx ruff check .`, `just style` and the link check as separate commands, or under
