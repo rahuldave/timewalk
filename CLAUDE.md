@@ -187,6 +187,9 @@ Rahul expects every change to the page to ship as a release, with its docs, in o
   after it, or be more specific (the slide command buttons were once 24px for this reason).
 - **Per window or per browser:** `sessionStorage` is per tab (Notes and Cues toggles), `localStorage` is per
   browser (theme, size, pane widths, run on click). The docs must say which.
-- **What the server shares:** step, slide, layout, open file and view, tab, clock (`showing`); a per-step
-  memory of slide and scroll (`memory`); scrolls are relayed between windows over `/ws/events`. A shell gets
+- **`app.js` uses two internals of ghostty-web** to stop a hidden terminal from drawing: `startRenderLoop()` and
+  `animationFrameId`. `setDrawing` checks that they exist, and does nothing if they do not. After an update of
+  the vendored ghostty-web, check that a hidden tab still stops drawing (`drawing` in `window.timewalkTerminals()`).
+- **What the server shares:** step, slide, layout, Shell, open file and view, tab, clock (`showing`); a per-step
+  memory of slide and scroll (`memory`); scrolls (as fractions, and a terminal's as lines) are relayed between windows over `/ws/events`. A shell gets
   an Enter after a move only when it is idle at an empty line (`Terminal.refresh_prompt`).

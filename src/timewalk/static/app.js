@@ -433,6 +433,7 @@ function selectTab(id, focus = false) {
   drawTabs();
   const entry = ui.terms.get(id) || startTerminal(id);
   for (const [other, { el }] of ui.terms) el.hidden = other !== id;
+  drawOnlyWhatShows();
   drawRecipes();
   if (focus) ui.keysToTerminal = true;
   requestAnimationFrame(() => { fitTerminal(entry); if (focus) { entry.term.focus(); entry.sendSize(true); } });
@@ -508,6 +509,31 @@ function typeInto(id, text) {
 function resizeTerminalText() {
   // The text size changes on the live terminal. Making a new one would replay old output at a new width, which garbles it.
   for (const entry of ui.terms.values()) { entry.term.options.fontSize = ui.size; fitTerminal(entry); }
+}
+
+// ---------- drawing only what shows ----------
+// ghostty-web draws every open terminal on every frame, shown or not. A terminal whose tab is not in front stops
+// drawing, and so does every terminal while the window is hidden. Its output is still read; it draws again, whole,
+// the moment it shows. This reaches into ghostty-web's render loop, `startRenderLoop` and `animationFrameId`, which it
+// does not publish. If a later version renames them, the terminals keep drawing as they did before.
+
+function setDrawing(entry, on) {
+  const term = entry.term;
+  if (typeof term.startRenderLoop !== "function") return;
+  if (!on && !entry.paused) {
+    cancelAnimationFrame(term.animationFrameId);
+    term.animationFrameId = undefined;
+    entry.paused = true;
+  } else if (on && entry.paused) {
+    entry.paused = false;
+    try { term.renderer.render(term.wasmTerm, true, term.viewportY, term, term.scrollbarOpacity); } catch { /* the loop draws it next frame */ }
+    term.startRenderLoop();
+  }
+}
+
+function drawOnlyWhatShows() {
+  const visible = document.visibilityState === "visible";
+  for (const entry of ui.terms.values()) setDrawing(entry, visible && !entry.el.hidden);
 }
 
 function restartTerminals() {
@@ -884,6 +910,7 @@ $("notes-edit").onclick = startEditing;
 $("notes-cancel").onclick = stopEditing;
 $("notes-save").onclick = saveNotes;
 setInterval(drawBand, 1000);
+document.addEventListener("visibilitychange", drawOnlyWhatShows);
 applyAppearance();
 guardKeys();
 wireControls();
@@ -892,8 +919,13 @@ await refresh();
 selectTab(ui.state.track || "replay");
 if (ui.state.path) { await openFile(ui.state.path, ui.state.view); restorePlaces(ui.state.restore); }
 // For tests that drive the page: what each terminal shows, read only.
-window.timewalkTerminals = () => [...ui.terms].map(([id, { term, el }]) => ({ id, shown: !el.hidden, rows: term.rows, cols: term.cols,
-  fontSize: term.options.fontSize, scrolledBack: Math.round(term.viewportY) }));
+window.timewalkTerminals = () => [...ui.terms].map(([id, { term, el, paused }]) => {
+  const lines = term.buffer?.active;
+  const from = lines ? Math.max(0, lines.length - 40) : 0;
+  const tail = lines ? Array.from({ length: lines.length - from }, (_, i) => lines.getLine(from + i)?.translateToString(true) ?? "").join("\n") : "";
+  return { id, shown: !el.hidden, drawing: !paused, rows: term.rows, cols: term.cols, fontSize: term.options.fontSize,
+           scrolledBack: Math.round(term.viewportY), tail };
+});
 const events = onEvents(async (event) => {
   if (event.type === "moved") { hideNotice(); await refresh(); }
   if (event.type === "refused") { showNotice("timewalk refused this window. If it restarted, open the new address that it printed.", true); return; }

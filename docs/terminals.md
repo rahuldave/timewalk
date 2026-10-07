@@ -23,7 +23,13 @@ window on the projector and one on your own screen. When you type in either wind
 shell, and every window shows its output. The windows also share the tab in front.
 
 A shell has one size. The window that you last typed in sets it. Another window draws the shell in the
-space that it has, so a long line can wrap at a different place there.
+space that it has, so a long line can wrap at a different place there. In Shell mode, the window for the class
+sets the size. See [The page](page.md#shell).
+
+Only the terminal in front draws. A terminal in a tab that is not in front reads all its output, but does not
+draw it. When the browser hides a window, or the screen sleeps, no terminal in that window draws. When the tab or
+the window shows again, the terminal draws everything at once. A fast run in a hidden tab, for example a progress
+bar, then takes less of the computer.
 
 ## At this step and Main
 
