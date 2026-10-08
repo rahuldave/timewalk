@@ -13,7 +13,8 @@ keeps the shared state, and it sends each change to every window.
 
 | Shared by every window | Kept by each window | Kept by each browser |
 |---|---|---|
-| The step | If the notes show | The theme, dark or light |
+| The step, and the walk | If the notes show | The theme, dark or light |
+| In a tutorial, the mode and the moves marked done | | |
 | The slide | If the cues show | The text size |
 | Slides, Both or Code, and Shell | Which terminal has the keyboard | The height of the terminals |
 | The open file, and its view | | If a click on a command runs it |
@@ -60,10 +61,20 @@ edits away. See [Live edits](edits.md#with---discard-edits).
 
 If you start timewalk with `--toc`, a menu at the left of the bar lists the walks of the class. A walk is
 one path through the history, with its own notes and slides. Choose a walk, and every window changes to
-its steps. The Room window shows the title of the walk in place of the menu. See [Several walks](walks.md).
+its steps. See [Several walks](walks.md).
+
+- **The menu** puts the walks in two groups, **Narratives** and **Tutorials**, when the class has both
+  kinds. A narrative goes from tag to tag. A tutorial also stops at the small commits between the tags.
+- **A label** beside the menu says the kind of the walk on show.
+- **The switch Do or Watch** shows beside the label in a tutorial, at every step. It changes the mode of
+  the tutorial in every window. See [Do mode and watch mode](walks.md#do-mode-and-watch-mode).
+- **The Room window** shows the title of the walk in place of the menu, with its kind. For a tutorial, it
+  also shows the mode, for example "(tutorial, do mode)".
 
 In a tutorial walk, a step can have moves, which are the small commits before its tag. A row of moves then
-shows under the bar. See [Tutorial walks](walks.md#tutorial-walks).
+shows under the bar, in every window. It has the arrows ◀ and ▶, and the buttons **Start**, **1**, **2**
+and so on. In do mode, the arrows mark moves done. In watch mode, they check out the commit of the next or
+the previous move. See [Moves on the page](walks.md#moves-on-the-page).
 
 ## The buttons on the right of the bar
 
@@ -151,7 +162,7 @@ to three views:
 | View | Shows |
 |---|---|
 | **File** | The file as it is on the disk now |
-| **Changes in this step** | What the commit of the step changed in the file, against the step before |
+| **Changes in this step** | What the commit of the step changed in the file, against the step before. In a tutorial, **Changes in this move** shows what the move on show changed. A file of a `files:` line in do mode shows **Changes in step-02.1**, the change of that move |
 | **Edits since the step** | The edits to the file since the commit of the step. The view shows only when the file has edits |
 
 You cannot edit a file in the reader. The reader shows new edits within about a second. See
@@ -208,7 +219,7 @@ Without a window for the class, Shell mode keeps that rule too.
 | Up, Down | The previous or next slide, when the step has more than one. On a document, or with one slide, they scroll |
 | Alt with an arrow | Moves the step or the slide, from anywhere, a terminal included |
 | Shift+Up, Shift+Down | The first or the last slide of the step |
-| Shift+Right, Shift+Left | In a tutorial: the next or the previous move. In a terminal, add Alt |
+| Shift+Right, Shift+Left | In a tutorial, do mode: marks the move done, or not done. Watch mode: checks out the next or the previous move. In a terminal, add Alt |
 | Home, End | The top or the bottom of the slide, the file or the notes under the mouse |
 | Alt+Enter | **Shell** on or off |
 | Alt+1, Alt+2, Alt+3 | **Slides**, **Both**, **Code** |

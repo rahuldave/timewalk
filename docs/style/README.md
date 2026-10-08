@@ -29,6 +29,14 @@ Keep the text of these headings. A link from another page uses each one as an an
 | walks.md | The checks |
 | walks.md | Tutorial walks |
 | walks.md | Slides for moves |
+| walks.md | Do mode and watch mode |
+| walks.md | Moves on the page |
+| walks.md | Anchor commands |
+| walks.md | Draft the notes of the moves |
+| build-walks.md | Commits for a tutorial |
+| build-walks.md | Moves with jj |
+| authoring.md | How to check a walk |
+| authoring.md | Run the commands of a walk |
 | walks.md | The table of contents |
 | steps.md | How to change an earlier step |
 | steps.md | Where the class material goes |
@@ -46,12 +54,14 @@ only that page could not know it.
 | timewalk | The tool |
 | step | A point in the history. By default, a tag that matches `step-*` |
 | tag, commit, branch, HEAD | Git terms. Define them where a page needs them |
-| worktree | A second working folder attached to the same git repository |
+| worktree | A second working folder attached to the same git repository. Older versions made the replay copy as one |
+| clone | A repository of its own, made from another one with `git clone` |
 | stash | Git keeps edits aside, to bring them back later |
 | the page | The one page that timewalk serves, at the address that it prints. Do not write "projector page" or "presenter page" |
 | a window | One browser window on the page, for example a window on the projector or on your own screen. The windows share the step |
 | the presenter | The person who presents. Use "you" when the page speaks to the reader |
-| the replay copy | The second working copy, `<repo>-replay`, which is a worktree |
+| the replay copy | The second working copy, `<repo>-replay`, a clone of your repository on the branch `timewalk/replay` |
+| saved branch | A branch `timewalk/saved/<step or move>` in the replay copy, where a move keeps the commits of a learner |
 | your repository | The repository that you give to timewalk |
 | the class folder | The folder with the notes and the slides |
 | the step bar | The row of step buttons at the top of the page |
@@ -79,7 +89,11 @@ only that page could not know it.
 | the walk menu | The menu at the left of the step bar that changes the walk, with `--toc` |
 | narrative | A walk of tagged steps, with nothing between them |
 | tutorial | A walk of tagged steps and the small commits between them |
-| move | One small commit of a step in a tutorial, named `step-NN.N` |
+| move | One small commit of a step in a tutorial, named `step-NN.k`. Its notes are a `### step-NN.k` section |
+| do mode | The mode of a tutorial where the learner makes each move by hand from the notes, and marks it done. The code does not move |
+| watch mode | The mode of a tutorial where timewalk checks out the commit of each move when asked |
+| anchor command | One of the last commands of a move section. It shows what the move did, and the notes say what it gives |
+| artifact | A file that a step needs and that git does not hold. `just setup` makes it in an ignored folder when it is missing |
 | kit, walk kit | The repository of a walk, for example `bla-walk`: notes, slides, `justfile` and `.gitignore` |
-| `repo/`, `worktree/` | The two folders of a kit that git ignores: the clone of the project, and the replay copy |
+| `repo/`, `worktree/` | The two folders of a kit that git ignores: the clone of the project, and the replay copy. The replay copy keeps the folder name `worktree/`, though it is a clone |
 | class repository | Your own material for a class, for example `bla-class`, kept private |

@@ -39,12 +39,40 @@ main$ git log --oneline
 | `runs$ command` | The same, in the **Runs** tab |
 | `runs2$ command` to `runs9$ command` | The same, in one more Runs tab, which opens the first time a line uses it. Use it for a second long command while the first command still runs |
 | `main$ command` | The same, in the **Main** tab, in your repository |
-| `### step-name.N Title` | In a tutorial walk: starts the notes of one move. See [Several walks](walks.md#tutorial-walks) |
-| `files:` | In a move of a tutorial: the files that the commit of the move added or changed. Each one opens in the reader |
+| `### step-NN.k Title` | In a tutorial walk: starts the section of move `k` of step `NN`, for example `### step-02.1 A test of counting`. Write the sections in the order of the commits. See [Tutorial walks](walks.md#tutorial-walks) |
+| `files:` | In a move section: the files that the commit of the move added or changed. Each one is a button that opens the change of that move in the reader, even before the file exists |
 | other lines | Markdown text to read |
 
 timewalk shows every line of the notes, cues included. If some cues are only for you, remove them from the
 copy of the notes that you give to students.
+
+## The notes of a move
+
+In a tutorial walk, each move of a step has a section of its own, under the `## step` section. A move is
+one small commit between two tags. A move section gives the instructions to make the move by hand, a
+list of what changed, a line `files:`, and commands. `timewalk-notes` drafts the sections from the
+commits. See [Draft the notes of the moves](walks.md#draft-the-notes-of-the-moves).
+
+```markdown
+### step-02.2 A test of an empty text
+
+Make `tests/test_empty.py`, with one test that counts the words of an empty text.
+
+What changed:
+
+- `tests/test_empty.py`: new file, 8 lines; adds `class Empty` and `test_empty`.
+
+files:
+
+$ uv run python -m unittest discover -s tests -q
+
+The new test passes at once.
+```
+
+The last commands of a move section are its anchor commands. The notes column shows them under the label
+"After this move, run:". An anchor command shows what the move did, and the notes say what it gives. Make
+it safe to run again, and keep it from changing tracked files. A test that fails is a good anchor command,
+if the notes say that it fails. See [Anchor commands](walks.md#anchor-commands).
 
 ## The notes column
 

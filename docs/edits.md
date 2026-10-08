@@ -47,8 +47,9 @@ Edits belong to the step where you made them. So a move to another step asks fir
 
 - **Stay here** leaves everything as it is.
 - **Set the edits aside and move** runs `git stash` and then moves. The stash keeps the edits aside, with
-  the label of the step, for example `timewalk: edits made at step-02`. To bring the edits back, run
-  `git stash list` and `git stash pop` in a terminal.
+  the label of the step, for example `timewalk: edits made at step-02`. The stash is in the replay copy,
+  and not in your repository. To bring the edits back, run `git stash list` and `git stash pop` in a
+  terminal at the step.
 
 timewalk does not discard edits. Only you can discard them, for example with `git restore .` in a
 terminal.

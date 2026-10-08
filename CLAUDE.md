@@ -60,8 +60,10 @@ outside it. To change the history of the sample, do these steps in order:
 
 Rahul set these rules. Each rule has tests. Do not weaken them.
 
-- **The repository you point at never moves.** timewalk steps in a `<repo>-replay` git worktree.
-  `--in-place` is the only exception.
+- **The repository you point at never moves, and is never written to.** timewalk steps in a `<repo>-replay`
+  clone on the branch `timewalk/replay`. It writes no config, hook, branch, tag or stash in your repository;
+  what a learner does in the copy stays there, and a move keeps a learner's commits on `timewalk/saved/<place>`.
+  A replay worktree made by an older version still works, on a detached HEAD. `--in-place` is the only exception.
 - **timewalk never deletes or overwrites an untracked file.** Run outputs, for example `.venv`,
   `mlflow.db` and `runs/`, must stay through every move. If a later step has a tracked file where an
   untracked file sits, refuse.
@@ -82,18 +84,18 @@ Rahul set these rules. Each rule has tests. Do not weaken them.
 
 | File | What it is |
 |---|---|
-| `src/timewalk/__init__.py` | The whole server, one module: `git()`, `Repo` (steps, worktree, moves, diffs, reads), notes and slides parsers, `Terminal` (a pty), `Hub` (events to pages), `make_app` (Starlette routes) |
-| `src/timewalk/walks.py` | Several walks: `load_toc` reads `toc.toml`, `check` checks notes and slides against the steps, and the command `timewalk-check` |
+| `src/timewalk/__init__.py` | The whole server, one module: `git()`, `Repo` (steps, the replay clone and its fetches, moves, saved branches, diffs, reads), notes and slides parsers, `Terminal` (a pty), `Hub` (events to pages), `make_app` (Starlette routes) |
+| `src/timewalk/walks.py` | Several walks: `load_toc` reads `toc.toml`, `check` checks notes and slides against the steps, and the commands `timewalk-check` and `timewalk-notes` (drafts of a tutorial's `### step-NN.k` sections, from each move's diff) |
 | `src/timewalk/slides_pdf.py` | The command `timewalk-pdf`: the PDF of the slides and, with `--with-notes`, the notes, drawn by Chrome or Edge through Playwright. `--brand DIR` gives it the look of a brand folder (font, colours, cover, dividers); only this command and `print.js` know brands, and the page does not. The **PDF** button calls it through `/api/pdf`, with no brand |
 | `src/timewalk/static/` | `index.html`/`app.js` (the page, at `/`), `print.*` (for the PDF), `common.js`, `app.css` |
 | `src/timewalk/static/vendor/` | ghostty-web, highlight.js, marked, each with its licence. Vendored: do not edit |
 | `tests/test_timewalk.py` | The git layer, notes and slides, the guards of the app, a real terminal |
 | `demo/timewalk-demo` | A git submodule: the sample repository, five tagged steps, at github.com/rahuldave/timewalk-demo. Its replay copy, `demo/timewalk-demo-replay`, is ignored |
-| `docs/` | The site: one Markdown page per topic, `build.py` (the order is its `PAGES` list), `site.css`, `screenshots.py`, `images/`. `_site/` is built and ignored. `.github/workflows/pages.yml` publishes it |
+| `docs/` | The site: one Markdown page per topic (`authoring.md` lists what a narrative and a tutorial need, for the skills that build classes), `build.py` (the order is its `PAGES` list), `site.css`, `screenshots.py`, `images/`. `_site/` is built and ignored. `.github/workflows/pages.yml` publishes it |
 | `demo/notes.md`, `demo/slides/`, `demo/toc.toml`, `demo/walks/` | The notes and slides of the demo, and a second walk. They stay here, outside the sample, as in a class kit |
 
-timewalk is a package, `src/timewalk`, built with hatchling from `pyproject.toml`. It gives three commands,
-`timewalk`, `timewalk-pdf` and `timewalk-check`. Its dependencies are Starlette, uvicorn, websockets, Playwright and pypdf;
+timewalk is a package, `src/timewalk`, built with hatchling from `pyproject.toml`. It gives four commands,
+`timewalk`, `timewalk-pdf`, `timewalk-check` and `timewalk-notes`. Its dependencies are Starlette, uvicorn, websockets, Playwright and pypdf;
 the tests use the `dev` group. In a clone, run `uv run timewalk`. Users run it from GitHub with
 `uvx --from git+https://github.com/rahuldave/timewalk@v1.0.14 timewalk`, so it is not on PyPI, by Rahul's choice. When a change must reach users,
 raise the version in `pyproject.toml`, tag the commit `vX.Y.Z`, push the tag, and update the pin in the
@@ -194,7 +196,8 @@ Rahul expects every change to the page to ship as a release, with its docs, in o
   timewalk-test's `test_drawing.py`, which checks both.
 - **ghostty-web's `fit.fit()` skips a size equal to the last one it fitted**, though a Room size may have come
   between. `fitTerminal` compares `proposeDimensions()` with the terminal's real size instead.
-- **What the server shares:** walk, step and move, slide, layout, Shell, open file and view, tab, clock (`showing`); a per-step
+- **What the server shares:** walk, step and move, slide, layout, Shell, open file and view, tab, clock, and in a
+  tutorial the mode (`do` or `watch`) and the count of moves marked done (`showing`); a per-step
   memory of slide and scroll (`memory`); scrolls (as fractions, and a terminal's as lines) are relayed between windows over `/ws/events`. In Shell mode
   each shell keeps the Room's size (`Terminal.room_size`), and a window that asks for another is told it again. A shell gets
   an Enter after a move only when it is idle at an empty line (`Terminal.refresh_prompt`).

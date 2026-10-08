@@ -157,7 +157,8 @@ A student saves two kinds of work, in two places.
 
 The terminals **At this step** and **Runs** work in `worktree/`, the replay copy. The kit starts timewalk
 with `--discard-edits`, so a move throws away the edits there. Use those terminals to run the step, and not to
-keep work.
+keep work. A commit made there stays in the replay copy, on a saved branch. See
+[The replay copy](replay.md#commits-that-a-learner-makes).
 
 ## Keep the kit up to date
 

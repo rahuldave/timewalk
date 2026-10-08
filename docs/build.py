@@ -43,6 +43,7 @@ PAGES = [
     ("slides.md", "Slides and documents"),
     ("walks.md", "Several walks"),
     ("build-walks.md", "Build a class with several walks"),
+    ("authoring.md", "What a narrative and a tutorial need"),
     ("brand.md", "Brand a PDF"),
     ("replay.md", "The replay copy"),
     ("python.md", "Python projects"),

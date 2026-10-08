@@ -333,20 +333,22 @@ def move_section(
 def add_move_sections(
     walk: Walk,  # A tutorial walk
     main: Path,  # The repository
-) -> tuple[str, list[str]]:  # The notes with the missing move sections added, and the names of the moves added
+) -> tuple[str, list[str], list[str]]:  # The notes with the missing move sections added, the moves added, and their drafts
     "Add a draft section for each move that the notes do not have yet, at the end of its step. Sections already there stay as they are."
     text = walk.notes.read_text(encoding="utf-8") if walk.notes and walk.notes.is_file() else ""
     picked = pick_steps(tag_steps(main, walk.tags), walk.steps)
-    added = []
+    added: list[str] = []
+    drafts: list[str] = []
     for step, moves in zip(picked, step_moves(main, picked), strict=True):
         written = {part["name"] for part in parse_notes(text).get(step.name, {}).get("parts", []) if part["kind"] == "move"}
         new = [move_section(main, move) for move in moves if move.name not in written]
         if not new:
             continue
         added += [move.name for move in moves if move.name not in written]
+        drafts.extend(new)
         raw = parse_notes(text).get(step.name, {}).get("raw", "")
         text = replace_section(text, step.name, "\n" + (raw.rstrip() + "\n\n" if raw.strip() else "") + "\n".join(new))
-    return text, added
+    return text, added, drafts
 
 
 def notes_main() -> None:
@@ -364,8 +366,7 @@ def notes_main() -> None:
         raise SystemExit(f"timewalk-notes: {error}") from None
     if walk is None or walk.kind != "tutorial" or walk.notes is None:
         raise SystemExit(f"timewalk-notes: {args.walk} is not a tutorial walk with a notes file in {args.toc}")
-    before = walk.notes.read_text(encoding="utf-8") if walk.notes.is_file() else ""
-    text, added = add_move_sections(walk, main_repo)
+    text, added, drafts = add_move_sections(walk, main_repo)
     if not added:
         print(f"timewalk-notes: every move has a section in {walk.notes.name}")
         return
@@ -373,7 +374,7 @@ def notes_main() -> None:
         walk.notes.write_text(text, encoding="utf-8")
         print(f"timewalk-notes: added {len(added)} sections to {walk.notes}: {', '.join(added)}")
     else:
-        print(text[len(before) - len(before.lstrip()):] if not before else text)
+        print("\n".join(drafts))
         print(f"timewalk-notes: {len(added)} sections to add ({', '.join(added)}); run again with --write to write them")
 
 

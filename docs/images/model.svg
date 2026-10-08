@@ -47,21 +47,21 @@
   <text x="696" y="72" font-weight="700" fill="#17202b">Your repository</text>
   <text x="696" y="92" fill="#6f7b8b" font-size="12.5">~/code/project, on its own branch</text>
   <text x="696" y="118" fill="#4d5969">never moved by timewalk</text>
-  <text x="696" y="138" fill="#4d5969">holds .git: commits, tags,</text>
-  <text x="696" y="156" fill="#4d5969">and the replay copy's record</text>
+  <text x="696" y="138" fill="#4d5969">holds the commits and tags,</text>
+  <text x="696" y="156" fill="#4d5969">and is never written to</text>
   <text x="696" y="182" font-weight="600" fill="#1d7a4c">Main tab runs here</text>
 
   <rect x="680" y="250" width="250" height="170" rx="8" fill="#e3f4ea" stroke="#1d7a4c" stroke-dasharray="6 4"/>
   <text x="696" y="276" font-weight="700" fill="#17202b">The replay copy</text>
-  <text x="696" y="296" fill="#6f7b8b" font-size="12.5">~/code/project-replay, a git worktree</text>
-  <text x="696" y="322" fill="#4d5969">detached HEAD at the step</text>
+  <text x="696" y="296" fill="#6f7b8b" font-size="12.5">~/code/project-replay, a git clone</text>
+  <text x="696" y="322" fill="#4d5969">branch timewalk/replay at the step</text>
   <text x="696" y="342" fill="#4d5969">its own .venv, outputs, stashes</text>
   <text x="696" y="368" font-weight="600" fill="#1d7a4c">At this step, Runs, Claude, +</text>
   <text x="696" y="388" font-weight="600" fill="#1d7a4c">run here; the file view</text>
   <text x="696" y="406" font-weight="600" fill="#1d7a4c">and the watcher read here</text>
 
   <line x1="805" y1="196" x2="805" y2="248" stroke="#1d7a4c" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#a)"/>
-  <text x="812" y="226" fill="#1d7a4c" font-size="12">shares .git</text>
+  <text x="812" y="226" fill="#1d7a4c" font-size="12">fetches from</text>
 
   <line x1="610" y1="110" x2="678" y2="110" stroke="#4d5969" stroke-width="1.5" marker-end="url(#a)"/>
   <text x="616" y="102" fill="#6f7b8b" font-size="12">tags</text>

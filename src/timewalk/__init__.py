@@ -21,8 +21,8 @@ buttons; a toggle there edits the step's section of the notes file. With --clock
 clock against the planned times. Several windows can show the page at once: the step, slide, layout, open file
 and terminal tab are kept here, so they all agree.
 
-By default the stepping happens in a second working copy, `<repo>-replay`, made with `git worktree`, so the
-repository you point at is never moved. Moving never deletes an untracked file, so whatever a command wrote
+By default the stepping happens in a second working copy, `<repo>-replay`, a clone of the repository on the
+branch timewalk/replay, so the repository you point at is never moved, and never written to. Moving never deletes an untracked file, so whatever a command wrote
 there (a virtual environment, a database, a run's output) stays where it is.
 
 The server listens on localhost only, unless --host says otherwise, and every request needs the token in the
@@ -63,6 +63,12 @@ from starlette.staticfiles import StaticFiles
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
 HERE = Path(__file__).resolve().parent
+BRANCH = "timewalk/replay"  # the branch of the replay copy, which each move resets to its commit
+SAVED = "timewalk/saved/"  # where the replay copy keeps commits a learner made, when a move resets the branch
+HOME = "home"  # the name, in the replay copy, of the repository you pointed at
+HOME_TAGS = "refs/timewalk/home-tags/"  # in the replay copy, your repository's tags as last fetched; the learner's own tags are apart
+HOME_HEAD = "refs/timewalk/home-head"  # in the replay copy, your repository's HEAD, for --commits on a detached HEAD
+PLACED = "refs/timewalk/placed"  # in the replay copy, the commit where timewalk last put the branch; later commits are a learner's
 MAX_FILE_BYTES = 400_000  # larger files are not shown
 SCROLLBACK_BYTES = 256_000  # terminal output replayed to a page that reconnects
 
@@ -177,6 +183,8 @@ class Repo:
             raise GitError("--replay cannot be used with --in-place: in place, there is no replay copy")
         self.discard = discard
         self.replay = Path(replay).resolve() if replay is not None else None
+        self.branch: str | None = None  # BRANCH in a replay clone; None in place, or in a replay worktree of an older version
+        self.legacy = False  # whether the replay copy is a worktree, as older versions made it
         self.main = Path(git(main, "rev-parse", "--show-toplevel"))
         self.steps = self._commit_steps() if commits else tag_steps(self.main, tags)
         if not self.steps:
@@ -193,6 +201,8 @@ class Repo:
         tutorial: bool = False,  # Find the moves between the steps, for a tutorial
     ) -> None:
         "Use the steps of another walk. The working copy does not move; `move` does that."
+        if self.branch:
+            self._fetch(self.work)   # a tag made since the start needs its commit in the clone
         steps = pick_steps(tag_steps(self.main, tags), names)
         if not steps:
             raise GitError(f"no steps found: no tags match {tags!r}")
@@ -243,18 +253,141 @@ class Repo:
         return steps
 
     def _replay_copy(self) -> Path:  # The working copy that will be moved between steps
-        "Find or make a second working copy, beside the repository or where --replay says, starting at the first step."
+        """Find or make the replay copy, beside the repository or where --replay says, starting at the first step.
+
+        The replay copy is a clone of the repository, on a branch of its own. A clone shares nothing with your
+        repository: what a learner does there, a commit, a branch, a stash, a change to git's config, stays there.
+        Its objects are hard links, so it costs little. Each start fetches your tags and branches into it, so a step
+        that you tagged again is seen. A replay copy that an older version made as a worktree is used as it is.
+        """
         path = self.replay or self.main.parent / f"{self.main.name}-replay"
         if path.resolve().is_relative_to(self.main.resolve()):
             raise GitError(f"the replay copy {path} would be inside the repository. Put it outside, for example beside it.")
         known = [line.split(" ", 1)[1] for line in git(self.main, "worktree", "list", "--porcelain").splitlines() if line.startswith("worktree ")]
         if str(path) in known or str(path.resolve()) in known:
+            self.legacy = True  # a worktree: it shares the config and the branches of your repository
             return path
+        if (path / ".git").is_dir():
+            try:
+                home = git(path, "remote", "get-url", HOME)
+            except GitError:
+                home = ""
+            if home and Path(home).resolve() == self.main.resolve():
+                self._fetch(path)
+                self.branch = BRANCH
+                return path
+            if home:
+                raise GitError(f"{path} is a replay copy of {home}, not of {self.main}. If the repository moved, point the copy at "
+                               f"it, which keeps what a learner did there: git -C {path} remote set-url {HOME} {self.main}")
         if path.exists():
             raise GitError(f"{path} exists and is not a working copy of this repository. Remove it or use --in-place.")
         path.parent.mkdir(parents=True, exist_ok=True)
-        git(self.main, "worktree", "add", "--detach", str(path), self.steps[0].sha)
+        # Made in a folder of its own, then renamed: a start that stops halfway leaves no half-made replay copy behind.
+        making = path.with_name(f".{path.name}.making")
+        if making.exists():
+            shutil.rmtree(making)   # what an earlier start left halfway; nothing in it was ever used
+        # A local path clones with hard links where it can, and copies where it cannot, for example onto another disk.
+        git(self.main.parent, "clone", "--quiet", "--no-checkout", "--origin", HOME, str(self.main), str(making))
+        self._fetch(making)
+        git(making, "checkout", "--quiet", "-B", BRANCH, self.steps[0].sha)   # -B: your repository may have a branch of that name
+        for other in git(making, "for-each-ref", "--format=%(refname:short)", "refs/heads/").splitlines():
+            if other != BRANCH:
+                git(making, "branch", "--quiet", "-D", other)   # the clone's own copy of your branches would only confuse
+        git(making, "update-ref", PLACED, self.steps[0].sha)
+        making.rename(path)
+        self.branch = BRANCH
         return path
+
+    def _fetch(
+        self,
+        path: Path,  # The replay clone
+    ) -> None:
+        """Bring the replay clone up to date with your repository: its branches, its HEAD, and its tags, moved ones too.
+
+        Your tags are fetched into a place of their own, HOME_TAGS, and copied to the tags a learner sees only where the
+        learner has no tag of that name, or has the copy that timewalk made. A tag that your repository dropped goes only
+        if it is still that copy. So a learner's own tags are never moved or deleted.
+        """
+        before = self._refs(path, HOME_TAGS)
+        git(path, "fetch", "--quiet", "--force", "--prune", "--no-tags", HOME,
+            f"+refs/heads/*:refs/remotes/{HOME}/*", f"+refs/tags/*:{HOME_TAGS}*", f"+HEAD:{HOME_HEAD}")
+        after = self._refs(path, HOME_TAGS)
+        seen = self._refs(path, "refs/tags/")
+        for name, sha in after.items():
+            if seen.get(name) in (None, before.get(name)) and seen.get(name) != sha:
+                git(path, "update-ref", f"refs/tags/{name}", sha)
+        for name, sha in before.items():
+            if name not in after and seen.get(name) == sha:
+                git(path, "update-ref", "-d", f"refs/tags/{name}")
+
+    @staticmethod
+    def _refs(
+        path: Path,  # A repository
+        prefix: str,  # A folder of refs, such as refs/tags/
+    ) -> dict[str, str]:  # Each ref's name under the prefix, and the object it points at
+        "List the refs under a prefix, with what they point at."
+        out = git(path, "for-each-ref", "--format=%(refname)%00%(objectname)", prefix)
+        return {name.removeprefix(prefix): sha for name, sha in (line.split("\x00") for line in out.splitlines() if line)}
+
+    def keep_learner_commits(
+        self,
+        label: str,  # The step or move the copy was at, for the name of the branch that keeps them
+    ) -> list[str]:  # The branches that keep them; empty when there was nothing to keep
+        """Before a move resets the branch, keep the commits that a learner made, on a branch named for the place.
+
+        A learner's commits are those made since timewalk last put the branch somewhere, on the branch or on a detached
+        HEAD. A branch that the learner made keeps its own commits, so they are not copied.
+        """
+        if self.branch is None:
+            return []
+        placed = subprocess.run(["git", "rev-parse", "--verify", "--quiet", PLACED], cwd=self.work, capture_output=True, text=True).stdout.strip()
+        tips = {git(self.work, "rev-parse", "HEAD")}
+        branch = subprocess.run(["git", "rev-parse", "--verify", "--quiet", f"refs/heads/{self.branch}"], cwd=self.work, capture_output=True, text=True).stdout.strip()
+        if branch:
+            tips.add(branch)
+        # Never a learner's: what a tag or a branch of your repository reaches, and what came before timewalk last put the branch.
+        before = ([placed] if placed else []) + [f"--glob={HOME_TAGS}*", f"--remotes={HOME}", f"--glob={HOME_HEAD}"]
+        kept = []
+        for tip in sorted(tips):
+            if not git(self.work, "rev-list", tip, "--not", *before, f"--exclude={self.branch}", "--branches"):
+                continue
+            names = set(git(self.work, "for-each-ref", "--format=%(refname:short)", f"refs/heads/{SAVED}").splitlines())
+            base = SAVED + (re.sub(r"[^A-Za-z0-9._-]+", "-", label).strip("-.") or "step")   # a name git accepts, with no folders of its own
+            name, n = base, 1
+            while name in names:
+                n += 1
+                name = f"{base}-{n}"
+            git(self.work, "branch", name, tip)
+            kept.append(name)
+        return kept
+
+    def place_name(self) -> str:  # The name of the step or move where timewalk last put the branch, for a saved branch
+        "Name the place of the commit where timewalk last put the branch: a step, or a move of a tutorial."
+        placed = subprocess.run(["git", "rev-parse", "--verify", "--quiet", PLACED], cwd=self.work, capture_output=True, text=True).stdout.strip()
+        if self.at is not None:
+            index, move = self.at
+            return self.moves[index][move - 1].name if move else self.steps[index].name
+        for step in self.steps:
+            if step.sha == placed:
+                return step.name
+        for moves in self.moves:
+            for move in moves:
+                if move.sha == placed:
+                    return move.name
+        return "between-steps"
+
+    def _checkout(
+        self,
+        target: str,  # The commit to stand on
+        force: bool = False,  # Throw away edits to tracked files, as --discard-edits does
+    ) -> None:
+        "Put the working copy on a commit: in a clone, the branch reset to it; in place or in an old worktree, a detached HEAD."
+        if self.branch:
+            # checkout -B, not switch -C: with --force it replaces an untracked file where the step has one, as documented
+            git(self.work, "checkout", "--quiet", *(["--force"] if force else []), "-B", self.branch, target)
+            git(self.work, "update-ref", PLACED, target)
+        else:
+            git(self.work, "checkout", *(["--force"] if force else []), "--detach", "--quiet", target)
 
     def place_file(self) -> Path:  # Where a tutorial notes its place, in the replay copy's own git folder, outside its files
         "Name the file that keeps a tutorial's place across a restart: move 0 of a step and the step before are one commit."
@@ -329,8 +462,16 @@ class Repo:
         if moves and not 0 <= place[1] <= len(moves):
             raise GitError(f"{self.steps[index].name} has no move {place[1]}")
         target = self.commit_at(*place)
+        if self.branch and subprocess.run(["git", "cat-file", "-e", f"{target}^{{commit}}"], cwd=self.work, capture_output=True).returncode:
+            self._fetch(self.work)   # a step tagged since the start: its commit is not in the clone yet
+        step_now, move_now = self.position()
+        label = (self.steps[step_now].name if step_now is not None and not here else None) or here or (
+            self.place_name() if self.branch else "an unknown step")
+        if here is None and move_now:
+            label = self.moves[step_now][move_now - 1].name  # in a tutorial, the move made
         if self.discard:
-            git(self.work, "checkout", "--force", "--detach", "--quiet", target)
+            self.keep_learner_commits(label)
+            self._checkout(target, force=True)
             self.at = place
             self.keep_place()
             return
@@ -342,12 +483,9 @@ class Repo:
         if self.edits():
             if not set_aside:
                 raise GitError("uncommitted edits")
-            step_now, move_now = self.position()
-            label = here or (self.steps[step_now].name if step_now is not None else "an unknown step")
-            if here is None and move_now:
-                label = self.moves[step_now][move_now - 1].name  # in a tutorial, the move made
             git(self.work, "stash", "push", "--message", f"timewalk: edits made at {label}")
-        git(self.work, "checkout", "--detach", "--quiet", target)
+        self.keep_learner_commits(label)
+        self._checkout(target)
         self.at = place
         self.keep_place()
 
@@ -1528,7 +1666,11 @@ def main() -> None:
     shown = "127.0.0.1" if local else (socket.gethostname() if args.host in ("0.0.0.0", "::") else args.host)
     address = f"http://{shown}:{args.port}/?t={token}"
     print(f"timewalk: {len(repo.steps)} steps in {repo.main}")
-    print(f"timewalk: stepping in {repo.work}")
+    print(f"timewalk: stepping in {repo.work}" + (f", on the branch {repo.branch}" if repo.branch else ""))
+    if repo.legacy:
+        print(f"timewalk: {repo.work} is a git worktree, as older versions made it. It shares your repository's config and "
+              f"branches. For a replay copy of its own, a clone: move the folder aside, keep what you need from it, run "
+              f"git worktree prune, and start timewalk again")
     if not local:
         print(f"timewalk: WARNING: listening on {args.host}, beyond this machine. Anyone who can reach port {args.port} and has the")
         print("timewalk: address below can run commands as you. The connection is not encrypted. An SSH tunnel is safer.")

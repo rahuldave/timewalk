@@ -14,30 +14,31 @@ Any window can show the notes and, with `--clock`, the clock band.
 | Folder | What it is | What works in it | Does it move? |
 |---|---|---|---|
 | **Your repository**, `~/code/project` | The repository that you give to timewalk, on its current branch | The **Main** tab. The recipe buttons, when Main is in front | Never, unless you give `--in-place` |
-| **The replay copy**, `~/code/project-replay` | A git worktree of your repository, on a detached HEAD at the current step | **At this step**, **Runs**, **Runs 2** to **9**, **Claude** and **+**. The file list, the reader, the edits watcher and the recipe buttons | Yes. Each move checks out a step here |
+| **The replay copy**, `~/code/project-replay` | A git clone of your repository, on the branch `timewalk/replay` at the current step | **At this step**, **Runs**, **Runs 2** to **9**, **Claude** and **+**. The file list, the reader, the edits watcher and the recipe buttons | Yes. Each move checks out a step here |
 | **Your class folder** | The folder with your notes and slides. timewalk does not use it as a repository | The server reads `notes.md` and the slide files from it again each time. **Save** in the notes column writes one section of `notes.md` | No. timewalk writes only the notes file there |
 | **The folder of timewalk** | The code. `uv run` runs it in its own environment, which uv keeps in its cache | Nothing. The shells remove that environment from their `PATH` | No |
 
-A worktree is a second working folder attached to the same git repository. HEAD is the commit that a
-working folder is at. A detached HEAD is at a commit and not on a branch.
+A clone is a repository of its own, made from another one. A branch is a name for a line of commits.
+HEAD is the commit that a working folder is at.
 
-## Where worktrees are used, and where not
+## Where clones are used, and where not
 
 **Used: the replay copy.** timewalk makes one replay copy for each repository that you browse. The first
-start makes it with this command:
+start makes it with these commands, in a folder `.project-replay.making` that it then renames:
 
 ```
-git worktree add --detach ~/code/project-replay <the first step's commit>
+git clone --no-checkout --origin home ~/code/project .project-replay.making
+git checkout -B timewalk/replay <the first step's commit>
 ```
 
-Each later start finds the replay copy in `git worktree list`, and uses it again from where it stopped.
-The `.git` of your repository holds the record of the replay copy, in `.git/worktrees/project-replay`.
-The `.git` of the replay copy is a file of one line that points there. See [The replay copy](replay.md).
+In the replay copy, your repository is the remote `home`. Each later start finds the replay copy, checks
+that `home` is your repository, and fetches your branches, HEAD and tags. The replay copy then goes on
+from where it stopped. See [The replay copy](replay.md).
 
 **Not used:**
 
-- **Your repository** is the main working copy. The server reads its tags, and adds the record of the
-  replay copy to its `.git`. The server does nothing else to it.
+- **Your repository** is the main working copy. The server reads its tags and its commits. It writes
+  no config, hook, branch, tag or stash there.
 - **With `--in-place`**, timewalk makes no replay copy. Moves check out steps in your repository, and
   every tab, Main too, is in it. The server refuses `--discard-edits` with `--in-place`, so a move cannot
   drop your real work.
@@ -51,7 +52,7 @@ uses `--replay worktree`, so the replay copy is the folder `worktree/` of the ki
 **The demo** adds one layer. `demo/timewalk-demo` is a git submodule of timewalk. A submodule is a
 repository of its own inside another repository. Git keeps the data of this submodule in
 `.git/modules/demo/timewalk-demo` of timewalk. The replay copy of the demo, `demo/timewalk-demo-replay`, is
-a worktree of the submodule, and the git of timewalk ignores it.
+a clone of the submodule, and the git of timewalk ignores it.
 
 **The tests and the screenshots** never touch your repositories or the replay copy of the demo. The
 tests make small repositories in temporary folders. `docs/screenshots.py` clones the demo into a
@@ -70,8 +71,8 @@ then happen, in this order:
    steps.
 4. `just present` runs timewalk from GitHub with uvx, on `repo/`, with `--replay worktree`. uv downloads
    timewalk the first time, and keeps it in its cache.
-5. timewalk makes the replay copy in `worktree/`, if it does not exist. The replay copy is a worktree of
-   `repo/`.
+5. timewalk makes the replay copy in `worktree/`, if it does not exist. The replay copy is a clone of
+   `repo/`, on the branch `timewalk/replay`. The folder keeps its old name.
 6. timewalk prints the address of the page. The student opens it.
 
 | Folder of the kit | What it is | What works in it |
@@ -84,11 +85,14 @@ then happen, in this order:
 
 | Control | What happens | Git, in which folder |
 |---|---|---|
-| A step button, **Left**, **Right**, the step arrows | Looks for edits, refuses if an untracked file is in the way, moves, and tells every window | `git status`, `git ls-files --others`, `git ls-tree`, then `git checkout --detach <step>`, in the replay copy |
+| A step button, **Left**, **Right**, the step arrows | Looks for edits, refuses if an untracked file is in the way, keeps the commits of a learner, moves, and tells every window | `git status`, `git ls-files --others`, `git ls-tree`, `git branch timewalk/saved/<step>` if a learner committed, then `git checkout -B timewalk/replay <step>`, in the replay copy |
 | **Set the edits aside and move** | Stashes the edits with the name of the step, then moves | `git stash push -m "timewalk: edits made at step-NN"`, in the replay copy |
-| A move, with `--discard-edits` | Moves and does not ask. Edits to tracked files are lost | `git checkout --force --detach <step>`, in the replay copy |
+| A move, with `--discard-edits` | Moves and does not ask. Edits to tracked files are lost. Commits of a learner are kept | `git checkout --force -B timewalk/replay <step>`, in the replay copy |
+| In a tutorial, **Show ▶**, **Catch me up**, or a move button in watch mode | Moves to the commit of a move, as a step button does | The same, with the commit of the move |
+| In a tutorial, **Done ✓**, **Not done**, or a move button in do mode | Changes the shared count of moves done. The code does not move | None |
+| In a tutorial, **Do** or **Watch** | Changes the shared mode, in every window | None |
 | **Up**, **Down**, the slide arrows | Changes the shared slide number. On a document, **Up** and **Down** scroll it, and Alt with **Up** or **Down** changes the slide | None |
-| **Slides**, **Both**, **Code** | Changes the shared layout, in every window | None |
+| **Show**: **Slides**, **Both**, **Code** | Changes the shared layout, in every window | None |
 | **Shell** | Turns Shell mode on or off, in every window. In Shell mode, the window for the class sets the size of each shell | None |
 | **Room** | Opens a second window with `room=1` and `cues=off` in its address. In Chrome and Edge, it asks to place windows, and opens the window on the other screen | None |
 | **Cues** | Hides or shows the `>` lines of the notes, in this window | None |
@@ -121,12 +125,14 @@ and the reader stay on the replay copy.
 |---|---|---|
 | The steps, with names, commits and notes | timewalk reads them from the tags when it starts | timewalk reads them again at the next start. Restart after you change the tags |
 | The current step | Git, as the HEAD of the replay copy. timewalk asks git again each time | Never. A restart finds the replay copy where it was |
-| Slide, layout, open file, view, tab in front, clock | The memory of the server, shared by every window | timewalk stops |
+| In a tutorial, the move on show | A file in the git folder of the replay copy, `timewalk-place.json` | Never. A restart comes back at the same move |
+| Slide, layout, open file, view, tab in front, clock, and in a tutorial the mode and the count of moves done | The memory of the server, shared by every window | timewalk stops |
+| Commits that a learner made | Saved branches in the replay copy, `timewalk/saved/<step>` | You delete them, or you remove the replay copy |
 | Where each step was left: its slide, and the scroll of its slide, notes and open file | The memory of the server. A move back to a step brings them back | timewalk stops |
 | Each shell, and the last 256 KB of its output | The server, with one process for each tab, on a pseudo-terminal | timewalk stops. The shells end, and their commands end too, unless you started a command with `nohup` and `&` |
 | Theme, text size, terminal height, run on click | The local storage of the browser | You clear it |
 | If the notes column shows | The session storage of the window | You close the window |
-| Edits to tracked files | On disk in the replay copy, or in a stash | You discard them, or the next move discards them, with `--discard-edits` |
+| Edits to tracked files | On disk in the replay copy, or in a stash of the replay copy | You discard them, or the next move discards them, with `--discard-edits` |
 | Untracked files, for example `.venv`, outputs and databases | On disk in the replay copy | You delete them, or you remove the replay copy |
 | Slides | Your class folder, which timewalk reads again each time | Never. timewalk does not write them |
 | Notes | The notes file in your class folder, which timewalk reads again each time. **Save** writes one section of it | Never. **Save** changes only the section of the current step |
@@ -139,14 +145,15 @@ If a terminal checks out another commit, the replay copy is no longer at a step.
 
 ## One move, in order
 
-1. A window asks the server to move to a step. With `--discard-edits`, the server runs
-   `git checkout --force --detach` to the commit of the step, and goes to step 6.
+1. A window asks the server to move to a step. With `--discard-edits`, the server keeps the commits of a
+   learner, runs `git checkout --force -B timewalk/replay` to the commit of the step, and goes to step 6.
 2. The server asks git for edits to tracked files in the replay copy. If there are edits, and the page did
    not ask to set them aside, the server refuses and names them. The window then asks you.
 3. If the window asked to set the edits aside, the server runs `git stash push` with the name of the step.
 4. The server lists the untracked files, and the files that the new step tracks. If a path is in both
    lists, the server refuses and names it. A checkout would write over your file.
-5. The server runs `git checkout --detach` to the commit of the step.
+5. If a learner committed since the last move, the server keeps the commits on a saved branch. Then it
+   runs `git checkout -B timewalk/replay` to the commit of the step.
 6. The server sets the slide to the one where you left this step. A step that you have not visited starts
    at its first slide. The server then tells every window. Each window then scrolls the slide, the notes and the open
    file to where you left them. It presses Enter in each
@@ -165,7 +172,7 @@ the server for events. A socket is an open connection between the window and the
 messages both ways. The old address `/presenter` sends the browser on to the page.
 
 When a window changes the step, the slide, the layout, Shell mode, the open file or the tab in front, it tells the
-server. The server then tells every window. Each window keeps its own choice to show the notes and the cues.
+server. In a tutorial, the mode and the count of moves done are shared too. The server then tells every window. Each window keeps its own choice to show the notes and the cues.
 
 A scroll of the slide, the file or the notes goes to every other window too, as a fraction of the whole. A scroll
 of a terminal goes as a number of lines. The browser keeps the theme, the text size, the terminal height and run on click. See [The page](page.md#several-windows).

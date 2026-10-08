@@ -1148,12 +1148,13 @@ function drawNotes() {
       const list = document.createElement("div");
       list.className = "p-files";
       const name = moves[owner - 1]?.name;
+      const ownMove = watch && owner === made;   // read now: owner changes as the loop goes on
       for (const file of files) {
         const button = document.createElement("button");
         button.textContent = file.path;
         button.title = `What ${name} changed in this file`;
         // The move's own change, whatever the code stands on; in watch mode at that move, the same change.
-        button.onclick = () => show({ path: file.path, view: "diff", of: watch && owner === made ? null : name });
+        button.onclick = () => show({ path: file.path, view: "diff", of: ownMove ? null : name });
         list.append(button);
       }
       into.append(list);

@@ -166,9 +166,8 @@ def test_move_rejects_a_step_that_does_not_exist(repo: timewalk.Repo) -> None:
 
 
 def test_between_steps_is_reported_as_none(repo: timewalk.Repo, sample: Path) -> None:
-    "A working copy on a commit that is not a step says so."
-    run_git(sample, "commit", "--quiet", "--allow-empty", "--message", "after the steps")
-    run_git(repo.work, "checkout", "--quiet", "--detach", run_git(sample, "rev-parse", "main"))
+    "A working copy on a commit that is not a step says so: here, a commit made in the replay copy."
+    run_git(repo.work, "-c", "user.name=t", "-c", "user.email=t@e", "commit", "--quiet", "--allow-empty", "--message", "after the steps")
     assert repo.current() is None
     assert repo.tree()["files"], "the tree is still listed"
 
@@ -1609,7 +1608,8 @@ def test_timewalk_notes_drafts_the_missing_moves(tutorial: timewalk.Repo, tutori
 
     (tutorial_class / "notes.md").write_text("## step-00\n\n## step-01 S\n\n### step-01.1 Mine\nmy words\n\n$ ls\n\n## step-02\n")
     walk = load_toc(tutorial_class / "toc.toml")[0]
-    text, added = add_move_sections(walk, tutorial.main)
+    text, added, drafts = add_move_sections(walk, tutorial.main)
+    assert [d.split("\n", 1)[0] for d in drafts] == ["### step-01.2 b", "### step-01.3 c"]
     assert added == ["step-01.2", "step-01.3"]
     assert "### step-01.1 Mine\nmy words\n\n$ ls" in text
     assert "### step-01.2 b\n" in text and "### step-01.3 c\n" in text, "titles without the move's or the step's prefix"
@@ -1637,3 +1637,170 @@ def test_the_summary_names_python_functions_and_recipes(tmp_path: Path) -> None:
 
     summary = move_summary(main, run_git(main, "rev-parse", "HEAD"))
     assert summary == ["- `justfile`: +3 -0; adds `recipe check`", "- `m.py`: +6 -2; adds `class C`; changes `a`, `b`"]
+
+
+# ---------- the replay copy: a clone on a branch ----------
+
+
+def test_the_replay_copy_is_a_clone_on_a_branch_of_its_own(repo: timewalk.Repo, sample: Path) -> None:
+    "The replay copy is a repository of its own, cloned from yours, on the branch timewalk/replay, which moves with the steps."
+    assert (repo.work / ".git").is_dir() and not repo.legacy
+    assert Path(run_git(repo.work, "remote", "get-url", timewalk.HOME)).resolve() == sample.resolve()
+    repo.move(2)
+    assert run_git(repo.work, "branch", "--show-current") == timewalk.BRANCH
+    assert run_git(repo.work, "rev-parse", "HEAD") == repo.steps[2].sha
+
+
+def test_your_repository_is_never_written_to(repo: timewalk.Repo, sample: Path) -> None:
+    "Moves, stashes, a commit and a change to git's config in the replay copy leave your repository's config, refs and stash alone."
+    before = ((sample / ".git" / "config").read_text(), run_git(sample, "for-each-ref"), run_git(sample, "stash", "list"))
+    repo.move(1)
+    (repo.work / "src" / "greet.py").write_text("# an edit\n")
+    repo.move(2, set_aside=True)
+    run_git(repo.work, "config", "core.hooksPath", "hooks")
+    run_git(repo.work, "-c", "user.name=t", "-c", "user.email=t@e", "commit", "--quiet", "--allow-empty", "-m", "a learner's commit")
+    repo.move(3)
+    after = ((sample / ".git" / "config").read_text(), run_git(sample, "for-each-ref"), run_git(sample, "stash", "list"))
+    assert after == before
+    assert "timewalk: edits made at step-01" in run_git(repo.work, "stash", "list"), "the stash is in the replay copy"
+
+
+def test_a_learners_commits_are_kept_when_a_move_resets_the_branch(repo: timewalk.Repo) -> None:
+    "Commits made at a step are kept on timewalk/saved/<step> when the class moves on; a second visit gets -2; no commit, no branch."
+    def commit(message: str) -> str:
+        run_git(repo.work, "-c", "user.name=t", "-c", "user.email=t@e", "commit", "--quiet", "--allow-empty", "-m", message)
+        return run_git(repo.work, "rev-parse", "HEAD")
+
+    repo.move(1)
+    repo.move(2)
+    assert run_git(repo.work, "branch", "--list", "timewalk/saved/*") == "", "no commits: nothing saved"
+    mine = commit("my move at step-02")
+    repo.move(3)
+    assert run_git(repo.work, "rev-parse", "timewalk/saved/step-02") == mine
+    repo.move(2)
+    again = commit("my second try")
+    repo.move(1)
+    assert run_git(repo.work, "rev-parse", "timewalk/saved/step-02-2") == again
+
+
+def test_a_step_tagged_again_is_seen_at_the_next_start(repo: timewalk.Repo, sample: Path) -> None:
+    "Tag a step on another commit in your repository; the next start fetches it into the replay copy, and moves there."
+    run_git(sample, "-c", "user.name=t", "-c", "user.email=t@e", "commit", "--quiet", "--allow-empty", "-m", "a fix for step-03")
+    run_git(sample, "tag", "--force", "--annotate", "step-03", "-m", "Tidy, fixed")
+    again = timewalk.Repo(sample)
+    assert again.work == repo.work and again.steps[3].sha == run_git(sample, "rev-parse", "HEAD")
+    again.move(3)
+    assert run_git(again.work, "rev-parse", "HEAD") == again.steps[3].sha
+
+
+def test_a_replay_worktree_of_an_older_version_still_works(sample: Path) -> None:
+    "A worktree at the replay copy's place, as older versions made it, is used as it is, on a detached HEAD."
+    first = run_git(sample, "rev-list", "--max-parents=0", "HEAD")
+    run_git(sample, "worktree", "add", "--quiet", "--detach", str(sample.parent / "sample-replay"), first)
+    old = timewalk.Repo(sample)
+    assert old.legacy and old.branch is None
+    old.move(2)
+    assert run_git(old.work, "rev-parse", "HEAD") == old.steps[2].sha and run_git(old.work, "branch", "--show-current") == ""
+
+
+def learner_commit(work: Path, message: str) -> str:
+    "Make an empty commit in the replay copy, as a learner would, and return it."
+    run_git(work, "-c", "user.name=t", "-c", "user.email=t@e", "commit", "--quiet", "--allow-empty", "-m", message)
+    return run_git(work, "rev-parse", "HEAD")
+
+
+def test_commits_on_the_branch_are_kept_even_when_head_is_elsewhere(repo: timewalk.Repo) -> None:
+    "A learner commits on the branch, then checks out a step by hand; the move still keeps the branch's commit."
+    repo.move(1)
+    mine = learner_commit(repo.work, "on the branch")
+    run_git(repo.work, "checkout", "--quiet", "--detach", repo.steps[2].sha)
+    repo.move(3)
+    assert run_git(repo.work, "branch", "--list", "timewalk/saved/*", "--format=%(objectname)") == mine
+
+
+def test_no_branch_is_saved_without_a_learners_commit_even_after_a_retag(repo: timewalk.Repo, sample: Path) -> None:
+    "History rewritten and tagged again in your repository: the old step commits are not taken for a learner's work."
+    repo.move(3)
+    run_git(sample, "-c", "user.name=t", "-c", "user.email=t@e", "commit", "--quiet", "--amend", "-m", "Tidy, rewritten")
+    run_git(sample, "tag", "--force", "--annotate", "step-03", "-m", "Tidy")
+    again = timewalk.Repo(sample)
+    again.move(1)
+    assert run_git(again.work, "branch", "--list", "timewalk/*") == f"* {timewalk.BRANCH}", "only the replay branch"
+
+
+def test_a_learners_commit_after_a_restart_is_saved_under_its_step(repo: timewalk.Repo, sample: Path) -> None:
+    "Without a remembered place, a commit made at step-01 is saved as step-01, named from where timewalk put the branch."
+    repo.move(1)
+    mine = learner_commit(repo.work, "after the restart")
+    again = timewalk.Repo(sample)
+    again.move(2)
+    assert run_git(again.work, "rev-parse", "timewalk/saved/step-01") == mine
+
+
+def test_a_step_tagged_during_the_session_can_be_reached(repo: timewalk.Repo, sample: Path) -> None:
+    "A step tagged in your repository while timewalk runs: its commit is fetched into the clone when it is needed."
+    run_git(sample, "-c", "user.name=t", "-c", "user.email=t@e", "commit", "--quiet", "--allow-empty", "-m", "a new step")
+    run_git(sample, "tag", "--annotate", "step-04", "-m", "New")
+    repo.select("step-*")
+    assert [s.name for s in repo.steps][-1] == "step-04"
+    repo.move(4)
+    assert run_git(repo.work, "rev-parse", "HEAD") == run_git(sample, "rev-parse", "step-04^{commit}")
+
+
+def test_a_deleted_step_tag_goes_from_the_clone_and_a_learners_tag_stays(repo: timewalk.Repo, sample: Path) -> None:
+    "Delete a step's tag in your repository: the next start drops it from the replay copy, and keeps a tag the learner made."
+    run_git(repo.work, "tag", "mine")
+    run_git(sample, "tag", "--delete", "step-03")
+    timewalk.Repo(sample)
+    tags = run_git(repo.work, "tag", "--list").splitlines()
+    assert "step-03" not in tags and "mine" in tags
+
+
+def test_commits_mode_on_a_detached_repository_saves_nothing(sample: Path) -> None:
+    "Steps are the commits of a detached HEAD, as in a submodule: moving between them is not a learner's work."
+    run_git(sample, "checkout", "--quiet", "--detach")
+    repo = timewalk.Repo(sample, commits=True)
+    repo.move(len(repo.steps) - 1)
+    repo.move(0)
+    assert run_git(repo.work, "branch", "--list", "timewalk/saved/*") == ""
+
+
+def test_a_learners_tags_are_never_moved_or_deleted(repo: timewalk.Repo, sample: Path) -> None:
+    "A learner's tag that matches the step pattern, or has the name of a step you tag later, survives every fetch."
+    run_git(repo.work, "tag", "step-try")
+    learner_commit(repo.work, "my try")
+    run_git(repo.work, "tag", "step-04")
+    mine = run_git(repo.work, "rev-parse", "step-04")
+    run_git(sample, "-c", "user.name=t", "-c", "user.email=t@e", "commit", "--quiet", "--allow-empty", "-m", "a new step")
+    run_git(sample, "tag", "--annotate", "step-04", "-m", "New")
+    repo.select("step-*")
+    timewalk.Repo(sample)
+    assert "step-try" in run_git(repo.work, "tag", "--list").splitlines()
+    assert run_git(repo.work, "rev-parse", "step-04") == mine, "the learner's own step-04 stays"
+
+
+def test_a_start_that_stopped_halfway_leaves_no_replay_copy(sample: Path) -> None:
+    "A clone is made in a folder of its own and renamed when done: a leftover folder from a stopped start is made again."
+    making = sample.parent / ".sample-replay.making"
+    making.mkdir()
+    (making / "junk").write_text("from a start that stopped\n")
+    repo = timewalk.Repo(sample)
+    assert not making.exists() and repo.branch == timewalk.BRANCH
+    assert repo.edits() == [], "a whole working copy, not an empty index"
+
+
+def test_a_home_branch_named_like_the_replay_branch_is_no_trouble(sample: Path) -> None:
+    "Your repository has a branch timewalk/replay, checked out: the replay copy is still made, on its own branch of that name."
+    run_git(sample, "switch", "--quiet", "-c", timewalk.BRANCH)
+    repo = timewalk.Repo(sample)
+    assert run_git(repo.work, "rev-parse", "HEAD") == repo.steps[0].sha and run_git(repo.work, "status", "--porcelain") == ""
+
+
+def test_commits_mode_reaches_new_commits_of_a_detached_repository(sample: Path) -> None:
+    "Your repository on a detached HEAD gains a commit; the next start with --commits can move to it."
+    run_git(sample, "checkout", "--quiet", "--detach")
+    timewalk.Repo(sample, commits=True)
+    run_git(sample, "-c", "user.name=t", "-c", "user.email=t@e", "commit", "--quiet", "--allow-empty", "-m", "after")
+    again = timewalk.Repo(sample, commits=True)
+    again.move(len(again.steps) - 1)
+    assert run_git(again.work, "rev-parse", "HEAD") == run_git(sample, "rev-parse", "HEAD")

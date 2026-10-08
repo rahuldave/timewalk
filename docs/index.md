@@ -90,14 +90,17 @@ For a class, put the notes and the slides in a kit of their own, as [Make a walk
 | [A tour of the demo](demo.md) | The sample project, one step at a time, with what to try at each step |
 | [Teach a class](class.md) | Your window and the window for the class, the Room button, cues, and a check before the class |
 | [Make a walk](walk.md) | The project, your class material and the kit as three repositories, how to make a kit, and what a student does with it |
-| [How it works](model.md) | The folders, the worktree, what each button does in which folder, and where timewalk keeps each thing |
+| [How it works](model.md) | The folders, the replay copy, what each button does in which folder, and where timewalk keeps each thing |
 | [The page](page.md) | Several windows, steps, slides, files, the three views of the reader, recipes and the keyboard |
 | [Live edits](edits.md) | A command changes files at a step, and the page shows each change when it occurs |
 | [The terminals](terminals.md) | What each tab is, where it starts, long runs and focus |
 | [Making the steps](steps.md) | Tags, their notes, and how to make a history that is good to walk through |
 | [Slides and documents](slides.md) | The manifest, Markdown slides, pictures, PDFs, documents, and the PDF of the slides and notes |
 | [Notes](notes.md) | The notes file, the notes column, commands to click, how to edit the notes, and the clock band |
-| [The replay copy](replay.md) | The second working copy that timewalk moves, and what timewalk never does to your repository |
+| [Several walks](walks.md) | A table of contents of walks, the checks, and tutorials with their do mode and watch mode |
+| [Build a class with several walks](build-walks.md) | A class kit with several walks, from the history to `just present` |
+| [What a narrative and a tutorial need](authoring.md) | Checklists for the project, the history, the notes, the slides and the moves, and how to check a walk |
+| [The replay copy](replay.md) | The clone that timewalk moves, the commits of a learner, and what timewalk never does to your repository |
 | [Python projects](python.md) | Environments when each step has its own lockfile |
 | [Safety](safety.md) | A terminal in a web page, and how timewalk keeps it to you |
 | [Reference](reference.md) | Every option, recipe and file format in one place |

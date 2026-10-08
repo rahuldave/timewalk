@@ -7,7 +7,7 @@
     uv run docs/screenshots.py            writes docs/images/*.png
 
 It clones the demo (demo/timewalk-demo) into a temporary folder, serves it with timewalk, and drives both
-pages in headless Chrome or Edge. The picture of a tutorial comes from timewalk-test: a copy of
+pages in headless Chrome or Edge. The pictures of a tutorial, and of the walk menu, come from timewalk-test: a copy of
 ../timewalk-test when it is there, or else a clone from GitHub. The shells use bash with a short prompt and a temporary home, so no
 personal prompt or path shows. Nothing in the real demo or its replay copy is touched.
 """
@@ -77,7 +77,6 @@ def main() -> None:
             port = probe.getsockname()[1]
         server = serve(repo, port)
         base = f"http://127.0.0.1:{port}"
-        walks_server = None
         try:
             with sync_playwright() as p:
                 browser = None
@@ -91,18 +90,10 @@ def main() -> None:
                     raise SystemExit("screenshots: no Chrome, Edge or Chromium. Run `uvx playwright install chromium` once.")
                 shoot(browser, base, repo)
                 server.should_exit = True
-                with socket.socket() as probe:
-                    probe.bind(("127.0.0.1", 0))
-                    port = probe.getsockname()[1]
-                walks_server = serve(repo, port, walks=True)
-                shoot_walks(browser, f"http://127.0.0.1:{port}")
-                walks_server.should_exit = True
                 shoot_tutorial(browser, tmp)
                 browser.close()
         finally:
             server.should_exit = True
-            if walks_server:
-                walks_server.should_exit = True
     print(f"screenshots: wrote {len(list(OUT.glob('*.png')))} pictures to {OUT}")
 
 
@@ -293,19 +284,8 @@ def shoot(browser, base: str, repo: timewalk.Repo) -> None:
         raise SystemExit("screenshots: the pages reported errors: " + "; ".join(errors))
 
 
-def shoot_walks(browser, base: str) -> None:
-    "Take the step bar with the walk menu, as `just demo-walks` shows it."
-    page = browser.new_page(viewport=WIDE, device_scale_factor=1)
-    page.goto(f"{base}/?t={TOKEN}")
-    page.wait_for_selector("#walk-picker:not([hidden])")
-    page.wait_for_timeout(1500)
-    page.mouse.move(2, 2)
-    page.locator("header.bar").screenshot(path=str(OUT / "walks.png"))
-    page.close()
-
-
 def shoot_tutorial(browser, tmp: Path) -> None:
-    "Take a tutorial walk from timewalk-test: step-02 with its first move made, and the file the move added open."
+    "Take the tutorial walk of timewalk-test at step-02, in do mode and in watch mode, and the step bar with the walk menu."
     from timewalk.walks import load_toc
 
     local = ROOT.parent / "timewalk-test"
@@ -331,21 +311,59 @@ def shoot_tutorial(browser, tmp: Path) -> None:
     while not server.started:
         time.sleep(0.05)
     try:
+        errors: list[str] = []
         page = browser.new_page(viewport=WIDE, device_scale_factor=1)
+        page.on("pageerror", lambda error: errors.append(str(error)))
         page.goto(f"http://127.0.0.1:{port}/?t={TOKEN}")
         page.wait_for_selector("#tabs button")
-        page.mouse.click(300, 400)
-        for name in ("step-01", "step-02"):
-            page.keyboard.press("ArrowRight")
-            page.wait_for_function("(s) => document.getElementById('step-name').textContent === s", arg=name)
-        page.keyboard.press("Shift+ArrowRight")
+        page.wait_for_timeout(1000)
+
+        def post(path: str, body: dict) -> None:
+            page.evaluate("(a) => fetch(a[0], {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify(a[1])})", [path, body])
+
+        def section(number: int):  # the notes of one move
+            return page.locator(f'#notes .p-move[data-move="{number}"]')
+
+        def save(name: str, clip: str | None = None) -> None:
+            page.evaluate("document.activeElement && document.activeElement.blur()")
+            page.mouse.move(2, 2)
+            page.wait_for_timeout(300)
+            (page.locator(clip) if clip else page).screenshot(path=str(OUT / f"{name}.png"))
+
+        # Do mode, the walk's own: step-02 at Start, before its first move, with the code of step-01. The first
+        # move's file opens as that move's change, though the file does not exist yet.
+        post("/api/move", {"to": 2, "name": "step-02"})
+        page.wait_for_function("document.getElementById('step-name').textContent === 'step-02'")
+        page.wait_for_selector("#moves:not([hidden])")
+        page.wait_for_selector('#notes .p-move.here[data-move="1"]')
+        section(1).locator(".p-files button").first.click()
+        page.wait_for_function("document.getElementById('view-diff').textContent === 'Changes in step-02.1'")
+        page.wait_for_timeout(800)
+        save("tutorial-do")
+        # The step bar: the walk menu, the label of the kind, the switch between Do and Watch, and the row of moves.
+        save("walks", "header.bar")
+
+        # Do mode, one move later: move 1 marked done, the notes at move 2, and the change of move 2 in the reader.
+        page.locator("#moves button.nav").last.click()
+        page.wait_for_selector('#notes .p-move.here[data-move="2"]')
+        section(2).locator(".p-files button").first.click()
+        page.wait_for_function("document.getElementById('view-diff').textContent === 'Changes in step-02.2'")
+        page.wait_for_timeout(800)
+        save("tutorial")
+
+        # Watch mode: Show on move 1 checks out its commit, in every window; its file opens as this move's change.
+        page.locator('#move-modes button[data-mode="watch"]').click()
+        page.wait_for_selector('#move-modes button[data-mode="watch"][aria-pressed="true"]')
+        section(1).locator(".p-move-actions button", has_text="Show").click()
         page.wait_for_function("document.getElementById('step-name').textContent === 'step-02.1'")
-        page.wait_for_selector("#notes .p-move.here .p-files button")
-        page.locator("#notes .p-move.here .p-files button").first.click()
-        page.wait_for_timeout(1500)
-        page.mouse.move(2, 2)
-        page.screenshot(path=str(OUT / "tutorial.png"))
+        page.wait_for_selector('#notes .p-move.here[data-move="1"]')
+        section(1).locator(".p-files button").first.click()
+        page.wait_for_function("['Changes in this move', 'Changes in step-02.1'].includes(document.getElementById('view-diff').textContent)")
+        page.wait_for_timeout(800)
+        save("tutorial-watch")
         page.close()
+        if errors:
+            raise SystemExit("screenshots: the tutorial reported errors: " + "; ".join(errors))
     finally:
         server.should_exit = True
 

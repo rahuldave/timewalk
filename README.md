@@ -51,12 +51,17 @@ the audience sees. Keep the notes file outside the repository. timewalk refuses 
   terminal. You can edit the notes on the page.
 - **Several walks** through one repository, from a table of contents, `toc.toml`. A menu in the step bar
   changes the walk, and `timewalk-check` checks the notes and slides of every walk.
+- **Tutorials**, walks that stop at each small commit between two tags. In do mode the learner makes each
+  move by hand from the notes, and in watch mode timewalk checks out each commit. `timewalk-notes` drafts
+  the notes of each move from its diff.
 - **Shell.** One button, or Alt+Enter, gives the terminals the space of the slides and the files, in every window.
 - **Keyboard.** Left and Right change the step, and Up and Down change the slide.
 
 ## What it will not do to your repository
 
-- **It never moves it.** timewalk moves a second working copy, `<repo>-replay`, which is a git worktree.
+- **It never moves it, and never writes to it.** timewalk moves a second working copy, `<repo>-replay`, which
+  is a git clone on the branch `timewalk/replay`. What a learner commits there stays there, and a move keeps it
+  on a saved branch.
 - **It never deletes an untracked file**, so the outputs of a run stay through every move.
 - **It never discards an edit.** A move with edits asks, and then stashes them. The one exception is the
   flag `--discard-edits`, for a replay copy where you keep nothing that you type. With it, a move throws

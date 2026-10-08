@@ -9,7 +9,7 @@ uvx --from git+https://github.com/rahuldave/timewalk@v1.0.14 timewalk [repo] [op
 uvx --from git+https://github.com/rahuldave/timewalk@v1.0.14 timewalk-pdf [options]
 ```
 
-Or install the two commands once with `uv tool install git+https://github.com/rahuldave/timewalk@v1.0.14`. In a clone of timewalk, run them with
+Or install the commands `timewalk`, `timewalk-pdf`, `timewalk-check` and `timewalk-notes` once with `uv tool install git+https://github.com/rahuldave/timewalk@v1.0.14`. In a clone of timewalk, run them with
 `uv run timewalk` and `uv run timewalk-pdf`.
 
 ## timewalk
@@ -27,7 +27,7 @@ timewalk [repo] [options]
 | `--walk ID` | With `--toc`: the walk to start on. Default: the first walk of the table |
 | `--tags GLOB` | The tags that mark steps. Default: `step-*` |
 | `--commits` | Step through the commits of the current branch instead of tags |
-| `--replay PATH` | Put the replay copy at `PATH`, for example `worktree`, instead of `<repo>-replay` beside the repository. timewalk refuses a path inside the repository |
+| `--replay PATH` | Put the replay copy at `PATH`, for example `worktree`, instead of `<repo>-replay` beside the repository. The replay copy is a clone on the branch `timewalk/replay`. timewalk refuses a path inside the repository. See [The replay copy](replay.md) |
 | `--in-place` | Move your repository itself instead of the replay copy |
 | `--host ADDRESS` | The address to listen on. Default: `127.0.0.1`, this machine only. `0.0.0.0` listens on every network, for a cloud machine; timewalk then prints a warning, and accepts every host name. See [Safety](safety.md#run-timewalk-on-a-cloud-machine) |
 | `--clock` | Show the clock band on the page, in every window. The band shows the clock, the planned times and the next step. Off by default |
@@ -65,7 +65,26 @@ timewalk-check REPO --notes notes.md --slides slides/slides.toml
 
 Checks the notes and the slides of every walk against the steps, and against each other. It prints
 one line for each problem, and exits with code 1 when it finds an error. timewalk runs the same checks when it
-starts with `--toc`. See [Several walks](walks.md#the-checks).
+starts with `--toc`. See [Several walks](walks.md#the-checks), and the full list in
+[What a narrative and a tutorial need](authoring.md#how-to-check-a-walk).
+
+## timewalk-notes
+
+```
+timewalk-notes REPO --toc toc.toml --walk ID [--write]
+```
+
+| Option | Does |
+|---|---|
+| `REPO` | The repository that the class walks through |
+| `--toc` | The table of contents |
+| `--walk` | The `id` of a tutorial walk with a notes file |
+| `--write` | Write the drafts into the notes file. Without it, print only the drafts |
+
+Drafts a `### step-NN.k` section for each move that the notes do not have yet, at the end of its step. A
+draft has the subject of the commit as its title, and a list "What changed:" from the diff. It also has a
+line `files:`, and a comment that asks for a command. Sections already in the notes stay as they are. See
+[Draft the notes of the moves](walks.md#draft-the-notes-of-the-moves).
 
 ## Recipes
 
@@ -103,6 +122,7 @@ In the timewalk folder, `just` lists these:
 | `id`, `title`, `kind` | The name, the title in the menu, and `"narrative"` or `"tutorial"` |
 | `notes`, `slides`, `folder` | The notes file and the manifest, or a folder that holds `notes.md` and `slides/slides.toml` |
 | `steps`, `tags` | Some of the steps by name, or a glob for tags of its own |
+| `moves` | In a tutorial: the mode it starts in, `"do"` or `"watch"`. Default: `"do"` |
 | `sync` | In a tutorial: whether the slides and the moves follow each other. Default: `true` |
 
 [Several walks](walks.md#the-table-of-contents) lists every key.
@@ -115,8 +135,9 @@ In the timewalk folder, `just` lists these:
 | `time: m:ss` | The planned start, for the clock band. The notes column and the PDF leave it out |
 | `> text` | A cue. Every window shows it, in its own shade. Remove private cues before you give the notes to students |
 | `$ cmd`, `runs$ cmd`, `runs2$ cmd` to `runs9$ cmd`, `main$ cmd` | A command for that tab |
-| `### step-name.N Title` | In a tutorial: starts the notes of one move |
-| `files:` | In a move: the files that its commit added or changed, each a link |
+| `### step-NN.k Title` | In a tutorial: starts the section of move `k` of step `NN`. Write the sections in the order of the commits |
+| `files:` | In a move section: the files that its commit added or changed. Each opens the change of that move in the reader |
+| The last commands of a move section | The anchor commands of the move, under "After this move, run:". They show what the move did. `timewalk-check` warns of a move section with no command |
 
 ## Address options
 
@@ -135,7 +156,9 @@ Add these to the address that timewalk prints, after the token, with `&`.
 | Up, Down | Previous or next slide, when there is more than one. On a document, or with one slide, they scroll |
 | Alt with an arrow | Moves the step or the slide, even inside a terminal or on a document |
 | Shift+Up, Shift+Down | The first or the last slide of the step |
-| Shift+Right, Shift+Left | In a tutorial: the next or the previous move. In a terminal, add Alt |
+| Shift+Right, Shift+Left | In a tutorial, do mode: marks the move done and goes to the next, or marks the last move done as not done. The code does not move |
+| Shift+Right, Shift+Left | In a tutorial, watch mode: checks out the commit of the next or the previous move |
+| Alt+Shift+Right, Alt+Shift+Left | The same, inside a terminal |
 | Home, End | The top or the bottom of the slide, the file or the notes under the mouse |
 | Alt+Enter | **Shell** on or off, in every window |
 | Alt+1, Alt+2, Alt+3 | **Slides**, **Both**, **Code**, in every window |
