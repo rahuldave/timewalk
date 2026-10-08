@@ -21,6 +21,11 @@
 
   <header class="bar">
     <select id="walk-picker" class="walk-picker" hidden aria-label="Walk" title="The walk: one path through the history, with its own notes and slides. A change moves every window"></select>
+    <span id="walk-kind" class="walk-kind" hidden></span>
+    <span id="move-modes" class="move-modes" role="group" aria-label="How the moves of this tutorial go" hidden>
+      <button data-mode="do" aria-pressed="true" title="Do: make each move by hand, from the notes, and press Done">Do</button>
+      <button data-mode="watch" aria-pressed="false" title="Watch: timewalk checks out each move's commit">Watch</button>
+    </span>
     <span id="walk-title" class="walk-title" hidden></span>
     <div class="steps">
       <button id="prev" class="nav" title="Previous step (Left arrow; Alt+Left inside a terminal)" aria-label="Previous step">&#9664;</button>
@@ -40,6 +45,7 @@
       <button id="pdf" hidden title="Make a PDF of the slides, one page each, and download it">PDF</button>
       <button id="shell-toggle" aria-pressed="false" title="Give the terminals the space of the slides and the files, in every window (Alt+Enter)">Shell</button>
       <span id="layouts" class="layouts" role="group" aria-label="What to show" hidden>
+        <span class="group-label" aria-hidden="true">Show</span>
         <button data-layout="slides" title="Slides only (Alt+1; Alt+` switches between Slides and Code)">Slides</button>
         <button data-layout="split" title="Slides beside the code (Alt+2)">Both</button>
         <button data-layout="code" title="Code only (Alt+3; Alt+` switches between Slides and Code)">Code</button>

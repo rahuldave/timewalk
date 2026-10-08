@@ -49,6 +49,8 @@ const ui = {
   notesPath: null,
   skew: 0,                // the server's clock minus this one's
   askedMove: null,        // in a tutorial, the move this window last asked for, until the page redraws
+  askedDone: null,        // in do mode, the count of moves done that this window last asked for, until the page redraws
+  of: null,               // the move whose change the reader shows, or null for the step's or the move's own
   askedSlide: null,       // the slide this window last asked for, until the server's answer is drawn
   shellToggledHere: false, // this window turned Shell on or off: it gives the shells its size
 };
@@ -71,6 +73,7 @@ function refresh() {
 async function drawFromState() {
   ui.state = await api("/api/state");
   ui.askedMove = null;
+  ui.askedDone = null;
   ui.layout = ui.state.layout;
   applyShell(ui.state.shell);
   ui.skew = ui.state.now - Date.now() / 1000;
@@ -80,7 +83,7 @@ async function drawFromState() {
   const drawn = drawSlides();
   if (!ui.state.has_notes) ui.notes = {};   // a walk without notes shows none, not the last walk's
   await Promise.all([loadTree(), loadRecipes(), ui.state.has_notes ? loadNotes() : null]);
-  if (ui.open) await openFile(ui.open, ui.view, false);
+  if (ui.open) await openFile(ui.open, ui.view, false, ui.of);
   drawNotes();
   drawBand();
   drawTools();
@@ -147,29 +150,78 @@ async function move(to, setAside = false) {
 }
 
 /** A tutorial: the moves of the step, as a row of buttons. Start is before the first move. Only the next move is open. */
+/** In a tutorial: the move the page points at. In do mode, the one the learner works on (one past the moves marked done);
+ *  in watch mode, the one whose commit the code is at. 0 is Start, before the first move. */
+function moveOnShow() {
+  const { moves = [], move = 0, done = 0, mode } = ui.state;
+  return mode === "watch" ? move ?? 0 : Math.min(done + 1, moves.length);
+}
+
+/** The moves of a step, under the step bar: a switch between do and watch, arrows, and a button for each move. */
 function drawMoves() {
-  const { moves = [], move } = ui.state;
+  const { moves = [], move, done = 0, mode } = ui.state;
   document.body.classList.toggle("has-moves", moves.length > 0);
   const row = $("moves");
   row.hidden = !moves.length;
   if (!moves.length) return;
+  const watch = mode === "watch";
   const label = document.createElement("span");
   label.className = "label";
   label.textContent = "Moves";
+  const here = moveOnShow();
+  const step = (delta) => (watch ? goMove(Math.min(Math.max((move ?? 0) + delta, 0), moves.length))
+                                 : markDone(Math.min(Math.max(done + delta, 0), moves.length)));
+  const back = document.createElement("button");
+  back.className = "nav";
+  back.innerHTML = "&#9664;";
+  back.title = watch ? "Show the move before (Shift+Left)" : "Back one move (Shift+Left)";
+  back.disabled = watch ? !move : !done;
+  back.onclick = () => step(-1);
+  const forward = document.createElement("button");
+  forward.className = "nav";
+  forward.innerHTML = "&#9654;";
+  forward.title = watch ? "Show the next move's commit (Shift+Right)" : "Mark this move done, and go to the next (Shift+Right)";
+  forward.disabled = watch ? move >= moves.length : done >= moves.length;
+  forward.onclick = () => step(1);
   const buttons = [{ name: "Start", subject: "Before the first move of this step" }, ...moves].map((m, number) => {
     const button = document.createElement("button");
     button.textContent = number ? String(number) : "Start";
-    button.title = number ? `${m.name}: ${m.subject} (Shift+Right, Shift+Left)` : m.subject;
-    button.className = number === move ? "here" : number < move ? "done" : "";
-    if (number === move) button.setAttribute("aria-current", "step");
-    button.disabled = number > move + 1;
-    button.onclick = () => goMove(number);
+    button.title = number ? `${m.name}: ${m.subject}` : m.subject;
+    const isDone = watch ? number < move : number <= done && number > 0;
+    button.className = number === (watch ? move : here) ? "here" : isDone ? "done" : "";
+    if (button.className === "here") button.setAttribute("aria-current", "step");
+    // Watch: go to that commit. Do: work on that move, so the ones before it count as done.
+    button.onclick = () => (watch ? goMove(number) : markDone(Math.max(number - 1, 0)));
     return button;
   });
   const subject = document.createElement("span");
   subject.className = "move-subject";
-  subject.textContent = move ? moves[move - 1].subject : `${moves.length} moves to make`;
-  row.replaceChildren(label, ...buttons, subject);
+  subject.textContent = watch ? (move ? moves[move - 1].subject : `${moves.length} moves to show`)
+    : done >= moves.length ? "Every move is done" : `Now: ${moves[here - 1].name}, ${moves[here - 1].subject.replace(/^[^:]*:\s*/, "")}`;
+  row.replaceChildren(label, back, ...buttons, forward, subject);
+}
+
+/** A tutorial's mode, beside the walk's kind, at every step: Do, the learner makes each move by hand; Watch, timewalk
+ *  shows each move's commit. The Room window names the mode in its title instead. */
+function drawModes() {
+  const tutorial = ui.state.walk?.kind === "tutorial";
+  const modes = $("move-modes");
+  modes.hidden = ROOM || !tutorial;
+  if (modes.hidden) return;
+  for (const button of modes.querySelectorAll("button")) {
+    button.setAttribute("aria-pressed", String(button.dataset.mode === (ui.state.mode || "do")));
+  }
+}
+
+/** Do mode: mark how many of the step's moves are done. The code does not move. */
+let doneQueue = Promise.resolve();
+function markDone(count) {
+  const { current } = ui.state;
+  if (current === null) return Promise.resolve();
+  ui.askedDone = { step: current, done: count };
+  doneQueue = doneQueue.then(() => api("/api/done", { step: ui.state.steps[current].name, done: count })
+    .catch((error) => { ui.askedDone = null; showNotice(error.message, true); }));
+  return doneQueue;
 }
 
 /** Moves asked for one after another reach the server in that order, one at a time. */
@@ -431,8 +483,11 @@ function drawMode() {
   mode.classList.toggle("warn", count > 0);
 }
 
-async function openFile(path, view = "file", scrollTop = true) {
-  const file = await api("/api/file?path=" + encodeURIComponent(path));
+async function openFile(path, view = "file", scrollTop = true, of = null) {
+  const file = await api("/api/file?path=" + encodeURIComponent(path) + (of ? "&of=" + encodeURIComponent(of) : ""));
+  ui.of = file.of || null;
+  // In a tutorial, "what changed" is a move's: the move asked for, or the one the code is at.
+  $("view-diff").textContent = ui.of ? `Changes in ${ui.of}` : ui.state?.moves?.length && ui.state.move ? "Changes in this move" : "Changes in this step";
   // A view with nothing to show falls back to the file, for example once edits are stashed or undone.
   if ((view === "diff" && !file.diff) || (view === "edits" && !file.edits)) view = "file";
   ui.open = path;
@@ -443,10 +498,11 @@ async function openFile(path, view = "file", scrollTop = true) {
   $("view-edits").disabled = !file.edits;
   $("view-edits").hidden = !file.edits;
   const body = $("file-body");
+  // A move's change shows even where the file does not exist yet: in do mode, before the learner makes it.
   if (view === "edits") body.replaceChildren(drawDiff(file.edits));
+  else if (view === "diff" && file.diff) body.replaceChildren(drawDiff(file.diff));
   else if (file.missing) body.innerHTML = `<p class="empty">This file does not exist at this step.</p>`;
   else if (file.skipped) body.innerHTML = `<p class="empty">Not shown: ${escapeHtml(file.skipped)}.</p>`;
-  else if (view === "diff" && file.diff) body.replaceChildren(drawDiff(file.diff));
   else body.replaceChildren(drawCode(path, file.text));
   if (scrollTop) body.scrollTop = 0;
   document.querySelectorAll("#tree .file").forEach((item) => item.classList.remove("open"));
@@ -701,7 +757,7 @@ function wireControls() {
   $("slide-next").onclick = () => showSlide(slideFrom() + 1);
   for (const button of $("layouts").querySelectorAll("button")) button.onclick = () => show({ layout: button.dataset.layout });
   $("shell-toggle").onclick = () => { ui.shellToggledHere = true; show({ shell: !ui.shell }); };
-  for (const view of ["file", "diff", "edits"]) $("view-" + view).onclick = () => ui.open && show({ path: ui.open, view });
+  for (const view of ["file", "diff", "edits"]) $("view-" + view).onclick = () => ui.open && show({ path: ui.open, view, of: view === "diff" ? ui.of : null });
   $("theme").onclick = () => { ui.theme = ui.theme === "dark" ? "light" : "dark"; applyAppearance(); restartTerminals(); };
   $("larger").onclick = () => { ui.size = Math.min(ui.size + 1, 26); applyAppearance(); resizeTerminalText(); };
   $("smaller").onclick = () => { ui.size = Math.max(ui.size - 1, 10); applyAppearance(); resizeTerminalText(); };
@@ -736,8 +792,14 @@ function wireControls() {
       event.preventDefault();
       event.stopPropagation();
       if (event.repeat) return;
-      const from = ui.askedMove?.step === ui.state.current ? ui.askedMove.move : ui.state.move ?? 0;
-      goMove(from + (event.key === "ArrowRight" ? 1 : -1));
+      const delta = event.key === "ArrowRight" ? 1 : -1;
+      if (ui.state.mode === "watch") {
+        const from = ui.askedMove?.step === ui.state.current ? ui.askedMove.move : ui.state.move ?? 0;
+        goMove(Math.min(Math.max(from + delta, 0), ui.state.moves.length));
+      } else {
+        const from = ui.askedDone?.step === ui.state.current ? ui.askedDone.done : ui.state.done ?? 0;
+        markDone(Math.min(Math.max(from + delta, 0), ui.state.moves.length));
+      }
       return;
     }
     // Shift+Up and Shift+Down: the first and the last slide of the step. Other keys with Shift are left alone.
@@ -890,9 +952,26 @@ function drawWalks() {
   picker.hidden = ROOM || walks.length < 2;
   $("walk-title").hidden = !ROOM || !walk;
   document.body.classList.toggle("walks", walks.length > 1);
-  $("walk-title").textContent = walk ? walk.title : "";
+  // Every walk is a narrative (tag to tag) or a tutorial (with the small commits between the tags): say which.
+  const KINDS = { narrative: "Narrative", tutorial: "Tutorial" };
+  const kind = (KINDS[walk?.kind] || walk?.kind || "").toLowerCase();
+  $("walk-title").textContent = walk ? `${walk.title} (${kind}${walk.kind === "tutorial" ? `, ${ui.state.mode === "watch" ? "watch" : "do"} mode` : ""})` : "";
+  $("walk-kind").hidden = picker.hidden || !walk;
+  $("walk-kind").textContent = walk ? KINDS[walk.kind] || walk.kind : "";
+  $("walk-kind").title = walk?.kind === "tutorial" ? "A tutorial stops at every small commit between the tags: Shift+Right makes the next move"
+    : "A narrative goes from tag to tag, with nothing between them";
+  drawModes();
   if (picker.hidden) return;
-  picker.replaceChildren(...walks.map((w) => new Option(w.title, w.id, false, w.id === walk?.id)));
+  const option = (w) => new Option(w.title, w.id, false, w.id === walk?.id);
+  const kinds = [...new Set(walks.map((w) => w.kind))];
+  if (kinds.length < 2) { picker.replaceChildren(...walks.map(option)); return; }
+  // Both kinds: one group for each, narratives first, each walk in the order of the table.
+  picker.replaceChildren(...kinds.sort((a, b) => (a === "narrative" ? -1 : b === "narrative" ? 1 : 0)).map((kind) => {
+    const group = document.createElement("optgroup");
+    group.label = `${KINDS[kind] || kind}s`;
+    group.append(...walks.filter((w) => w.kind === kind).map(option));
+    return group;
+  }));
 }
 
 async function changeWalk(id, setAside = false) {
@@ -999,25 +1078,68 @@ function drawNotes() {
   // The prose and the commands, in the order of the notes file: each command is a button where it is written.
   const box = $("notes");
   box.replaceChildren();
-  // In a tutorial, each move has a section: done, here (the last move made), or later, grayed until you get there.
-  const { moves = [], move: made } = ui.state;
+  // In a tutorial, each move has a section. Nothing is locked: in do mode the learner makes each move by hand and marks
+  // it done; in watch mode each move's commit is shown on demand. The commands at the end of a section anchor the move.
+  const { moves = [], move: made = 0, done = 0, mode } = ui.state;
+  const watch = mode === "watch";
+  const onShow = moveOnShow();
+  if (moves.length) {
+    const hint = document.createElement("p");
+    hint.className = "p-hint";
+    hint.textContent = watch
+      ? `Watch: ${moves.length} moves, each a commit. Press Show on a move, or \u25B6 above, to check out its commit; then run the command at the end of its section.`
+      : `Do: ${moves.length} moves. Make each one by hand from its notes, run the command at its end, then press Done. Lost? Catch me up sets the code to the end of a move.`;
+    box.append(hint);
+  }
   let into = box;       // where the parts go: the notes, or the section of a move
-  let later = false;    // whether the section is of a move still to make
   let files = [];       // the files of that move's commit, for a files: line
   let owner = 0;        // the move whose section it is
-  let group = null;   // the buttons of a run of commands, one after another in the file
+  let group = null;     // the buttons of a run of commands, one after another in the file
+  /** The last commands of a move's section are its anchor: what to run to see what the move did. */
+  const markAnchor = (section) => {
+    if (!section || section === box) return;
+    const last = [...section.querySelectorAll(":scope > .p-commands")].pop();
+    if (!last) return;
+    last.classList.add("p-anchor");
+    const label = document.createElement("div");
+    label.className = "p-anchor-label";
+    label.textContent = "After this move, run:";
+    section.insertBefore(label, last);
+  };
   for (const part of mine?.parts || []) {
     if (part.kind === "move") {
+      markAnchor(into);
       const number = moves.findIndex((m) => m.name === part.name) + 1;
-      later = moves.length > 0 && number > 0 && number > made;
       files = number ? moves[number - 1].files : [];
       owner = number;
       into = document.createElement("section");
-      into.className = "p-move " + (!number || !moves.length ? "" : number === made ? "here" : number < made ? "done" : "later");
+      const state = !number ? "" : watch ? (number === made ? "here" : number < made ? "done" : "ahead")
+        : number === onShow && done < moves.length ? "here" : number <= done ? "done" : "";
+      into.className = "p-move " + state;
       into.dataset.move = String(number);
+      const head = document.createElement("div");
+      head.className = "p-move-head";
       const heading = document.createElement("h3");
       heading.textContent = part.title ? `${part.name} ${part.title}` : part.name;
-      into.append(heading);
+      head.append(heading);
+      if (number) {
+        const actions = document.createElement("span");
+        actions.className = "p-move-actions";
+        const action = (text, title, onclick, primary = false) => {
+          const button = document.createElement("button");
+          button.textContent = text;
+          button.title = title;
+          if (primary) button.className = "primary";
+          button.onclick = onclick;
+          actions.append(button);
+        };
+        if (watch && number !== made) action("Show \u25B6", `Check out ${part.name}'s commit, in every window`, () => goMove(number), true);
+        if (!watch && state === "here") action("Done \u2713", "I made this move: go to the next", () => markDone(number), true);
+        if (!watch && number <= done) action("Not done", "Mark this move as not done yet", () => markDone(number - 1));
+        if (!watch) action("Catch me up", `Set the code to the end of ${part.name}. Your edits are asked about first, and kept`, () => goMove(number));
+        head.append(actions);
+      }
+      into.append(head);
       box.append(into);
       group = null;
       continue;
@@ -1025,14 +1147,13 @@ function drawNotes() {
     if (part.kind === "files") {
       const list = document.createElement("div");
       list.className = "p-files";
+      const name = moves[owner - 1]?.name;
       for (const file of files) {
         const button = document.createElement("button");
         button.textContent = file.path;
-        // "What changed" compares the move on show with the one before, so only its own files open there.
-        const view = file.status !== "A" && owner === made ? "diff" : "file";
-        button.title = view === "diff" ? "Changed in this move. Opens what changed" : "Opens the file";
-        button.disabled = later;
-        button.onclick = () => show({ path: file.path, view });
+        button.title = `What ${name} changed in this file`;
+        // The move's own change, whatever the code stands on; in watch mode at that move, the same change.
+        button.onclick = () => show({ path: file.path, view: "diff", of: watch && owner === made ? null : name });
         list.append(button);
       }
       into.append(list);
@@ -1051,19 +1172,19 @@ function drawNotes() {
       group.className = "p-commands";
       into.append(group);
     }
-    const button = commandButton(part);
-    button.disabled = later;
-    group.append(button);
+    group.append(commandButton(part));
   }
-  // When the move changes, scroll the notes, and only the notes, to its section, in every window alike. A window with
-  // the notes hidden does it when they show.
+  markAnchor(into);
+  // When the move on show changes, scroll the notes, and only the notes, to its section, in every window alike. A window
+  // with the notes hidden does it when they show.
   const step = here?.name ?? null;
   const section = box.querySelector(".p-move.here");
   const scroller = $("notes-body");
-  if (made != null && section && scroller.offsetParent && (ui.drawnMove?.step !== step || ui.drawnMove?.move !== made)) {
+  const key = `${step} ${mode} ${watch ? made : onShow}`;
+  if (moves.length && section && scroller.offsetParent && ui.drawnMove !== key) {
     following.notes = Date.now() + 300;   // each window scrolls itself, so this scroll is not sent on
-    scroller.scrollTop += section.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
-    ui.drawnMove = { step, move: made };
+    scroller.scrollTop += section.getBoundingClientRect().top - scroller.getBoundingClientRect().top - 40;
+    ui.drawnMove = key;
   }
   if (!box.children.length) box.innerHTML = `<p class="p-empty">${!here ? "" : ui.notesPath
     ? `No notes for ${escapeHtml(here.name)} in ${escapeHtml(ui.notesPath.split("/").pop())}. Click Edit to write them, or add a section headed "## ${escapeHtml(here.name)}".`
@@ -1125,6 +1246,9 @@ document.addEventListener("fullscreenchange", () => { $("fullscreen").hidden = !
 if (ROOM) { document.title = "timewalk room"; document.body.classList.add("room"); }
 $("pdf").onclick = makePdf;
 $("walk-picker").onchange = () => changeWalk($("walk-picker").value);
+for (const button of $("move-modes").querySelectorAll("button")) {
+  button.onclick = () => ui.state.mode !== button.dataset.mode && show({ mode: button.dataset.mode });
+}
 $("run-on-click").onchange = () => settings.set("run-on-click", $("run-on-click").checked);
 $("notes-edit").onclick = startEditing;
 $("notes-cancel").onclick = stopEditing;
@@ -1137,7 +1261,7 @@ wireControls();
 await init();
 await refresh();
 selectTab(ui.state.track || "replay");
-if (ui.state.path) { await openFile(ui.state.path, ui.state.view); restorePlaces(ui.state.restore); }
+if (ui.state.path) { await openFile(ui.state.path, ui.state.view, true, ui.state.of); restorePlaces(ui.state.restore); }
 // For tests that drive the page: what each terminal shows, read only.
 window.timewalkTerminals = () => [...ui.terms].map(([id, { term, el, paused }]) => {
   const lines = term.buffer?.active;
@@ -1164,11 +1288,12 @@ const events = onEvents(async (event) => {
   }
   if (event.type === "edits") {
     await loadTree();
-    if (ui.open) await openFile(ui.open, ui.view, false);
+    if (ui.open) await openFile(ui.open, ui.view, false, ui.of);
   }
   if (event.type === "scroll") { followScroll(event); return; }
   if (event.type === "content") { await reloadContent(); return; }
   if (event.type === "slide") { ui.state = await api("/api/state"); drawSlides(); }
+  if (event.type === "done") { ui.state = await api("/api/state"); ui.askedDone = null; drawMoves(); drawNotes(); drawSlides(); drawSteps(); }
   if (event.type === "notes" && !ui.editing) { await loadNotes(); drawNotes(); drawBand(); }
   if (event.type === "clock") { ui.state = await api("/api/state"); ui.skew = ui.state.now - Date.now() / 1000; drawBand(); }
   if (event.type === "size") { followSize(event); return; }
@@ -1176,7 +1301,8 @@ const events = onEvents(async (event) => {
   if (event.type === "show") {
     if (event.layout && event.layout !== ui.layout) applyLayout(event.layout);
     if (typeof event.shell === "boolean") applyShell(event.shell);
-    if (event.path) await openFile(event.path, event.view || "file");
+    if (event.path) await openFile(event.path, event.view || "file", true, event.of || null);
+    if (event.mode && event.mode !== ui.state.mode) { ui.state.mode = event.mode; drawMoves(); drawNotes(); drawSteps(); drawWalks(); }
     // The window that asked gets the keys: a tab it clicked, or a command it typed from the notes.
     if (event.track) selectTab(event.track, event.from === PAGE);
   }

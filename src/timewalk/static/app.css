@@ -108,12 +108,29 @@ body.has-moves .bar { flex-wrap: wrap; row-gap: 6px; }
 .moves button.here { background: var(--accent); border-color: var(--accent); color: var(--surface); font-weight: 600; }
 .moves .move-subject { margin-left: 10px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 /* In the notes: one section for each move. The moves still to make are grayed, and their buttons do nothing. */
-.p-move { margin: 0.6em 0; padding-left: 10px; border-left: 3px solid transparent; }
+/* A move's section: here is the move on show; done is checked off; ahead (watch mode) is a commit not shown yet, only
+   shaded, never locked. Its last commands, the anchor, show what the move did. */
+.p-move { margin: 0.8em 0; padding-left: 10px; border-left: 3px solid transparent; }
 .p-move.here { border-left-color: var(--accent); }
-.p-move.later { opacity: 0.45; }
-.p-move h3 { font-family: var(--mono); font-size: 0.95em; margin: 0.4em 0; }
+.p-move.done { border-left-color: var(--accent-soft); }
+.p-move.done h3::before { content: "\2713  "; color: var(--accent); }
+.p-move.ahead > :not(.p-move-head) { opacity: 0.7; }
+.p-move-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.p-move h3 { font-family: var(--mono); font-size: 0.95em; margin: 0.4em 0; flex: 1; min-width: 12em; }
+.p-move-actions { display: flex; gap: 4px; flex: none; }
+.p-move-actions button { font-size: 0.8em; padding: 2px 8px; }
+.p-move-actions button.primary { background: var(--accent); border-color: var(--accent); color: var(--surface); font-weight: 600; }
+.p-anchor-label { font-size: 0.8em; color: var(--ink-3); margin: 0.6em 0 0.2em; }
+.p-move.here .p-anchor button { border-color: var(--accent); }
+.p-hint { font-size: 0.88em; color: var(--ink-2); background: var(--bg); border: 1px dashed var(--rule); border-radius: 6px; padding: 6px 10px; }
+.move-modes { display: inline-flex; flex: none; border: 1px solid var(--rule); border-radius: 6px; overflow: hidden; margin-left: -10px; }
+.move-modes button { border: none; border-radius: 0; font-size: 0.85em; padding: 2px 8px; }
+.move-modes button + button { border-left: 1px solid var(--rule); }
+.move-modes button[aria-pressed="true"] { background: var(--accent-soft); box-shadow: inset 0 -2px 0 var(--accent); }
+.moves .nav { font-size: 12px; padding: 2px 8px; min-width: 0; }
 .p-files { display: flex; flex-wrap: wrap; gap: 4px; margin: 0.2em 0 0.8em; }
 .p-files button { font-family: var(--mono); font-size: 0.85em; padding: 2px 8px; }
+.walk-kind { flex: none; font-size: 0.8em; padding: 1px 6px; border-radius: 3px; border: 1px solid var(--rule); color: var(--ink-2); margin-left: -8px; }
 .walk-title { font-weight: 600; white-space: nowrap; max-width: 16em; overflow: hidden; text-overflow: ellipsis; }
 .step-subject { color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tools { display: flex; gap: 4px; flex: none; align-items: center; }
@@ -158,8 +175,12 @@ body[data-layout="slides"] .col-resizer { display: none; }
 body[data-layout="split"] .slide-pane, body[data-layout="slides"] .slide-pane { display: flex; }
 body[data-layout="slides"] .panes { grid-template-columns: 1fr; }
 body[data-layout="slides"] .tree-pane, body[data-layout="slides"] .file-pane { display: none; }
-.layouts { display: flex; gap: 2px; margin-right: 8px; }
-.layouts button[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); }
+/* Slides, Both and Code are one choice of three: one control, joined, with its label, apart from the other buttons. */
+.layouts { display: inline-flex; align-items: stretch; margin: 0 8px; border: 1px solid var(--rule); border-radius: 6px; overflow: hidden; }
+.layouts .group-label { display: flex; align-items: center; padding: 0 7px; font-size: 0.8em; color: var(--ink-3); background: var(--bg); border-right: 1px solid var(--rule); }
+.layouts button { border: none; border-radius: 0; }
+.layouts button + button { border-left: 1px solid var(--rule); }
+.layouts button[aria-pressed="true"] { background: var(--accent-soft); color: var(--ink); box-shadow: inset 0 -2px 0 var(--accent); }
 .slide { flex: 1; min-height: 0; overflow: auto; display: flex; }
 .slide iframe { flex: 1; width: 100%; border: 0; background: var(--surface); }
 .slide img { max-width: 100%; max-height: 100%; object-fit: contain; margin: auto; }

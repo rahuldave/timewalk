@@ -75,7 +75,7 @@ shows under the bar. See [Tutorial walks](walks.md#tutorial-walks).
 | **Full screen** | Only in the window for the class. Fills the screen with that window |
 | **PDF** | Makes a PDF of the slides, one page each, and downloads it |
 | **Shell** | Gives the terminals the space of the slides, the file list and the reader, in every window. The notes stay. Press it again to go back. See [Shell](#shell) |
-| **Slides**, **Both**, **Code** | Choose what fills the page, in every window |
+| **Show**: **Slides**, **Both**, **Code** | One control, with the label **Show**: choose what fills the page, in every window |
 | **A−**, **A+** | Change the size of all the text in this window. The terminals use the same size |
 | **Dark**, **Light** | Change the theme of this window |
 

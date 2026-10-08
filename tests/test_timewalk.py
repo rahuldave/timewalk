@@ -1194,25 +1194,22 @@ def test_a_tutorial_finds_the_moves_between_the_steps(tutorial: timewalk.Repo) -
     assert [m.subject for m in tutorial.moves[1]] == ["step-01.1: a", "step-01.2: b", "step-01: c"]
 
 
-def test_a_tutorial_makes_the_moves_in_order(tutorial: timewalk.Repo) -> None:
-    "A step starts before its first move; the moves go forward one at a time, and back to any of them."
+def test_a_tutorial_reaches_any_move(tutorial: timewalk.Repo) -> None:
+    "A step starts before its first move; any move of it can be reached, forward or back, each at its own commit."
     tutorial.move(1)
     assert tutorial.position() == (1, 0) and tutorial.current() == 1
     assert run_git(tutorial.work, "rev-parse", "HEAD") == tutorial.steps[0].sha, "move 0 is the step before"
     assert tutorial.tree()["summary"] == "" and tutorial.span()[0] == tutorial.span()[1], "nothing of the step is made yet"
-    with pytest.raises(timewalk.GitError, match=r"in order: the next is step-01\.1"):
-        tutorial.move(1, move=2)
-    tutorial.move(1, move=1)
-    tutorial.move(1, move=2)
+    tutorial.move(1, move=2)   # past move 1: each move is a commit of its own
     assert tutorial.position() == (1, 2)
     assert {f["path"]: f["status"] for f in tutorial.tree()["files"] if f["status"]} == {"b.txt": "A", "README.md": "M"}, "what this move changed"
     assert "+# t, with b" in tutorial.diff("README.md")
     tutorial.move(1, move=3)
     assert tutorial.position() == (1, 3) and run_git(tutorial.work, "rev-parse", "HEAD") == tutorial.steps[1].sha
     tutorial.move(1, move=1)
-    assert tutorial.position() == (1, 1), "back to an earlier move is allowed"
-    with pytest.raises(timewalk.GitError, match="in order"):
-        tutorial.move(1, move=3)
+    assert tutorial.position() == (1, 1), "back to an earlier move"
+    with pytest.raises(timewalk.GitError, match="has no move 4"):
+        tutorial.move(1, move=4)
     tutorial.move(2)
     assert tutorial.position() == (2, None), "a step of one commit has no moves, and stands on its tag"
 
@@ -1251,7 +1248,7 @@ def tutorial_class(tmp_path: Path) -> Path:
     folder = tmp_path / "tclass"
     (folder / "slides").mkdir(parents=True)
     (folder / "toc.toml").write_text('[[walk]]\nid = "tut"\nkind = "tutorial"\nnotes = "notes.md"\nslides = "slides/slides.toml"\n')
-    (folder / "notes.md").write_text("## step-00\n\n## step-01\n### step-01.1 A\n### step-01.2 B\n### step-01.3 C\n\n## step-02\n")
+    (folder / "notes.md").write_text("## step-00\n\n## step-01\n### step-01.1 A\n$ ls\n### step-01.2 B\n$ ls\n### step-01.3 C\n$ ls\n\n## step-02\n")
     (folder / "slides" / "deck.md").write_text("# zero\n---\n# one\n---\n# m1\n---\n# m2\n---\n# m3\n---\n# two\n")
     (folder / "slides" / "slides.toml").write_text('[slides]\nstep-00 = ["deck.md#1"]\nstep-01 = ["deck.md#2"]\n"step-01.1" = ["deck.md#3"]\n'
                                                   '"step-01.2" = ["deck.md#4"]\n"step-01.3" = ["deck.md#5"]\nstep-02 = ["deck.md#6"]\n')
@@ -1299,8 +1296,9 @@ def tutored(tutorial: timewalk.Repo, tutorial_class: Path) -> TestClient:
 
 
 def test_slides_and_moves_follow_each_other_with_sync(tutored: TestClient, tutorial_class: Path) -> None:
-    "A step's deck is its slides, then each move's; a move shows its first slide, and a move's slide makes that move, in order."
+    "In watch mode, a step's deck is its slides, then each move's; a move shows its first slide, and a move's slide makes that move."
     auth = {"t": TOKEN}
+    tutored.post("/api/show", params=auth, json={"mode": "watch"})
     tutored.post("/api/move", params=auth, json={"to": 1})
     state = tutored.get("/api/state", params=auth).json()
     assert state["slides"] == [f"slides/deck.md#{n}" for n in (2, 3, 4, 5)] and state["slide_moves"] == [0, 1, 2, 3] and state["sync"]
@@ -1476,8 +1474,9 @@ def test_a_fence_before_the_first_step_is_read_as_save_reads_it() -> None:
 
 
 def test_a_move_without_slides_keeps_the_slide_before_it_and_down_goes_on(tutored: TestClient, tutorial_class: Path) -> None:
-    "Move 2 has no slides: it shows move 1's slide, and Down then makes move 3, never undoing move 2."
+    "In watch mode, move 2 has no slides: it shows move 1's slide, and Down then makes move 3, never undoing move 2."
     auth = {"t": TOKEN}
+    tutored.post("/api/show", params=auth, json={"mode": "watch"})
     (tutorial_class / "slides" / "slides.toml").write_text('[slides]\nstep-00 = ["deck.md#1"]\nstep-01 = ["deck.md#2"]\n"step-01.1" = ["deck.md#3"]\n'
                                                           '"step-01.3" = ["deck.md#5"]\nstep-02 = ["deck.md#6"]\n')
     tutored.post("/api/move", params=auth, json={"to": 1})
@@ -1547,3 +1546,94 @@ def test_a_class_folder_given_through_a_link_still_serves_its_slides(repo: timew
     auth = {"t": TOKEN}
     client.post("/api/move", params=auth, json={"to": 1})
     assert client.get("/api/state", params=auth).json()["slides"] == ["slides/talk.md#2"]
+
+
+def test_do_mode_marks_moves_done_without_moving_the_code(tutored: TestClient, tutorial: timewalk.Repo) -> None:
+    "In do mode, the default, Done counts the moves made by hand; the code stays where the learner has it, and slides follow."
+    auth = {"t": TOKEN}
+    state = tutored.get("/api/state", params=auth).json()
+    assert state["mode"] == "do" and state["done"] == 0
+    tutored.post("/api/move", params=auth, json={"to": 1})
+    head = run_git(tutorial.work, "rev-parse", "HEAD")
+    assert tutored.post("/api/done", params=auth, json={"step": "step-01", "done": 1}).status_code == 200
+    state = tutored.get("/api/state", params=auth).json()
+    assert (state["done"], state["move"], state["slide"]) == (1, 0, 2), "move 2's slide, as move 2 is the one to do now"
+    assert run_git(tutorial.work, "rev-parse", "HEAD") == head, "Done does not move the code"
+    tutored.post("/api/slide", params=auth, json={"to": 3, "step": "step-01"})
+    assert tutored.get("/api/state", params=auth).json()["move"] == 0, "in do mode a slide makes no move"
+    assert tutored.post("/api/done", params=auth, json={"step": "step-02", "done": 1}).status_code == 409
+
+
+def test_catch_me_up_sets_the_code_to_the_end_of_a_move(tutored: TestClient, tutorial: timewalk.Repo) -> None:
+    "Catch me up is a move to a move: the code is that move's commit, and that many moves are done. Edits are asked about first."
+    auth = {"t": TOKEN}
+    tutored.post("/api/move", params=auth, json={"to": 1})
+    (tutorial.work / "README.md").write_text("my own try\n")
+    refused = tutored.post("/api/move", params=auth, json={"to": 1, "name": "step-01", "move": 2})
+    assert refused.status_code == 409 and refused.json()["edits"]
+    assert tutored.post("/api/move", params=auth, json={"to": 1, "name": "step-01", "move": 2, "set_aside": True}).status_code == 200
+    state = tutored.get("/api/state", params=auth).json()
+    assert (state["move"], state["done"]) == (2, 2)
+    assert "timewalk: edits made at step-01" in run_git(tutorial.work, "stash", "list")
+
+
+def test_the_reader_shows_one_moves_change_whatever_the_code(tutored: TestClient) -> None:
+    "With of, the file API gives what that move changed, even while the code is at the start of the step."
+    auth = {"t": TOKEN}
+    tutored.post("/api/move", params=auth, json={"to": 1})
+    answer = tutored.get("/api/file", params={**auth, "path": "README.md", "of": "step-01.2"}).json()
+    assert answer["of"] == "step-01.2" and "+# t, with b" in answer["diff"]
+    assert "of" not in tutored.get("/api/file", params={**auth, "path": "README.md"}).json()
+
+
+def test_the_mode_starts_from_the_table_and_is_shared(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
+    "moves = watch in toc.toml starts the walk in watch mode; the page can switch it, for every window; a wrong value is a mistake."
+    from timewalk.walks import TocError, load_toc
+
+    toc = tutorial_class / "toc.toml"
+    toc.write_text(toc.read_text() + 'moves = "watch"\n')
+    client = TestClient(timewalk.make_app(tutorial, TOKEN, PORT, assistant="", walks=load_toc(toc), root=tutorial_class), headers=HOST)
+    auth = {"t": TOKEN}
+    assert client.get("/api/state", params=auth).json()["mode"] == "watch"
+    with client.websocket_connect(f"/ws/events?t={TOKEN}") as window:
+        client.post("/api/show", params=auth, json={"mode": "do"})
+        assert window.receive_json()["mode"] == "do"
+    toc.write_text(toc.read_text().replace('"watch"', '"look"'))
+    with pytest.raises(TocError, match='write "do" or "watch"'):
+        load_toc(toc)
+
+
+def test_timewalk_notes_drafts_the_missing_moves(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
+    "Each move without a section gets a draft with what its commit changed; a section already written stays as it is."
+    from timewalk.walks import add_move_sections, check, load_toc, move_summary
+
+    (tutorial_class / "notes.md").write_text("## step-00\n\n## step-01 S\n\n### step-01.1 Mine\nmy words\n\n$ ls\n\n## step-02\n")
+    walk = load_toc(tutorial_class / "toc.toml")[0]
+    text, added = add_move_sections(walk, tutorial.main)
+    assert added == ["step-01.2", "step-01.3"]
+    assert "### step-01.1 Mine\nmy words\n\n$ ls" in text
+    assert "### step-01.2 b\n" in text and "### step-01.3 c\n" in text, "titles without the move's or the step's prefix"
+    assert move_summary(tutorial.main, tutorial.moves[1][1].sha) == ["- `README.md`: +1 -1", "- `b.txt`: new file, 1 lines"]
+    (tutorial_class / "notes.md").write_text(text)
+    _, warnings = check(load_toc(tutorial_class / "toc.toml"), tutorial.main, tutorial_class)
+    assert any("step-01.2 has no command" in w for w in warnings) and not any("step-01.1 has no command" in w for w in warnings)
+
+
+def test_the_summary_names_python_functions_and_recipes(tmp_path: Path) -> None:
+    "A function added, a function changed in its signature and in its body, a class added, a recipe added: each is named."
+    main = tmp_path / "s"
+    main.mkdir()
+    run_git(main, "init", "--quiet", "-b", "main")
+    run_git(main, "config", "user.name", "t")
+    run_git(main, "config", "user.email", "t@e")
+    (main / "m.py").write_text("def a():\n    return 1\n\n\ndef b(x):\n    return x\n")
+    (main / "justfile").write_text("test:\n    echo t\n")
+    run_git(main, "add", "-A")
+    run_git(main, "commit", "-qm", "one")
+    (main / "m.py").write_text("def a():\n    return 2\n\n\ndef b(x, y):\n    return x\n\n\nclass C:\n    pass\n")
+    (main / "justfile").write_text("test:\n    echo t\n\ncheck:\n    echo c\n")
+    run_git(main, "commit", "-qam", "two")
+    from timewalk.walks import move_summary
+
+    summary = move_summary(main, run_git(main, "rev-parse", "HEAD"))
+    assert summary == ["- `justfile`: +3 -0; adds `recipe check`", "- `m.py`: +6 -2; adds `class C`; changes `a`, `b`"]

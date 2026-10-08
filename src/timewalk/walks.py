@@ -33,10 +33,10 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
-from timewalk import GitError, expand_entry, git, parse_notes, pick_steps, split_slides, step_moves, tag_steps
+from timewalk import GitError, expand_entry, git, parse_notes, pick_steps, replace_section, split_slides, step_moves, tag_steps
 
 KINDS = ("narrative", "tutorial")
-WALK_KEYS = ("id", "title", "kind", "folder", "notes", "slides", "steps", "tags", "setup", "sync")
+WALK_KEYS = ("id", "title", "kind", "folder", "notes", "slides", "steps", "tags", "setup", "sync", "moves")
 SLIDE_FILES = (".md", ".markdown", ".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".pdf", ".html")
 
 
@@ -52,7 +52,8 @@ class Walk:
     tags: str  # Glob for the tags that mark its steps
     steps: list[str] | None  # The steps it keeps, or None for every tag that matches
     setup: str  # "manual": `just setup` is run by hand at each step
-    sync: bool = True  # In a tutorial: a move shows its first slide, and a move's slide makes the move
+    sync: bool = True  # In a tutorial: a move shows its first slide, and in watch mode a move's slide makes the move
+    mode: str = "do"  # In a tutorial, how it starts: "do", the learner makes each move; "watch", timewalk shows each commit
 
 
 class TocError(ValueError):
@@ -104,6 +105,8 @@ def load_toc(
         if steps is not None and kind == "tutorial":
             raise TocError(f"{where}: a tutorial takes every step of its tags, so that the moves between them are its own; "
                            "for a part, give it tags of its own, for example tags = \"part-*\"")
+        if entry.get("moves", "do") not in ("do", "watch"):
+            raise TocError(f"{where}: moves = {entry['moves']!r}; write \"do\" or \"watch\"")
         if "sync" in entry and not isinstance(entry["sync"], bool):
             raise TocError(f"{where}: sync must be true or false")
         if entry.get("setup", "manual") != "manual":
@@ -116,7 +119,7 @@ def load_toc(
         if folder is not None and not folder.is_dir():
             raise TocError(f"{where}: its folder {entry['folder']} does not exist")
         walks.append(Walk(ident, entry.get("title", ident), kind, notes.resolve() if notes else None, slides.resolve() if slides else None,
-                          entry.get("tags", "step-*"), steps, "manual", entry.get("sync", True)))
+                          entry.get("tags", "step-*"), steps, "manual", entry.get("sync", True), entry.get("moves", "do")))
     return walks
 
 
@@ -189,6 +192,9 @@ def check_walk(
                 kept = [m for m in written if m in wanted]
                 if kept != [m for m in wanted if m in kept]:
                     errors.append(f"{name}: the ### sections of {step} in {walk.notes.name} are not in the order of the commits: {', '.join(kept)}")
+                for move in moves_without_commands(sections.get(step, {}).get("parts", [])):
+                    warnings.append(f"{name}: {move} has no command in {walk.notes.name}; add one that shows what the move did, "
+                                    "for example $ just test")
     if walk.slides is None:
         if walk.notes is not None:
             warnings.append(f"{name}: has no slides.toml; give every step at least one slide")
@@ -229,6 +235,146 @@ def check_walk(
         if problem:
             errors.append(f"{name}: {step}: {problem}")
     return errors, warnings, used
+
+
+def moves_without_commands(
+    parts: list[dict],  # The parts of a step's notes
+) -> list[str]:  # The moves whose section has no command
+    "Find the moves that give the learner nothing to run: a command anchors a move, in watch mode and in do mode."
+    missing, current, has = [], None, False
+    for part in [*parts, {"kind": "move", "name": None}]:
+        if part["kind"] == "move":
+            if current and not has:
+                missing.append(current)
+            current, has = part["name"], False
+        elif part["kind"] == "command":
+            has = True
+    return missing
+
+
+def move_summary(
+    main: Path,  # The repository
+    sha: str,  # A move's commit
+) -> list[str]:  # Markdown lines: one item for each file the commit touched
+    """Say what one commit changed, from its diff alone: each file, its lines added and removed, and for Python the
+    functions and classes it adds, removes or changes, and for a justfile the recipes it adds. No guessing: only names."""
+    sha = git(main, "rev-parse", f"{sha}^{{commit}}")   # an annotated tag names its commit
+    status = dict(reversed(line.split("\t", 1)) for line in git(main, "diff-tree", "--no-commit-id", "--name-status", "-r", "--no-renames", sha).splitlines() if line)
+    counts = {}
+    for line in git(main, "show", "--numstat", "--format=", "--no-renames", sha).splitlines():
+        if line.count("\t") >= 2:
+            added, removed, path = line.split("\t", 2)
+            counts[path] = (added, removed)
+    names: dict[str, dict[str, set[str]]] = {}
+    path, context, defines = None, None, False   # the hunk's enclosing function, and whether the hunk defines one itself
+
+    def close_hunk() -> None:
+        # git names the function above a hunk, even when the hunk lies after it: only a hunk that defines nothing changes it.
+        if path is not None and context and not defines:
+            names[path]["~"].add(context)
+
+    for line in git(main, "show", "-U0", "--format=", "--no-renames", sha).splitlines():
+        if line.startswith("+++ "):
+            close_hunk()
+            path, context, defines = (line[6:] if line.startswith("+++ b/") else None), None, False
+            continue
+        if line.startswith("--- ") or path is None:
+            continue
+        found = names.setdefault(path, {"+": set(), "-": set(), "~": set()})
+        if line.startswith("@@"):
+            close_hunk()
+            hunk = re.match(r"^@@ [^@]* @@\s*(?:async\s+)?(?:def|class)\s+(\w+)", line)
+            context, defines = (hunk.group(1) if hunk else None), False
+            continue
+        if line[:1] in "+-" and path.endswith(".py"):
+            named = re.match(r"^[+-]\s*(?:async\s+)?(def|class)\s+(\w+)", line)
+            if named:
+                defines = True
+                found[line[0]].add(("class " if named.group(1) == "class" else "") + named.group(2))
+        elif line[:1] == "+" and path.rsplit("/", 1)[-1].lower() == "justfile":
+            recipe = re.match(r"^\+([A-Za-z][\w-]*)(?:\s+[^:=]*)?:(?!=)", line)
+            if recipe:
+                found["+"].add(f"recipe {recipe.group(1)}")
+    close_hunk()
+    items = []
+    for path in sorted(status):
+        kind = status[path][0]
+        added, removed = counts.get(path, ("-", "-"))
+        if kind == "D":
+            items.append(f"- `{path}`: removed")
+            continue
+        found = names.get(path, {"+": set(), "-": set(), "~": set()})
+        adds = sorted(found["+"] - found["-"])
+        removes = sorted(found["-"] - found["+"])
+        # A name on both sides changed its own line, for example a signature; a hunk inside a function changed its body.
+        touched = {n.removeprefix("class ") for n in found["+"] & found["-"]} | found["~"]
+        changes = sorted(touched - {a.removeprefix("class ") for a in adds} - {r.removeprefix("class ") for r in removes})
+        size = f"new file, {added} lines" if kind == "A" else f"+{added} -{removed}"
+        what = [part for part in (
+            "adds " + ", ".join(f"`{n}`" for n in adds) if adds else "",
+            "removes " + ", ".join(f"`{n}`" for n in removes) if removes else "",
+            "changes " + ", ".join(f"`{n}`" for n in changes) if changes else "") if part]
+        items.append(f"- `{path}`: {size}" + ("; " + "; ".join(what) if what else ""))
+    return items
+
+
+def move_section(
+    main: Path,  # The repository
+    move,  # A move of a tutorial
+) -> str:  # A ### section for it, for the author to finish
+    "Write a first draft of a move's notes: its title from the commit, what changed, the files, and a place for a command."
+    step = move.name.rsplit(".", 1)[0]
+    prefixed = move.subject.startswith((f"{move.name}:", f"{step}:"))   # a move's subject, or the step's own on its last move
+    title = move.subject.split(":", 1)[1].strip() if prefixed else move.subject
+    return "\n".join([f"### {move.name} {title}", "", "What changed:", "", *move_summary(main, move.sha), "", "files:", "",
+                      "<!-- Add a command that shows what this move did, for example: $ just test -->", ""])
+
+
+def add_move_sections(
+    walk: Walk,  # A tutorial walk
+    main: Path,  # The repository
+) -> tuple[str, list[str]]:  # The notes with the missing move sections added, and the names of the moves added
+    "Add a draft section for each move that the notes do not have yet, at the end of its step. Sections already there stay as they are."
+    text = walk.notes.read_text(encoding="utf-8") if walk.notes and walk.notes.is_file() else ""
+    picked = pick_steps(tag_steps(main, walk.tags), walk.steps)
+    added = []
+    for step, moves in zip(picked, step_moves(main, picked), strict=True):
+        written = {part["name"] for part in parse_notes(text).get(step.name, {}).get("parts", []) if part["kind"] == "move"}
+        new = [move_section(main, move) for move in moves if move.name not in written]
+        if not new:
+            continue
+        added += [move.name for move in moves if move.name not in written]
+        raw = parse_notes(text).get(step.name, {}).get("raw", "")
+        text = replace_section(text, step.name, "\n" + (raw.rstrip() + "\n\n" if raw.strip() else "") + "\n".join(new))
+    return text, added
+
+
+def notes_main() -> None:
+    "Add a draft ### section for each move of a tutorial that its notes do not have, with what the move changed."
+    parser = argparse.ArgumentParser(description="Draft the notes of a tutorial's moves: what each commit changed, for you to finish.")
+    parser.add_argument("repo", type=Path, help="the repository that the class walks through")
+    parser.add_argument("--toc", type=Path, required=True, help="the table of contents, toc.toml")
+    parser.add_argument("--walk", required=True, help="the id of a tutorial walk")
+    parser.add_argument("--write", action="store_true", help="write the sections into the notes file; without it, print them")
+    args = parser.parse_args()
+    main_repo = Path(git(args.repo.resolve(), "rev-parse", "--show-toplevel"))
+    try:
+        walk = next((w for w in load_toc(args.toc.resolve()) if w.id == args.walk), None)
+    except TocError as error:
+        raise SystemExit(f"timewalk-notes: {error}") from None
+    if walk is None or walk.kind != "tutorial" or walk.notes is None:
+        raise SystemExit(f"timewalk-notes: {args.walk} is not a tutorial walk with a notes file in {args.toc}")
+    before = walk.notes.read_text(encoding="utf-8") if walk.notes.is_file() else ""
+    text, added = add_move_sections(walk, main_repo)
+    if not added:
+        print(f"timewalk-notes: every move has a section in {walk.notes.name}")
+        return
+    if args.write:
+        walk.notes.write_text(text, encoding="utf-8")
+        print(f"timewalk-notes: added {len(added)} sections to {walk.notes}: {', '.join(added)}")
+    else:
+        print(text[len(before) - len(before.lstrip()):] if not before else text)
+        print(f"timewalk-notes: {len(added)} sections to add ({', '.join(added)}); run again with --write to write them")
 
 
 def slide_problem(

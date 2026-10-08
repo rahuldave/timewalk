@@ -17,6 +17,7 @@ dependencies = [
 timewalk = "timewalk:main"
 timewalk-pdf = "timewalk.slides_pdf:main"
 timewalk-check = "timewalk.walks:main"
+timewalk-notes = "timewalk.walks:notes_main"
 
 [project.urls]
 Homepage = "https://rahuldave.com/timewalk/"

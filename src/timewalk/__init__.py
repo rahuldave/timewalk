@@ -313,26 +313,21 @@ class Repo:
         set_aside: bool = False,  # Stash uncommitted edits first instead of refusing
         here: str | None = None,  # The name of the step the copy is at, for the stash, when the steps just changed
         move: int | None = None,  # In a tutorial, the move of the step to go to; default: 0, the start of the step
-        anywhere: bool = False,  # Go to that move without the order: a return to a walk, to the place it was left at
+        anywhere: bool = False,  # Kept for callers; any move can be reached
     ) -> None:
         """Move the working copy to a step, or to a move of a step. Edits are stashed, never discarded; untracked files are left alone.
 
         With `discard`, the move is `git checkout -f`: edits to tracked files are thrown away, and an untracked
         file is replaced only where the step has a file of that name. Every other untracked file still stays.
 
-        A tutorial goes through a step's moves in order: one forward at a time, and back to any of them.
+        In a tutorial, any move of a step can be reached: each one is a commit, right for its own place.
         """
         if not 0 <= index < len(self.steps):
             raise GitError(f"there is no step {index}")
         moves = self.moves[index]
         place = (index, (move or 0) if moves else None)
-        if moves:
-            if not 0 <= place[1] <= len(moves):
-                raise GitError(f"{self.steps[index].name} has no move {place[1]}")
-            step_now, move_now = self.position()
-            furthest = (move_now or 0) + 1 if step_now == index else 0
-            if step_now is not None and place[1] > furthest and not anywhere:
-                raise GitError(f"make the moves of {self.steps[index].name} in order: the next is {self.steps[index].name}.{furthest}")
+        if moves and not 0 <= place[1] <= len(moves):
+            raise GitError(f"{self.steps[index].name} has no move {place[1]}")
         target = self.commit_at(*place)
         if self.discard:
             git(self.work, "checkout", "--force", "--detach", "--quiet", target)
@@ -389,6 +384,24 @@ class Repo:
             self.files_of[move.sha] = [{"path": path, "status": status[0]}
                                        for status, path in (line.split("\t", 1) for line in out.splitlines() if line) if status[0] != "D"]
         return self.files_of[move.sha]
+
+    def move_named(
+        self,
+        name: str,  # A move's name, such as step-02.1
+    ) -> Move | None:  # That move of the walk on show, if there is one
+        "Find a move of the walk on show by its name."
+        return next((m for moves in self.moves for m in moves if m.name == name), None)
+
+    def move_diff(
+        self,
+        name: str,  # A move's name
+        relative: str,  # Path inside the working copy
+    ) -> str:  # What that move's commit did to the file, whatever the working copy stands on
+        "Show what one move changed in one file: the answer for a learner who makes the move by hand."
+        move = self.move_named(name)
+        if move is None:
+            return ""
+        return git(self.work, "diff", "--no-color", f"{move.sha}^", move.sha, "--", relative)
 
     def tree(self) -> dict:  # Files of the working copy, with what the current step did to each
         "Describe the working copy: its tracked files and which of them the current step, or move, changed."
@@ -566,7 +579,7 @@ def replace_section(
         if mark:
             fence = mark.group(1)[0] if fence is None else (None if mark.group(1)[0] == fence else fence)
     start = next((i for i, line in enumerate(lines) if i not in fenced and re.match(rf"^##\s+{re.escape(step)}(\s|$)", line)), None)
-    new = body.strip("\n").split("\n") if body.strip() else []
+    new = body.rstrip("\n").split("\n") if body.strip() else []   # a blank line that the body starts with stays
     if start is None:
         return text.rstrip("\n") + f"\n\n## {step}\n\n" + "\n".join(new) + "\n"
     end = next((i for i in range(start + 1, len(lines)) if i not in fenced and re.match(r"^##\s", lines[i])), len(lines))
@@ -947,7 +960,11 @@ def make_app(
     clock: dict[str, float | None] = {"started": None}
     # What every window shows, kept here so that all the windows on the page agree.
     # `shell` is the Shell toggle: the terminals take the space of the slides and the files, in every window.
-    showing: dict = {"slide": 0, "layout": "split", "path": None, "view": "file", "track": "replay", "step": None, "shell": False}
+    showing: dict = {"slide": 0, "layout": "split", "path": None, "view": "file", "track": "replay", "step": None, "shell": False,
+                     "of": None, "mode": "do", "done": 0}
+    # In a tutorial, `mode` is "do" (the learner makes each move by hand; `done` counts the moves of the step marked
+    # done) or "watch" (timewalk checks out each move's commit). Every window shares both.
+    showing["mode"] = first.mode if first else "do"
     # Where each step was left: its slide, and how far down its slide, notes and open file were scrolled, as
     # fractions. A move back to a step brings it all back. Kept while the server runs.
     memory: dict[str, dict] = {}
@@ -1072,8 +1089,8 @@ def make_app(
                 "has_slides": bool(load_slides(active["slides"], active["root"])), "has_notes": active["notes"] is not None, "show_clock": show_clock, "layout": showing["layout"], "path": showing["path"],
                 "view": showing["view"], "track": showing["track"], "shell": showing["shell"],
                 "room_sizes": {name: term.room_size for name, term in terminals.items() if showing["shell"] and term.room_size},
-                "slide_moves": owners, "sync": synced(),
-                "walk": {"id": active["walk"].id, "title": active["walk"].title, "kind": active["walk"].kind} if active["walk"] else None,
+                "slide_moves": owners, "sync": synced(), "mode": showing["mode"], "done": showing["done"], "of": showing["of"],
+                "walk": {"id": active["walk"].id, "title": active["walk"].title, "kind": active["walk"].kind, "mode": active["walk"].mode} if active["walk"] else None,
                 "walks": [{"id": w.id, "title": w.title, "kind": w.kind} for w in walks]}
 
     @guarded
@@ -1083,10 +1100,12 @@ def make_app(
 
     @guarded
     async def file(request: Request) -> dict:
-        "One file's text, what the current step did to it, and what has been edited since."
+        "One file's text, what the current step did to it, and what has been edited since. With `of`, what that move did to it."
         path = request.query_params["path"]
         found = repo.read(path)
-        return {**found, "diff": "" if found.get("missing") else repo.diff(path), "edits": repo.edit_diff(path)}
+        of = request.query_params.get("of")
+        diff = repo.move_diff(of, path) if of else ("" if found.get("missing") else repo.diff(path))
+        return {**found, "diff": diff, "edits": repo.edit_diff(path), **({"of": of} if of and repo.move_named(of) else {})}
 
     @guarded
     async def move(request: Request) -> dict:
@@ -1096,6 +1115,8 @@ def make_app(
         if body.get("name") is not None and not (0 <= to < len(repo.steps) and repo.steps[to].name == body["name"]):
             raise GitError(f"the steps changed while you asked for {body['name']}; ask again")  # another window changed the walk
         repo.move(to, set_aside=bool(body.get("set_aside")), move=int(number) if number is not None else None)
+        # A move to a step starts it with no move done; a move to a move (watch mode, or Catch me up) has made that many.
+        showing["done"] = int(number) if number is not None else 0
         showing["step"] = repo.steps[to].name
         showing["slide"] = memory.get(showing["step"], {}).get("slide", 0)   # back where you left this step
         if repo.moves[to] and synced():
@@ -1140,6 +1161,7 @@ def make_app(
         memory.clear()
         memory.update(saved)
         active.update(walk=walk, notes=walk.notes, slides=walk.slides)
+        showing["mode"], showing["done"] = walk.mode, number or 0
         showing["step"] = names[index]
         showing["slide"] = memory.get(showing["step"], {}).get("slide", 0)
         await hub.tell({"type": "walk"})
@@ -1147,6 +1169,24 @@ def make_app(
             if term.cwd == repo.work:
                 term.refresh_prompt()
         return repo.state()
+
+    @guarded
+    async def mark_done(request: Request) -> dict:
+        "In do mode, mark how many of the step's moves the learner has made. The code does not move; with sync, the slides follow."
+        body = await request.json()
+        if body.get("step") != showing["step"]:
+            raise GitError(f"the step changed while you marked a move of {body.get('step')}; mark it again")
+        index = repo.current()
+        moves = repo.moves[index] if index is not None else []
+        showing["done"] = min(max(int(body.get("done", 0)), 0), len(moves))
+        remember(showing["step"], done=showing["done"])
+        if moves and synced():
+            owners = deck_now()[1]
+            working = min(showing["done"] + 1, len(moves))   # the move the learner works on now
+            if working in owners:
+                showing["slide"] = owners.index(working)
+        await hub.tell({"type": "done"})
+        return {"done": showing["done"]}
 
     @guarded
     async def slide(request: Request) -> dict:
@@ -1158,13 +1198,14 @@ def make_app(
         to = min(max(int(body["to"]), 0), max(len(deck) - 1, 0))
         index, number = repo.position()
         owner = owners[to] if to < len(owners) else 0
-        if index is not None and number is not None and owner and owner != number and synced():
+        # In watch mode, a slide of another move shows that move. In do mode the learner moves the code, so slides do not.
+        if index is not None and number is not None and owner and owner != number and synced() and showing["mode"] == "watch":
             if owner > number + 1:
                 # That slide is past the next move: make the next move only, and show its first slide, or stay if it has none.
                 owner = number + 1
                 to = owners.index(owner) if owner in owners else showing["slide"]
             repo.move(index, set_aside=bool(body.get("set_aside")), move=owner)   # refuses a move with edits, until set aside
-            showing["slide"] = to
+            showing["slide"], showing["done"] = to, owner
             remember(showing["step"], slide=to)
             await hub.tell({"type": "moved"})
             for term in terminals.values():
@@ -1241,14 +1282,17 @@ def make_app(
             if not body["shell"]:
                 for term in terminals.values():
                     term.room_size = None  # out of Shell mode, the window you type in sets the size again
+        if body.get("mode") in ("do", "watch"):
+            showing["mode"] = body["mode"]
         if body.get("path"):
             showing["path"], showing["view"] = str(body["path"]), body.get("view") or "file"
+            showing["of"] = str(body["of"]) if body.get("of") else None  # the move whose change the reader shows, or none
             if showing["layout"] == "slides":
                 showing["layout"] = "split"  # a file asked for must be seen
         if body.get("track") and terminal_for(str(body["track"])) is not None:
             showing["track"] = str(body["track"])
-        await hub.tell({"type": "show", **{k: body[k] for k in ("path", "view", "track", "layout", "from", "focus") if k in body},
-                        "layout": showing["layout"], "shell": showing["shell"]})
+        await hub.tell({"type": "show", **{k: body[k] for k in ("path", "view", "of", "track", "layout", "from", "focus") if k in body},
+                        "layout": showing["layout"], "shell": showing["shell"], "mode": showing["mode"]})
         return {"ok": True}
 
     @guarded
@@ -1396,6 +1440,7 @@ def make_app(
         Route("/api/move", move, methods=["POST"]),
         Route("/api/slide", slide, methods=["POST"]),
         Route("/api/walk", change_walk, methods=["POST"]),
+        Route("/api/done", mark_done, methods=["POST"]),
         Route("/api/recipes", just_recipes),
         Route("/api/notes", notes),
         Route("/api/notes", save_notes, methods=["POST"]),

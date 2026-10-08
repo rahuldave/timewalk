@@ -88,8 +88,11 @@ timewalk starts on the first walk, or on the walk that `--walk` names. Each walk
 ## Change the walk
 
 Choose a walk in the menu at the left of the step bar. Every window changes to the steps, the notes and
-the slides of that walk. The menu shows only when the table has two walks or more. If the bar has no room for the menu, its buttons move to a second row. The Room window shows
-the title of the walk, and has no menu.
+the slides of that walk. 
+
+The menu groups the narratives and the tutorials apart. A label beside it says the
+kind of the walk on show. The menu shows only when the table has two walks or more. If the bar has no room for the menu, its buttons move to a second row. The Room window shows
+the title and the kind of the walk, and has no menu.
 
 A change of walk moves the replay copy, by the same rules as a move between steps:
 
