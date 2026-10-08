@@ -107,6 +107,8 @@ See [Commits for a tutorial](build-walks.md#commits-for-a-tutorial), and
   change that makes sense alone, for example one test or one new function.
 - **Make each move work alone.** After each move, the anchor commands run and give the result that the
   notes state.
+- **Keep each move small enough that its items and excerpts tell the story.** A learner who reads only
+  the items, their words and the quoted lines must see what the move did.
 
 ### The section of each move
 
@@ -116,11 +118,21 @@ parts:
 - **The instructions** to make the move by hand, with the code to type.
 - **"What changed:"**, a list of the changes. `timewalk-notes` drafts it from the diff. Edit the draft,
   and say which change is the one to look at.
-- **A line `files:`.**
+- **A line `files:`, with items.** Give every item words that say what to look for in the file.
+- **A `show:` line for the main line of the move.** Under its item, quote that line of the change. The
+  notes draw it as an excerpt, and the reader marks it.
 - **One or more anchor commands at the end.** An anchor command shows what the move did. Make it safe to
   run again, and say what it gives. A test that fails is a good anchor, if the notes say that it fails.
 
-See [Tutorial walks](walks.md#tutorial-walks).
+```markdown
+files:
+- diff `src/tally/__init__.py`: one word, `lower()`, answers the failing test.
+  show: `for word in text.lower().split():`
+```
+
+See [Tutorial walks](walks.md#tutorial-walks) and [The items under files](walks.md#the-items-under-files).
+
+![The items of step-02.1 in the notes, with their excerpt, and the quoted line marked in Next change](images/tutorial-items.png)
 
 ### Write for both modes
 
@@ -146,12 +158,15 @@ Run the checks in this order:
    ```
    timewalk-check repo --toc toc.toml
    ```
-2. **For a tutorial, look for missing move sections.** Then write their drafts, and finish each one:
+2. **For a tutorial, look for missing move sections.** Then write their drafts:
 
    ```
    timewalk-notes repo --toc toc.toml --walk tutorial
    timewalk-notes repo --toc toc.toml --walk tutorial --write
    ```
+
+   Each draft has a line `files:` with an item for each file of the move. Finish each draft by hand.
+   Write the words of each item, and pick the `show:` lines. Then run `timewalk-check` again.
 3. **Make the PDF** of each walk:
 
    ```
@@ -159,7 +174,8 @@ Run the checks in this order:
    ```
 4. **Run the commands of each walk** at the commit where a learner meets them. See
    [Run the commands of a walk](#run-the-commands-of-a-walk).
-5. **Open each walk in two windows.** Go through every step and every move, in do mode and in watch mode:
+5. **Open each walk in two windows.** Go through every step and every move, in do mode and in watch mode.
+   In do mode, try **Apply** on each move, and look for "Your files match":
 
    ```
    timewalk repo --toc toc.toml --walk tutorial
@@ -205,6 +221,10 @@ Then it checks each walk, and reports every problem that it finds:
 | A manifest at the top of the class folder, or notes in a slides folder | An error |
 | A step with no section in the notes | A warning |
 | In a tutorial, a move whose section has no command | A warning |
+| In a tutorial, a `diff` item for a file that its move does not change | A warning |
+| In a tutorial, a `file` item for a file that is not in the commit of its move | A warning |
+| In a tutorial, a `show:` line that is no longer in the change of its item | A warning |
+| In a tutorial, an item that names a move that is not in the walk | A warning |
 | A walk with notes and no manifest | A warning |
 | A slide file in a slides folder that no walk uses | A warning |
 

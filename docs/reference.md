@@ -68,6 +68,14 @@ one line for each problem, and exits with code 1 when it finds an error. timewal
 starts with `--toc`. See [Several walks](walks.md#the-checks), and the full list in
 [What a narrative and a tutorial need](authoring.md#how-to-check-a-walk).
 
+In a tutorial, it also checks the items under `files:` against the commits. Each of these problems is a
+warning:
+
+- A `diff` item names a file that its move does not change.
+- A `file` item names a file that is not in the commit of its move.
+- A `show:` line is no longer in the change of its item.
+- An item names a move that is not in the walk.
+
 ## timewalk-notes
 
 ```
@@ -82,8 +90,11 @@ timewalk-notes REPO --toc toc.toml --walk ID [--write]
 | `--write` | Write the drafts into the notes file. Without it, print only the drafts |
 
 Drafts a `### step-NN.k` section for each move that the notes do not have yet, at the end of its step. A
-draft has the subject of the commit as its title, and a list "What changed:" from the diff. It also has a
-line `files:`, and a comment that asks for a command. Sections already in the notes stay as they are. See
+draft has the subject of the commit as its title, and a list "What changed:" from the diff. It ends with a
+comment that asks for a command. Sections already in the notes stay as they are.
+
+The draft also has a line `files:`, with one item for each file of the commit. A new file gets a `file`
+item, and a changed file a `diff` item. You write the words of each item. The draft has no `show:` lines. See
 [Draft the notes of the moves](walks.md#draft-the-notes-of-the-moves).
 
 ## Recipes
@@ -136,8 +147,28 @@ In the timewalk folder, `just` lists these:
 | `> text` | A cue. Every window shows it, in its own shade. Remove private cues before you give the notes to students |
 | `$ cmd`, `runs$ cmd`, `runs2$ cmd` to `runs9$ cmd`, `main$ cmd` | A command for that tab |
 | `### step-NN.k Title` | In a tutorial: starts the section of move `k` of step `NN`. Write the sections in the order of the commits |
-| `files:` | In a move section: the files that its commit added or changed. Each opens the change of that move in the reader |
+| `files:` | Starts a list of items. In a move section with no items: a button for each file that its commit added or changed |
+| ``- diff `path`: words`` | An item: a button to the change of the move, or of the step, to that file, with its words |
+| ``- file `path`: words`` | An item: a button to the file. In do mode, for a move not made yet, the file as the move leaves it |
+| ``- diff step-02.1 `path`: words`` | An item of another move |
+| ``  show: `a line` `` | Under an item: a line of the change, drawn as an excerpt in the notes and marked in the reader |
 | The last commands of a move section | The anchor commands of the move, under "After this move, run:". They show what the move did. `timewalk-check` warns of a move section with no command |
+
+## The views of the reader
+
+| View | Shows |
+|---|---|
+| **Your file** | The file on the disk, in the replay copy |
+| **At step-02.3** | In do mode: the file as a move not made yet leaves it, read only. A `file` item opens it |
+| **Last change: name** | The step before, or the move before, to this one |
+| **Next change: name** | This step or move, to the next one. In do mode, it has the **Apply** bar |
+| **Changes in step-02.1** | The change of another move, opened from the notes |
+| **Your edits** | The edits since the commit that the replay copy stands on |
+
+In do mode, **Last change** and **Next change** follow the moves marked done. In watch mode, they follow
+the move on show. On **Your file**, **Open in VS Code** opens the file in your editor, on this machine
+only. Alt+click changes the editor. See [The reader](page.md#the-reader) and
+[The reader in a tutorial](walks.md#the-reader-in-a-tutorial).
 
 ## Address options
 

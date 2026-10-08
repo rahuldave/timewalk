@@ -40,7 +40,11 @@ main$ git log --oneline
 | `runs2$ command` to `runs9$ command` | The same, in one more Runs tab, which opens the first time a line uses it. Use it for a second long command while the first command still runs |
 | `main$ command` | The same, in the **Main** tab, in your repository |
 | `### step-NN.k Title` | In a tutorial walk: starts the section of move `k` of step `NN`, for example `### step-02.1 A test of counting`. Write the sections in the order of the commits. See [Tutorial walks](walks.md#tutorial-walks) |
-| `files:` | In a move section: the files that the commit of the move added or changed. Each one is a button that opens the change of that move in the reader, even before the file exists |
+| `files:` | Starts a list of items, the files to look at. In a move section with no items, the page shows a button for each file that the commit of the move added or changed |
+| ``- diff `path`: words`` | Under `files:`, an item: a button that opens the change of the move, or of the step, to that file, and its words. The words can go on in an indented line under it |
+| ``- file `path`: words`` | An item: a button that opens the file itself. In do mode, for a move not made yet, it opens the file as the move leaves it |
+| ``- diff step-02.1 `path`: words`` | An item for another move, named before the path |
+| ``  show: `a line` `` | Under an item: one line of the change. The notes draw it as an excerpt of the real diff, and the reader marks the line |
 | other lines | Markdown text to read |
 
 timewalk shows every line of the notes, cues included. If some cues are only for you, remove them from the
@@ -50,7 +54,7 @@ copy of the notes that you give to students.
 
 In a tutorial walk, each move of a step has a section of its own, under the `## step` section. A move is
 one small commit between two tags. A move section gives the instructions to make the move by hand, a
-list of what changed, a line `files:`, and commands. `timewalk-notes` drafts the sections from the
+list of what changed, a line `files:` with items, and commands. `timewalk-notes` drafts the sections from the
 commits. See [Draft the notes of the moves](walks.md#draft-the-notes-of-the-moves).
 
 ```markdown
@@ -63,11 +67,18 @@ What changed:
 - `tests/test_empty.py`: new file, 8 lines; adds `class Empty` and `test_empty`.
 
 files:
+- diff `tests/test_empty.py`: an empty text counts nothing.
+  show: `self.assertEqual(count(""), {})`
 
 $ uv run python -m unittest discover -s tests -q
 
 The new test passes at once.
 ```
+
+An item is one file to look at, with words that say why. On the page, each item is a button with its
+words. A `show:` line quotes one line of the change. The notes column draws it as an excerpt, a small part
+of the real diff, read only. The excerpt comes from the commits each time, so the notes never hold a copy of the
+diff. See [The items under files](walks.md#the-items-under-files).
 
 The last commands of a move section are its anchor commands. The notes column shows them under the label
 "After this move, run:". An anchor command shows what the move did, and the notes say what it gives. Make

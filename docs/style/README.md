@@ -43,6 +43,9 @@ Keep the text of these headings. A link from another page uses each one as an an
 | class.md | A check the evening before |
 | slides.md | A PDF of the slides |
 | class.md | If a window stops answering |
+| walks.md | The items under files |
+| walks.md | The reader in a tutorial |
+| page.md | The reader |
 
 ## Glossary
 
@@ -92,6 +95,12 @@ only that page could not know it.
 | move | One small commit of a step in a tutorial, named `step-NN.k`. Its notes are a `### step-NN.k` section |
 | do mode | The mode of a tutorial where the learner makes each move by hand from the notes, and marks it done. The code does not move |
 | watch mode | The mode of a tutorial where timewalk checks out the commit of each move when asked |
+| item | A line under `files:` in the notes, ``- diff `path`: words`` or ``- file `path`: words``. On the page, a button to a change or a file, with its words |
+| excerpt | A small, read-only part of the real diff that the notes draw for a `show:` line: the line, with two lines of context or its whole short hunk |
+| Last change, Next change | Two views of the reader. Last change is the change of the step or move just made, and Next change is the change of the next one |
+| Your file, Your edits | Two views of the reader: the file on the disk, and its edits since the commit that the replay copy stands on |
+| Apply | The bar in Next change, in do mode. Its buttons type a git command into the shell that makes the change of the next move as edits |
+| files match | In do mode, the answer of timewalk when the files of the learner are the same as the commit of the move: "Your files match step-02.3 ✓" |
 | anchor command | One of the last commands of a move section. It shows what the move did, and the notes say what it gives |
 | artifact | A file that a step needs and that git does not hold. `just setup` makes it in an ignored folder when it is missing |
 | kit, walk kit | The repository of a walk, for example `bla-walk`: notes, slides, `justfile` and `.gitignore` |

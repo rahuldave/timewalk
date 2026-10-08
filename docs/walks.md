@@ -143,6 +143,9 @@ problem, and exits with code 1 when it finds an error.
 | A notes file or a manifest inside your repository or its replay copy | An error |
 | A step with no section in the notes | A warning |
 | In a tutorial, a move whose section has no command | A warning |
+| In a tutorial, a `diff` item for a file that its move does not change, or a `file` item for a file that is not in the commit of its move | A warning |
+| In a tutorial, a `show:` line that is no longer in the change of its item | A warning |
+| In a tutorial, an item that names a move that is not in the walk | A warning |
 | A slide file in a slides folder that no walk uses | A warning |
 
 A picture that a Markdown slide shows counts as used.
@@ -179,8 +182,8 @@ the step and `k` is the number of the move. A move section holds these parts:
 - **The instructions** to make the move by hand, with the code to type.
 - **What changed,** a short list of the files and the functions that the commit changed.
   `timewalk-notes` drafts it from the diff. See [Draft the notes of the moves](#draft-the-notes-of-the-moves).
-- **A line `files:`.** The page shows the files that the commit of the move added or changed. Each file
-  is a button that opens the change of the move in the reader.
+- **A line `files:`, with items.** Each item is one file to look at, with words that say why. A `show:`
+  line under an item quotes the main line of the change. See [The items under files](#the-items-under-files).
 - **One or more commands at the end,** with the result to expect. They are the anchor of the move.
 
 ````markdown
@@ -203,6 +206,8 @@ What changed:
 - `tests/test_count.py`: new file, 11 lines; adds `class Count`, `test_words` and `test_case`.
 
 files:
+- diff `tests/test_count.py`: two tests. The second asks for something the code cannot do yet.
+  show: `self.assertEqual(count("A a"), {"a": 2})`
 
 $ uv run python -m unittest discover -s tests -q
 
@@ -245,8 +250,9 @@ In do mode, each move section has these buttons:
 | **Not done** | On a move marked done: marks it, and the moves after it, as not done |
 | **Catch me up** | Checks out the commit at the end of that move, in every window. If the replay copy has edits, the page asks first, and then stashes them. It never discards them |
 
-A button of a file under `files:` opens the change of that move in the reader, even before the file
-exists. The button of the view in the reader then says, for example, **Changes in step-02.1**.
+An item under `files:` opens the change of its move in the reader, even before the file exists. In do
+mode, the reader then shows the change in the tab **Next change**, with an **Apply** bar. See
+[The reader in a tutorial](#the-reader-in-a-tutorial) and [Apply](#apply).
 
 ![A tutorial in watch mode after Show on the first move: the commit of step-02.1 checked out, the hint at the top of the notes, and the slide of the move](images/tutorial-watch.png)
 
@@ -271,10 +277,112 @@ first move. Beside the buttons, the row shows the move on show and its subject.
 - **A hint** at the top of the notes says how to go on in the mode on show.
 - **The notes** mark the section of the move on show with a line at its left, and scroll to it in every
   window.
-- **What changed** in the reader shows what the move on show changed.
+- **Last change** and **Next change** in the reader follow the moves. See
+  [The reader in a tutorial](#the-reader-in-a-tutorial).
 
 timewalk writes down the move on show in the git folder of the replay copy. After a restart, the page
 comes back at the same move.
+
+### The items under files
+
+A line `files:` in a move section starts a list of items. An item is one file to look at, with words
+that say why. The words are written by hand, but the change that an item opens comes from the commits,
+each time the page draws it. So no diff is copied into the notes.
+
+```markdown
+files:
+- diff `src/tally/__init__.py`: one word, `lower()`, answers the failing test.
+  show: `for word in text.lower().split():`
+- file `tests/test_count.py`: read `test_case` again. It passes now.
+```
+
+| Line | Does |
+|---|---|
+| ``- diff `path`: words`` | A button that opens the change of the move to that file, and its words |
+| ``- file `path`: words`` | A button that opens the file itself, and its words |
+| ``- diff step-02.1 `path`: words`` | The same for another move, named before the path |
+| ``  show: `a line` `` | Under an item: a line of the change, quoted. The notes draw it as an excerpt, and the reader marks it |
+| An indented line under an item | More of the words of the item |
+
+On the page, each item is a button with the path, and its words beside it. A `diff` button opens the
+tab of the reader that holds the change:
+
+- **Next change** for the move that the learner works on.
+- **Last change** for the move just made.
+- **Changes in step-02.1** for any other move.
+
+A `file` button opens **Your file**. In do mode, the button of a move that is not made yet opens
+**At step-02.3** instead. The view shows the file as the move leaves it, read only.
+
+A `show:` line names one line of the change by its text. Under a `diff` item, the notes draw an excerpt
+of the real diff there. An excerpt is a small part of the diff, read only. It holds the line and two
+lines of context on each side, or the whole hunk when the hunk is about eight lines or fewer. A hunk is
+one run of changed lines in a diff. When the item opens the reader, the reader marks the same line.
+
+![The notes of step-02.1 in do mode: an item with its words and its excerpt, and the reader on Next change with the quoted line marked, and the Apply bar](images/tutorial-items.png)
+
+If a `show:` line is no longer in the change, the notes draw a box that says so. A fix to the history can
+remove a quoted line. `timewalk-check` warns of it too.
+
+A line `files:` with no items under it shows a button for each file that the commit of the move added
+or changed. Items also work in a narrative. There, a `diff` item opens **Last change**, the change of the
+step. The PDF prints each item line as it is written.
+
+### The reader in a tutorial
+
+In a tutorial, the reader has up to five views. Two views read the disk, and two compare commits. The
+label of each change names its move.
+
+| View | Shows |
+|---|---|
+| **Your file** | The file in the replay copy, as the learner left it |
+| **At step-02.3** | The file as a move leaves it, read only. It shows only when a `file` item of a move that the learner has not made opens it, in do mode |
+| **Last change: step-02.2** | The move before, to this one: the change of the move just made |
+| **Next change: step-02.3** | This move, to the next one: the change of the move to make now. It is empty at the last move of a step |
+| **Your edits** | The edits since the commit that the replay copy stands on |
+
+In do mode, the code does not move, so **Last change** and **Next change** follow the moves marked
+done. In watch mode, they follow the move on show. At **Start**, no move is made, so **Last change** is
+empty and **Next change** is the first move.
+
+In a narrative, **Last change** compares the step before with this step. **Next change** compares this
+step with the next step, before you move to it.
+
+### Apply
+
+In do mode, the **Next change** tab has an **Apply** bar. Apply makes the change of the next move in the
+learner's files. It types a git command into the **At this step** tab, and runs it. The learner sees
+exactly what ran.
+
+| Button | Types into the shell |
+|---|---|
+| **Apply this file** | ``(cd "$(git rev-parse --show-toplevel)" && git diff A B -- path \| git apply --3way)``, where `A` is the commit before the move and `B` is the commit of the move |
+| **Apply the whole move** | `git cherry-pick --no-commit B`, for the commit `B` of the move |
+
+- **The changes become edits.** HEAD stays where it is. HEAD is the commit that the replay copy stands
+  on. The file list marks the files, and **Your edits** shows them.
+- **A button is disabled** when the learner has already changed a file that it touches. The bar then
+  says to compare the file with **Next change**, or to use **Catch me up**.
+- **The page itself never writes a file.** The shell runs the command, as any terminal does.
+- **The Room window has no Apply bar.**
+
+![The Apply bar after Apply the whole move: step-02.1 is marked done, and the reader shows the next move, step-02.2](images/tutorial-apply.png)
+
+### Your files match
+
+In do mode, the page asks timewalk every two seconds if the learner's files match the commit of the move
+that the learner works on. The answer shows on the section of that move, and in the Apply bar:
+
+- **"Your files match step-02.3 ✓"** when every file is the same as in the commit.
+- **"2 files differ from step-02.3: a.py, b.py"** with the names of the files that differ.
+
+A match marks the move done by itself. It does so once for each move, so if the learner then presses
+**Not done**, the move stays not done. Only your own window marks the move, and never the Room window.
+
+The comparison is by content. It takes every file that differs between HEAD and the commit of the
+move, and every file with edits. A new file of the move counts, even when git does not track it yet. The
+comparison is strict, so one extra space is a difference. It is a hint and never a gate. **Done ✓**
+still marks a move done when the learner made it another way.
 
 ### Slides for moves
 
@@ -317,11 +425,12 @@ parts:
   or removed, or how many lines the commit added and removed. For Python, it names the functions and
   classes that the commit added, removed or changed. For a `justfile`, it names the recipes that the
   commit added.
-- **A line `files:`**.
+- **A line `files:`, with items.** It drafts a `file` item for each new file, and a `diff` item for each
+  changed file. The words of each item are left for you to write. It writes no `show:` lines.
 - **A comment** that asks for a command, for you to replace with an anchor command.
 
-The list names only what the diff shows. Finish each draft by hand. Write the instructions, say which
-change in the list is the one to look at, and add the anchor commands.
+The list names only what the diff shows. Finish each draft by hand. Write the instructions and the words
+of each item. Quote the main line of each change with `show:`, and add the anchor commands.
 
 ## A PDF of one walk
 

@@ -91,10 +91,19 @@
         <span id="file-path" class="file-path">Choose a file</span>
         <button class="to-top" data-pane="file" hidden title="Back to the top of the file (Home)">&#8593; Top</button>
         <span class="views" role="tablist">
-          <button id="view-file" role="tab" aria-selected="true">File</button>
-          <button id="view-diff" role="tab" aria-selected="false">Changes in this step</button>
-          <button id="view-edits" role="tab" aria-selected="false" hidden title="What commands run here, such as a formatter, have changed in this file since the step's commit. Not committed">Edits since the step</button>
+          <button id="view-file" role="tab" aria-selected="true" title="The file in the working copy, as it is now">Your file</button>
+          <button id="view-at" role="tab" aria-selected="false" hidden title="The file as that move leaves it: the answer, read only">At</button>
+          <button id="view-diff" role="tab" aria-selected="false" title="What the step, or the move, just made changed in this file">Last change</button>
+          <button id="view-next" role="tab" aria-selected="false" title="What the next step, or the next move, changes in this file">Next change</button>
+          <button id="view-edits" role="tab" aria-selected="false" hidden title="What was edited in this file since the commit the working copy stands on. Not committed">Your edits</button>
         </span>
+        <a id="open-editor" class="open-editor" hidden title="Open this file in your own editor, at the line in view">Open in your editor</a>
+      </div>
+      <div id="apply-bar" class="apply-bar" hidden>
+        <span id="apply-match" class="match"></span>
+        <span id="apply-note" class="apply-note"></span>
+        <button id="apply-file" title="Types a git command into the shell at the step, which applies this file's change as edits">Apply this file</button>
+        <button id="apply-move" title="Types git cherry-pick --no-commit into the shell at the step: the whole move's change, as edits">Apply the whole move</button>
       </div>
       <div id="file-body" class="file-body"><p class="empty">Files are shown as they are at this step. They cannot be edited here.</p></div>
     </section>

@@ -28,6 +28,7 @@ starting; a warning is printed and does not.
 import argparse
 import os
 import re
+import subprocess
 import sys
 import tomllib
 from dataclasses import dataclass
@@ -192,6 +193,9 @@ def check_walk(
                 kept = [m for m in written if m in wanted]
                 if kept != [m for m in wanted if m in kept]:
                     errors.append(f"{name}: the ### sections of {step} in {walk.notes.name} are not in the order of the commits: {', '.join(kept)}")
+                every = {m.name: m for moves_of_step in moves.values() for m in moves_of_step}   # an item may name an earlier move
+                for problem in item_problems(main, sections.get(step, {}).get("parts", []), every):
+                    warnings.append(f"{name}: {problem}")
                 for move in moves_without_commands(sections.get(step, {}).get("parts", [])):
                     warnings.append(f"{name}: {move} has no command in {walk.notes.name}; add one that shows what the move did, "
                                     "for example $ just test")
@@ -235,6 +239,41 @@ def check_walk(
         if problem:
             errors.append(f"{name}: {step}: {problem}")
     return errors, warnings, used
+
+
+def item_problems(
+    main: Path,  # The repository
+    parts: list[dict],  # The parts of a step's notes
+    moves: dict,  # The moves of the walk, by name
+) -> list[str]:  # What is wrong with its files: items, each a sentence
+    """Check the files: items of a step's moves against the commits: a diff item names a file that its move changes, a
+    file item a file of the move's commit, and each show: line is a line of that change. Each is a warning."""
+    problems, current = [], None
+    for part in parts:
+        if part["kind"] == "move":
+            current = part["name"]
+        if part["kind"] != "files" or not part.get("items"):
+            continue
+        for item in part["items"]:
+            move = moves.get(item["move"] or current)
+            if move is None:
+                if item["move"]:
+                    problems.append(f"{current or 'a step'}: the item {item['path']} names {item['move']}, which is not a move of the walk")
+                continue
+            path = item["path"]
+            if item["kind"] == "file":
+                if subprocess.run(["git", "cat-file", "-e", f"{move.sha}:{path}"], cwd=main, capture_output=True).returncode:
+                    problems.append(f"{move.name}: the file item {path} is not in the move's commit")
+                continue
+            diff = git(main, "diff", "--no-color", f"{move.sha}^", move.sha, "--", path)
+            if not diff:
+                problems.append(f"{move.name}: the diff item {path} is not changed by the move")
+                continue
+            lines = [line[1:].strip() for line in diff.splitlines() if line[:1] in "+- " and not line.startswith(("+++", "---"))]
+            for shown in item["show"]:
+                if not any(shown.strip() in line for line in lines if line):
+                    problems.append(f"{move.name}: the line `{shown}` is no longer in the change of {path}")
+    return problems
 
 
 def moves_without_commands(
@@ -326,7 +365,10 @@ def move_section(
     step = move.name.rsplit(".", 1)[0]
     prefixed = move.subject.startswith((f"{move.name}:", f"{step}:"))   # a move's subject, or the step's own on its last move
     title = move.subject.split(":", 1)[1].strip() if prefixed else move.subject
-    return "\n".join([f"### {move.name} {title}", "", "What changed:", "", *move_summary(main, move.sha), "", "files:", "",
+    statuses = git(main, "diff-tree", "--no-commit-id", "--name-status", "-r", "--no-renames", move.sha).splitlines()
+    items = [f"- {'file' if status[0] == 'A' else 'diff'} `{path}`: " for status, path in (line.split("\t", 1) for line in statuses if line)
+             if status[0] != "D"]
+    return "\n".join([f"### {move.name} {title}", "", "What changed:", "", *move_summary(main, move.sha), "", "files:", *items, "",
                       "<!-- Add a command that shows what this move did, for example: $ just test -->", ""])
 
 

@@ -156,19 +156,33 @@ closed.
 
 ## The reader
 
-The reader is the pane that shows one file. To read a file, click it in the file list. The reader has up
-to three views:
+The reader is the pane that shows one file. To read a file, click it in the file list. A tab at the top of
+the reader chooses the view. Each label of a change names the step or the move that it shows:
 
 | View | Shows |
 |---|---|
-| **File** | The file as it is on the disk now |
-| **Changes in this step** | What the commit of the step changed in the file, against the step before. In a tutorial, **Changes in this move** shows what the move on show changed. A file of a `files:` line in do mode shows **Changes in step-02.1**, the change of that move |
-| **Edits since the step** | The edits to the file since the commit of the step. The view shows only when the file has edits |
+| **Your file** | The file as it is on the disk now, in the replay copy |
+| **At step-02.3** | Only in a tutorial, in do mode. The file as a move leaves it, read only. A `file` item of a move that the learner has not made yet opens it. See [Do mode and watch mode](walks.md#do-mode-and-watch-mode) |
+| **Last change: step-03** | What the step just made changed in the file, against the step before. In a tutorial, the change of the move just made |
+| **Next change: step-04** | What the next step changes in the file. In a tutorial, the change of the next move. The view is empty at the last step, and at the last move of a step |
+| **Your edits** | The edits to the file since the commit that the replay copy stands on. The view shows only when the file has edits |
+
+A diff is the list of lines that a change added and removed. **Last change** and **Next change** read
+the commits, and not the disk. So they show a change even before its file exists. A button in the notes
+can also open the change of another move. The view then says, for example, **Changes in step-02.1**.
 
 You cannot edit a file in the reader. The reader shows new edits within about a second. See
 [Live edits](edits.md).
 
-![The Changes in this step view, where step-04 adds types and comments](images/reader-changes.png)
+![The Last change view, where step-04 adds types and comments](images/reader-changes.png)
+
+### Open in your editor
+
+On **Your file**, a link **Open in VS Code** opens the file in your own editor, at the line that the
+notes marked. To choose another editor, hold Alt and click the link. Each Alt+click changes to the next
+editor, in the order VS Code, Zed and Cursor. The browser remembers the choice.
+
+The link shows only in a window on the machine that runs timewalk. The Room window never shows it.
 
 ## The notes column
 

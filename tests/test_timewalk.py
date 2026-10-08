@@ -1236,7 +1236,7 @@ def test_a_tutorial_after_a_restart_finds_its_move_from_the_commit(tutorial: tim
 def test_notes_give_each_move_a_part_and_a_files_line() -> None:
     "A ### heading with the step's name and a number starts a move; files: is a part; another ### is prose."
     parts = timewalk.parse_notes("## step-01 S\nIntro.\n### step-01.1 A\nfiles:\n$ ls\n### Aside\ntext\n### step-01.2\n")["step-01"]["parts"]
-    assert parts == [{"kind": "text", "text": "Intro."}, {"kind": "move", "name": "step-01.1", "title": "A"}, {"kind": "files"},
+    assert parts == [{"kind": "text", "text": "Intro."}, {"kind": "move", "name": "step-01.1", "title": "A"}, {"kind": "files", "items": []},
                      {"kind": "command", "track": "replay", "text": "ls"}, {"kind": "text", "text": "### Aside\ntext"},
                      {"kind": "move", "name": "step-01.2", "title": ""}]
 
@@ -1804,3 +1804,109 @@ def test_commits_mode_reaches_new_commits_of_a_detached_repository(sample: Path)
     again = timewalk.Repo(sample, commits=True)
     again.move(len(again.steps) - 1)
     assert run_git(again.work, "rev-parse", "HEAD") == run_git(sample, "rev-parse", "HEAD")
+
+
+def test_files_items_with_words_and_show_lines() -> None:
+    "Items under files:, words over two lines, show: lines, a named move, and items in a narrative step."
+    notes = timewalk.parse_notes("## step-02\n### step-02.1 A\nfiles:\n- diff `src/x.py`: one word\n  answers it.\n  show: `x = 1`\n"
+                                 "- file step-02.1 `t.py`: read it.\n\n$ ls\n## step-03\nfiles:\n- diff `a.py`: in a narrative.\nprose\n")
+    items = next(p for p in notes["step-02"]["parts"] if p["kind"] == "files")["items"]
+    assert items == [{"kind": "diff", "move": None, "path": "src/x.py", "text": "one word answers it.", "show": ["x = 1"]},
+                     {"kind": "file", "move": "step-02.1", "path": "t.py", "text": "read it.", "show": []}]
+    assert notes["step-03"]["parts"][0]["items"][0]["path"] == "a.py"
+    assert "- diff `src/x.py`: one word" in notes["step-02"]["text"], "the PDF prints an item as written"
+
+
+def test_the_checks_verify_items_and_show_lines(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
+    "A diff item names a file its move changes, a file item a file of its commit, and a show: line a line of the change."
+    from timewalk.walks import check, load_toc
+
+    (tutorial_class / "notes.md").write_text(
+        "## step-00\n\n## step-01\n### step-01.1 A\nfiles:\n- file `a.txt`: new.\n- diff `zzz.txt`: wrong.\n$ ls\n"
+        "### step-01.2 B\nfiles:\n- diff `README.md`: changed.\n  show: `with b`\n  show: `not there`\n$ ls\n### step-01.3 C\n$ ls\n\n## step-02\n")
+    _, warnings = check(load_toc(tutorial_class / "toc.toml"), tutorial.main, tutorial_class)
+    assert "walk tut: step-01.1: the diff item zzz.txt is not changed by the move" in warnings
+    assert "walk tut: step-01.2: the line `not there` is no longer in the change of README.md" in warnings
+    assert not any("with b" in w or "a.txt" in w for w in warnings)
+
+
+def test_timewalk_notes_drafts_items_for_each_file(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
+    "A drafted move lists its files as items: file for a new one, diff for a changed one, with the words left to write."
+    from timewalk.walks import add_move_sections, load_toc
+
+    (tutorial_class / "notes.md").write_text("## step-00\n\n## step-01\n\n## step-02\n")
+    _, _, drafts = add_move_sections(load_toc(tutorial_class / "toc.toml")[0], tutorial.main)
+    assert "files:\n- diff `README.md`: \n- file `b.txt`: \n" in drafts[1]
+
+
+def test_the_two_tabs_and_a_file_as_a_move_leaves_it(tutored: TestClient) -> None:
+    "Do mode at the start of step-01: Next change is move 1, Last change is none, and a new file of move 1 can be read as it leaves it."
+    auth = {"t": TOKEN}
+    tutored.post("/api/move", params=auth, json={"to": 1})
+    changes = tutored.get("/api/state", params=auth).json()["changes"]
+    assert changes["last"] is None and changes["next"]["name"] == "step-01.1"
+    answer = tutored.get("/api/file", params={**auth, "path": "a.txt", "at": "step-01.1"}).json()
+    assert answer["missing"] and answer["next"].endswith("+a") and answer["at_text"]["text"] == "a\n"
+    tutored.post("/api/done", params=auth, json={"step": "step-01", "done": 1})
+    changes = tutored.get("/api/state", params=auth).json()["changes"]
+    assert (changes["last"]["name"], changes["next"]["name"]) == ("step-01.1", "step-01.2")
+    tutored.post("/api/show", params=auth, json={"mode": "watch"})
+    tutored.post("/api/move", params=auth, json={"to": 1, "move": 3})
+    changes = tutored.get("/api/state", params=auth).json()["changes"]
+    assert changes["last"]["name"] == "step-01.3" and changes["next"] is None, "the last move of a step: nothing next"
+
+
+def test_your_files_match_the_move_being_worked_on(tutored: TestClient, tutorial: timewalk.Repo) -> None:
+    "Do mode: a file made by hand that equals the move's makes the files match; a different one is listed."
+    auth = {"t": TOKEN}
+    tutored.post("/api/move", params=auth, json={"to": 1})
+    first = tutored.get("/api/match", params=auth).json()
+    assert first["move"] == "step-01.1" and first["differ"] == ["a.txt"]
+    (tutorial.work / "a.txt").write_text("not quite\n")
+    assert tutored.get("/api/match", params=auth).json()["differ"] == ["a.txt"]
+    (tutorial.work / "a.txt").write_text("a\n")
+    assert tutored.get("/api/match", params=auth).json()["match"] is True
+    tutored.post("/api/show", params=auth, json={"mode": "watch"})
+    assert tutored.get("/api/match", params=auth).json()["move"] is None, "not in watch mode"
+
+
+def test_files_match_with_spaces_and_accents_in_names(tutorial: timewalk.Repo, tmp_path: Path) -> None:
+    "A move that adds files named with a space and an accent: they differ until the learner makes them, then match."
+    work = tutorial.work
+    base = run_git(work, "rev-parse", "HEAD")
+    (work / "sp ace.txt").write_text("one\n")
+    (work / "données.py").write_text("two\n")
+    run_git(work, "add", "-A")
+    run_git(work, "-c", "user.name=t", "-c", "user.email=t@e", "commit", "--quiet", "-m", "names")
+    target = run_git(work, "rev-parse", "HEAD")
+    run_git(work, "checkout", "--quiet", base)
+    assert tutorial.differ_from(base, target) == ["données.py", "sp ace.txt"]
+    (work / "sp ace.txt").write_text("one\n")
+    (work / "données.py").write_text("two\n")
+    assert tutorial.differ_from(base, target) == []
+    (work / "sp ace.txt").unlink()   # made by hand, untracked: in the way of the commit that has them
+    (work / "données.py").unlink()
+    run_git(work, "checkout", "--quiet", target)
+    (work / "sp ace.txt").write_text("edited\n")
+    assert tutorial.edits() == ["sp ace.txt"], "a path with a space, as it is, not quoted"
+
+
+def test_items_end_at_a_heading_and_at_a_command() -> None:
+    "Items do not run into the next step, an indented command under an item stays a command, and a blank show: is dropped."
+    notes = timewalk.parse_notes("## step-01\nfiles:\n- diff `a.py`: why\n  show: `  `\n  $ just test\n## step-02\n- diff `b.py`: not an item here\n")
+    items = notes["step-01"]["parts"][0]["items"]
+    assert items == [{"kind": "diff", "move": None, "path": "a.py", "text": "why", "show": []}]
+    assert {"kind": "command", "track": "replay", "text": "just test"} in notes["step-01"]["parts"]
+    assert notes["step-02"]["parts"] == [{"kind": "text", "text": "- diff `b.py`: not an item here"}]
+
+
+def test_an_item_naming_another_moves_name_is_checked(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
+    "An item may name an earlier move of the walk; a name that is no move at all is a warning."
+    from timewalk.walks import check, load_toc
+
+    (tutorial_class / "notes.md").write_text(
+        "## step-00\n\n## step-01\n### step-01.1 A\n$ ls\n### step-01.2 B\nfiles:\n- diff step-01.1 `a.txt`: the first file.\n"
+        "- diff step-09.9 `x.py`: a typo.\n$ ls\n### step-01.3 C\n$ ls\n\n## step-02\n")
+    _, warnings = check(load_toc(tutorial_class / "toc.toml"), tutorial.main, tutorial_class)
+    assert any("names step-09.9, which is not a move of the walk" in w for w in warnings)
+    assert not any("a.txt" in w for w in warnings)

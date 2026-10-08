@@ -15,15 +15,15 @@ Run a command in a terminal at this step, and let it rewrite a tracked file. Wit
 things happen:
 
 - The file list marks the file as **edited**, and the count at the top gives the number of edited files.
-- The reader shows a third view, **Edits since the step**. The view shows the diff of the file against the
+- The reader shows one more view, **Your edits**. The view shows the diff of the file against the
   commit of the step. A diff is the list of lines that changed.
-- A click on an edited file opens it in the **Edits since the step** view.
+- A click on an edited file opens it in the **Your edits** view.
 - Every window on the page shows the same. If you open a file in the window on your screen, it also
   opens in the window on the projector.
 
 ![The file list after ruff format at step-02, with one edited file](images/edits-tree.png)
 
-![The Edits since the step view, with the changes from ruff against the commit of the step](images/edits.png)
+![The Your edits view, with the changes from ruff against the commit of the step](images/edits.png)
 
 If you run the command again, the view shows the new edits. If you undo the edits with `git restore .`,
 the marks go away. The reader then shows the file again.
@@ -32,11 +32,12 @@ the marks go away. The reader then shows the file again.
 
 | View | Compares | Answers |
 |---|---|---|
-| Changes in this step | the step before, and the commit of this step | What did the history do here? |
-| Edits since the step | the commit of this step, and the files on the disk | What did we do in the room a moment ago? |
-| File | nothing | What is in the file now? |
+| Last change | the step before, and the commit of this step | What did the history do here? |
+| Next change | the commit of this step, and the next step | What will the history do next? |
+| Your edits | the commit of this step, and the files on the disk | What did we do in the room a moment ago? |
+| Your file | nothing | What is in the file now? |
 
-At step-03 of the demo, the two kinds of change meet. The **Changes in this step** view of `greet.py` is
+At step-03 of the demo, the two kinds of change meet. The **Last change** view of `greet.py` is
 the same change that ruff made live in front of the class at step-02.
 
 ## Moving with edits
@@ -70,7 +71,7 @@ Every window shows the flag in the step bar. With no edits, the step bar shows a
 ![The step bar with --discard-edits and no edits, which shows a note](images/discard-moved.png)
 
 With edits, the note becomes a warning with the number of edits. If you hover over the **edited** badge or
-the **Edits since the step** view, they say the same:
+the **Your edits** view, they say the same:
 
 ![The step bar with --discard-edits and an edit, which warns that the next move drops the edit](images/discard-warning.png)
 

@@ -51,6 +51,8 @@ const ui = {
   askedMove: null,        // in a tutorial, the move this window last asked for, until the page redraws
   askedDone: null,        // in do mode, the count of moves done that this window last asked for, until the page redraws
   of: null,               // the move whose change the reader shows, or null for the step's or the move's own
+  autoDone: new Set(),    // the moves this window marked done because the files matched: once each
+  excerpts: new Map(),    // the diffs that excerpts are drawn from, by move and path: a commit's change never changes
   askedSlide: null,       // the slide this window last asked for, until the server's answer is drawn
   shellToggledHere: false, // this window turned Shell on or off: it gives the shells its size
 };
@@ -83,10 +85,11 @@ async function drawFromState() {
   const drawn = drawSlides();
   if (!ui.state.has_notes) ui.notes = {};   // a walk without notes shows none, not the last walk's
   await Promise.all([loadTree(), loadRecipes(), ui.state.has_notes ? loadNotes() : null]);
-  if (ui.open) await openFile(ui.open, ui.view, false, ui.of);
+  if (ui.open) await openFile(ui.open, ui.view, false, ui.of, ui.at, ui.marks);
   drawNotes();
   drawBand();
   drawTools();
+  checkMatch();
   await drawn;
   restorePlaces(ui.state.restore);
 }
@@ -483,33 +486,112 @@ function drawMode() {
   mode.classList.toggle("warn", count > 0);
 }
 
-async function openFile(path, view = "file", scrollTop = true, of = null) {
-  const file = await api("/api/file?path=" + encodeURIComponent(path) + (of ? "&of=" + encodeURIComponent(of) : ""));
+/** Open a file in the reader. Views: "file" (your file), "at" (as a move leaves it), "diff" (Last change), "next"
+ *  (Next change), "edits" (your edits). `of` names a move whose change to show; `marks` are lines to highlight. */
+async function openFile(path, view = "file", scrollTop = true, of = null, at = null, marks = null) {
+  const query = "/api/file?path=" + encodeURIComponent(path) + (of ? "&of=" + encodeURIComponent(of) : "") + (at ? "&at=" + encodeURIComponent(at) : "");
+  const file = await api(query);
   ui.of = file.of || null;
-  // In a tutorial, "what changed" is a move's: the move asked for, or the one the code is at.
-  $("view-diff").textContent = ui.of ? `Changes in ${ui.of}` : ui.state?.moves?.length && ui.state.move ? "Changes in this move" : "Changes in this step";
+  ui.at = file.at || null;
+  ui.marks = marks || [];
+  $("view-diff").textContent = ui.of ? `Changes in ${ui.of}` : file.last_name ? `Last change: ${file.last_name}` : "Last change";
+  $("view-next").textContent = file.next_name ? `Next change: ${file.next_name}` : "Next change";
+  $("view-at").hidden = !ui.at;
+  $("view-at").textContent = ui.at ? `At ${ui.at}` : "At";
   // A view with nothing to show falls back to the file, for example once edits are stashed or undone.
-  if ((view === "diff" && !file.diff) || (view === "edits" && !file.edits)) view = "file";
+  const empty = { diff: !file.diff, next: !file.next, edits: !file.edits, at: !ui.at };
+  if (empty[view]) view = "file";
   ui.open = path;
   ui.view = view;
   $("file-path").textContent = path;
-  for (const name of ["file", "diff", "edits"]) $("view-" + name).setAttribute("aria-selected", String(view === name));
+  for (const name of ["file", "at", "diff", "next", "edits"]) $("view-" + name).setAttribute("aria-selected", String(view === name));
   $("view-diff").disabled = !file.diff;
+  $("view-next").disabled = !file.next;
   $("view-edits").disabled = !file.edits;
   $("view-edits").hidden = !file.edits;
   const body = $("file-body");
   // A move's change shows even where the file does not exist yet: in do mode, before the learner makes it.
-  if (view === "edits") body.replaceChildren(drawDiff(file.edits));
-  else if (view === "diff" && file.diff) body.replaceChildren(drawDiff(file.diff));
-  else if (file.missing) body.innerHTML = `<p class="empty">This file does not exist at this step.</p>`;
-  else if (file.skipped) body.innerHTML = `<p class="empty">Not shown: ${escapeHtml(file.skipped)}.</p>`;
-  else body.replaceChildren(drawCode(path, file.text));
-  if (scrollTop) body.scrollTop = 0;
+  const shown = view === "at" ? file.at_text : file;
+  if (view === "edits") body.replaceChildren(drawDiff(file.edits, ui.marks));
+  else if (view === "diff") body.replaceChildren(drawDiff(file.diff, ui.marks));
+  else if (view === "next") body.replaceChildren(drawDiff(file.next, ui.marks));
+  else if (shown.missing) body.innerHTML = `<p class="empty">This file does not exist ${view === "at" ? "at " + escapeHtml(ui.at) : "at this step"}.</p>`;
+  else if (shown.skipped) body.innerHTML = `<p class="empty">Not shown: ${escapeHtml(shown.skipped)}.</p>`;
+  else body.replaceChildren(drawCode(path, shown.text, ui.marks));
+  if (scrollTop) {
+    const mark = body.querySelector(".mark");
+    // Measured from the reader itself: offsetTop is measured from a positioned ancestor, which the reader is not.
+    body.scrollTop = mark ? Math.max(mark.getBoundingClientRect().top - body.getBoundingClientRect().top + body.scrollTop - 60, 0) : 0;
+  }
+  drawEditorLink(view === "file" && !file.missing && !file.skipped);
+  drawApply(path, view, file);
   document.querySelectorAll("#tree .file").forEach((item) => item.classList.remove("open"));
   drawTree();
 }
 
-function drawCode(path, text) {
+/** Whether a line of a file or a diff is one of the lines to mark: its text, without the diff's sign, holds a mark. */
+function marked(line, marks) {
+  const text = line.replace(/^[+\- ]/, "").trim();
+  return marks.some((mark) => mark.trim() && text && text.includes(mark.trim()));
+}
+
+/** "Open in your editor": a link that opens the file in the editor this browser chose, at the first marked line. */
+function drawEditorLink(show) {
+  const link = $("open-editor");
+  // Only on this machine: with --host, the path would be the other machine's.
+  link.hidden = !show || ROOM || !ui.state?.work || !["127.0.0.1", "localhost", "[::1]"].includes(location.hostname);
+  if (link.hidden) return;
+  const editor = settings.get("editor", "vscode");
+  const line = (() => { const mark = $("file-body").querySelector(".gutter .mark"); return mark ? Number(mark.textContent) : 1; })();
+  const full = `${ui.state.work}/${ui.open}`;
+  link.href = `${editor}://file${full.startsWith("/") ? "" : "/"}${encodeURI(full).replace(/#/g, "%23").replace(/\?/g, "%3F")}:${line}`;
+  link.textContent = `Open in ${{ vscode: "VS Code", zed: "Zed", cursor: "Cursor" }[editor] || editor}`;
+  link.title = "Open this file in your own editor. Alt+click to choose the editor: VS Code, Zed or Cursor";
+  link.onclick = (event) => {
+    if (!event.altKey) return;
+    event.preventDefault();
+    const order = ["vscode", "zed", "cursor"];
+    settings.set("editor", order[(order.indexOf(editor) + 1) % order.length]);
+    drawEditorLink(true);
+  };
+}
+
+/** Apply, in the Next change tab, in a tutorial's do mode: type into the shell the command that applies this file's
+ *  change, or the whole move's, as edits. Disabled where the learner has already changed a file it touches. */
+function drawApply(path, view, file) {
+  const bar = $("apply-bar");
+  const next = ui.state?.changes?.next;
+  const moves = ui.state?.moves || [];
+  const move = next && moves.find((m) => m.name === next.name);
+  bar.hidden = ROOM || view !== "next" || ui.state?.mode !== "do" || !move || !file.next;
+  if (bar.hidden) return;
+  const edited = new Set(ui.tree?.edits || ui.state.edits || []);   // the file list's edits are the freshest
+  const touched = move.files.map((f) => f.path);
+  // Files that already match the move were applied, or typed, and are no collision: the move is about to be done.
+  const applied = ui.match?.match && ui.match.move === move.name;
+  const fileClash = !applied && edited.has(path);
+  const moveClash = applied ? [] : touched.filter((p) => edited.has(p));
+  $("apply-file").hidden = $("apply-move").hidden = !!applied;
+  $("apply-note").textContent = applied ? `Your files match ${move.name}: it is made` : fileClash || moveClash.length
+    ? `You have changed ${fileClash ? path : moveClash.join(", ")}. Compare it with Next change, or use Catch me up.`
+    : `${move.name}: apply its change to your files, as edits`;
+  $("apply-file").disabled = fileClash;
+  $("apply-move").disabled = moveClash.length > 0;
+  // From the top of the copy: the learner's shell may be in a folder of it, where the path would not be found.
+  $("apply-file").onclick = () => typeCommand(`(cd "$(git rev-parse --show-toplevel)" && git diff ${next.before.slice(0, 12)} ${next.after.slice(0, 12)} -- ${shellQuote(path)} | git apply --3way)`);
+  $("apply-move").onclick = () => typeCommand(`git cherry-pick --no-commit ${next.after.slice(0, 12)}`);
+}
+
+function shellQuote(text) {
+  return /^[\w./-]+$/.test(text) ? text : `'${text.replace(/'/g, "'\\''")}'`;
+}
+
+/** Type a command into the shell at the step, and run it, as a command of the notes does with run on click. */
+function typeCommand(text) {
+  return api("/api/type", { track: "replay", text, enter: true, from: PAGE }).catch((error) => showNotice(error.message, true));
+}
+
+function drawCode(path, text, marks = []) {
   const name = path.split("/").at(-1);
   const ext = name.includes(".") ? name.split(".").at(-1).toLowerCase() : "";
   const language = name === "Dockerfile" || ext === "dockerfile" ? "dockerfile" : name === "justfile" ? "makefile" : LANGUAGES[ext];
@@ -523,7 +605,14 @@ function drawCode(path, text) {
   const gutter = document.createElement("pre");
   gutter.className = "gutter";
   gutter.setAttribute("aria-hidden", "true");
-  gutter.textContent = Array.from({ length: Math.max(count, 1) }, (_, i) => i + 1).join("\n");
+  // The gutter's numbers, each a span, so that a marked line's number can be marked
+  const lines = text.split("\n");
+  gutter.replaceChildren(...Array.from({ length: Math.max(count, 1) }, (_, i) => {
+    const number = document.createElement("span");
+    number.textContent = String(i + 1) + "\n";
+    if (marks.length && marked(lines[i] || "", marks)) number.className = "mark";
+    return number;
+  }));
   const code = document.createElement("pre");
   code.className = "source hljs";
   code.innerHTML = html;
@@ -531,13 +620,14 @@ function drawCode(path, text) {
   return wrap;
 }
 
-function drawDiff(diff) {
+function drawDiff(diff, marks = []) {
   const pre = document.createElement("pre");
   pre.className = "diff";
   for (const line of diff.split("\n")) {
-    if (/^(diff --git|index |--- |\+\+\+ )/.test(line)) continue;
+    if (/^(diff --git|index |--- |\+\+\+ |new file mode|deleted file mode)/.test(line)) continue;
     const row = document.createElement("span");
-    row.className = "line" + (line.startsWith("@@") ? " hunk" : line.startsWith("+") ? " add" : line.startsWith("-") ? " del" : "");
+    row.className = "line" + (line.startsWith("@@") ? " hunk" : line.startsWith("+") ? " add" : line.startsWith("-") ? " del" : "")
+      + (marks.length && !line.startsWith("@@") && marked(line, marks) ? " mark" : "");
     row.textContent = line || " ";
     pre.append(row);
   }
@@ -757,7 +847,9 @@ function wireControls() {
   $("slide-next").onclick = () => showSlide(slideFrom() + 1);
   for (const button of $("layouts").querySelectorAll("button")) button.onclick = () => show({ layout: button.dataset.layout });
   $("shell-toggle").onclick = () => { ui.shellToggledHere = true; show({ shell: !ui.shell }); };
-  for (const view of ["file", "diff", "edits"]) $("view-" + view).onclick = () => ui.open && show({ path: ui.open, view, of: view === "diff" ? ui.of : null });
+  for (const view of ["file", "at", "diff", "next", "edits"]) {
+    $("view-" + view).onclick = () => ui.open && show({ path: ui.open, view, of: view === "diff" ? ui.of : null, at: ui.at, marks: ui.marks });
+  }
   $("theme").onclick = () => { ui.theme = ui.theme === "dark" ? "light" : "dark"; applyAppearance(); restartTerminals(); };
   $("larger").onclick = () => { ui.size = Math.min(ui.size + 1, 26); applyAppearance(); resizeTerminalText(); };
   $("smaller").onclick = () => { ui.size = Math.max(ui.size - 1, 10); applyAppearance(); resizeTerminalText(); };
@@ -1145,19 +1237,7 @@ function drawNotes() {
       continue;
     }
     if (part.kind === "files") {
-      const list = document.createElement("div");
-      list.className = "p-files";
-      const name = moves[owner - 1]?.name;
-      const ownMove = watch && owner === made;   // read now: owner changes as the loop goes on
-      for (const file of files) {
-        const button = document.createElement("button");
-        button.textContent = file.path;
-        button.title = `What ${name} changed in this file`;
-        // The move's own change, whatever the code stands on; in watch mode at that move, the same change.
-        button.onclick = () => show({ path: file.path, view: "diff", of: ownMove ? null : name });
-        list.append(button);
-      }
-      into.append(list);
+      into.append(drawFiles(part.items || [], owner, files));
       group = null;
       continue;
     }
@@ -1190,6 +1270,131 @@ function drawNotes() {
   if (!box.children.length) box.innerHTML = `<p class="p-empty">${!here ? "" : ui.notesPath
     ? `No notes for ${escapeHtml(here.name)} in ${escapeHtml(ui.notesPath.split("/").pop())}. Click Edit to write them, or add a section headed "## ${escapeHtml(here.name)}".`
     : "No notes file. Start timewalk with --notes notes.md, with one \"## step-name\" section per step."}</p>`;
+}
+
+/** Which tab of the reader a move's change opens in: Next change for the move to make next, Last change for the move just
+ *  made, and otherwise the move's own change, named. Number 0 is the step itself, in a narrative. */
+function changeView(number) {
+  const { moves = [], move: made = 0, done = 0, mode } = ui.state;
+  if (!moves.length || !number) return { view: "diff", of: null };
+  const last = mode === "watch" ? made : done;
+  if (number === last + 1) return { view: "next", of: null };
+  if (number === last) return { view: "diff", of: null };
+  return { view: "diff", of: moves[number - 1].name };
+}
+
+/** A files: line of the notes. With items, each is a button to a file or a change, with its words, and its show: lines
+ *  drawn as small excerpts of the real diff. Without items, a button for each file of the move's commit. */
+function drawFiles(items, owner, files) {
+  const { moves = [], done = 0, mode } = ui.state;
+  const box = document.createElement("div");
+  box.className = "p-files";
+  if (!items.length) {
+    for (const file of files) {
+      const target = changeView(owner);
+      const button = document.createElement("button");
+      button.textContent = file.path;
+      button.title = `What ${moves[owner - 1]?.name || "this step"} changed in this file`;
+      button.onclick = () => show({ path: file.path, ...target });
+      box.append(button);
+    }
+    return box;
+  }
+  box.classList.add("p-items");
+  for (const item of items) {
+    const here = item.move ? moves.findIndex((m) => m.name === item.move) + 1 : owner;
+    const elsewhere = item.move && !here;   // a move of another step: its own change, named, never "ahead"
+    const number = elsewhere ? 0 : here;
+    const name = elsewhere ? item.move : moves[number - 1]?.name || null;
+    const row = document.createElement("div");
+    row.className = "p-item";
+    const button = document.createElement("button");
+    button.textContent = item.path;
+    button.className = "p-item-" + item.kind;
+    let target;
+    if (item.kind === "file") {
+      // A file of a move not made yet, in do mode: as the move leaves it, read only. Otherwise the learner's own file.
+      const ahead = mode === "do" && name && !elsewhere && number > done;
+      target = ahead ? { view: "at", at: name } : { view: "file" };
+      button.title = ahead ? `The file as ${name} leaves it, read only` : "Your file";
+    } else {
+      target = elsewhere ? { view: "diff", of: name } : changeView(number);
+      button.title = `What ${name || "this step"} changes in this file`;
+    }
+    button.onclick = () => show({ path: item.path, ...target, marks: item.show });
+    const words = document.createElement("span");
+    words.className = "p-item-words";
+    words.innerHTML = renderMarkdown(item.text).replace(/^<p>|<\/p>\s*$/g, "");
+    row.append(button, words);
+    box.append(row);
+    for (const line of item.show) {
+      const excerpt = document.createElement("div");
+      excerpt.className = "p-excerpt";
+      box.append(excerpt);
+      if (item.kind === "diff") fillExcerpt(excerpt, item.path, name, line);
+      else excerpt.remove();
+    }
+  }
+  return box;
+}
+
+/** In do mode: whether the learner's files match the move being worked on. Shown on its section and in the Apply bar;
+ *  a match marks the move done by itself. Asked every two seconds, and after each refresh. */
+async function checkMatch() {
+  const { moves = [], done = 0, mode } = ui.state || {};
+  if (mode !== "do" || !moves.length || done >= moves.length || document.visibilityState === "hidden") {
+    ui.match = null;
+    drawMatch();
+    return;
+  }
+  ui.match = await api("/api/match").catch(() => null);
+  drawMatch();
+  // Only your window marks it, never the Room, so that two windows do not both ask.
+  // Once per move: a learner who then marks it not done keeps that choice.
+  const key = `${ui.state.steps[ui.state.current]?.name} ${ui.match?.move}`;
+  if (!ROOM && ui.match?.match && ui.match.number === (ui.state.done ?? 0) + 1 && !ui.autoDone.has(key)) {
+    ui.autoDone.add(key);
+    markDone(ui.match.number);
+  }
+}
+
+function drawMatch() {
+  const match = ui.match;
+  const text = !match?.move ? "" : match.match ? `Your files match ${match.move} \u2713`
+    : `${match.differ.length === 1 ? "1 file differs" : `${match.differ.length} files differ`} from ${match.move}: ${match.differ.join(", ")}`;
+  for (const old of document.querySelectorAll("#notes .p-match")) old.remove();
+  const head = document.querySelector("#notes .p-move.here .p-move-head");
+  if (head && text) {
+    const badge = document.createElement("span");
+    badge.className = "p-match match" + (match.match ? " ok" : "");
+    badge.textContent = text;
+    head.after(badge);
+  }
+  $("apply-match").textContent = text;
+  $("apply-match").className = "match" + (match?.match ? " ok" : "");
+}
+
+/** Draw a small, read-only excerpt of a change in the notes: the line that show: names, with two lines of context, or
+ *  its whole hunk when that is short. The change is read from the commits each time, so it is never stale. */
+async function fillExcerpt(box, path, move, line) {
+  const key = `${move || ui.state.steps[ui.state.current]?.name} ${path}`;
+  if (!ui.excerpts.has(key)) {
+    const file = await api("/api/file?path=" + encodeURIComponent(path) + (move ? "&of=" + encodeURIComponent(move) : "")).catch(() => null);
+    if (file) ui.excerpts.set(key, file.diff || "");
+  }
+  const diff = ui.excerpts.get(key) || "";
+  const rows = diff.split("\n").filter((row) => !/^(diff --git|index |--- |\+\+\+ |new file mode|deleted file mode)/.test(row));
+  const at = rows.findIndex((row) => !row.startsWith("@@") && marked(row, [line]));
+  if (at < 0) {
+    box.className = "p-excerpt p-gone";
+    box.textContent = `This line is no longer in the change of ${path}: ${line}`;
+    return;
+  }
+  let start = at, end = at;
+  while (start > 0 && !rows[start - 1].startsWith("@@")) start--;
+  while (end < rows.length - 1 && !rows[end + 1].startsWith("@@")) end++;
+  if (end - start + 1 > 8) { start = Math.max(at - 2, start); end = Math.min(at + 2, end); }
+  box.replaceChildren(drawDiff(rows.slice(start, end + 1).join("\n"), [line]));
 }
 
 /** One command of the notes, as a button that types it into its terminal, and runs it with run on click. */
@@ -1255,6 +1460,7 @@ $("notes-edit").onclick = startEditing;
 $("notes-cancel").onclick = stopEditing;
 $("notes-save").onclick = saveNotes;
 setInterval(drawBand, 1000);
+setInterval(checkMatch, 2000);
 document.addEventListener("visibilitychange", drawOnlyWhatShows);
 applyAppearance();
 guardKeys();
@@ -1262,7 +1468,7 @@ wireControls();
 await init();
 await refresh();
 selectTab(ui.state.track || "replay");
-if (ui.state.path) { await openFile(ui.state.path, ui.state.view, true, ui.state.of); restorePlaces(ui.state.restore); }
+if (ui.state.path) { await openFile(ui.state.path, ui.state.view, true, ui.state.of, ui.state.at); restorePlaces(ui.state.restore); }
 // For tests that drive the page: what each terminal shows, read only.
 window.timewalkTerminals = () => [...ui.terms].map(([id, { term, el, paused }]) => {
   const lines = term.buffer?.active;
@@ -1280,6 +1486,7 @@ window.timewalkPicture = (id) => {
   return hash;
 };
 const events = onEvents(async (event) => {
+  if (event.type === "walk") ui.excerpts.clear();   // another walk may have steps of the same names
   if (event.type === "moved" || event.type === "walk") { hideNotice(); await refresh(); }
   if (event.type === "refused") { showNotice("timewalk refused this window. If it restarted, open the new address that it printed.", true); return; }
   if (event.type === "reconnected") {
@@ -1289,12 +1496,17 @@ const events = onEvents(async (event) => {
   }
   if (event.type === "edits") {
     await loadTree();
-    if (ui.open) await openFile(ui.open, ui.view, false, ui.of);
+    if (ui.open) await openFile(ui.open, ui.view, false, ui.of, ui.at, ui.marks);
   }
   if (event.type === "scroll") { followScroll(event); return; }
   if (event.type === "content") { await reloadContent(); return; }
   if (event.type === "slide") { ui.state = await api("/api/state"); drawSlides(); }
-  if (event.type === "done") { ui.state = await api("/api/state"); ui.askedDone = null; drawMoves(); drawNotes(); drawSlides(); drawSteps(); }
+  if (event.type === "done") {
+    ui.state = await api("/api/state");
+    ui.askedDone = null;
+    drawMoves(); drawNotes(); drawSlides(); drawSteps(); checkMatch();
+    if (ui.open) await openFile(ui.open, ui.view, false, ui.of, ui.at, ui.marks);   // Next change is now the next move's
+  }
   if (event.type === "notes" && !ui.editing) { await loadNotes(); drawNotes(); drawBand(); }
   if (event.type === "clock") { ui.state = await api("/api/state"); ui.skew = ui.state.now - Date.now() / 1000; drawBand(); }
   if (event.type === "size") { followSize(event); return; }
@@ -1302,7 +1514,7 @@ const events = onEvents(async (event) => {
   if (event.type === "show") {
     if (event.layout && event.layout !== ui.layout) applyLayout(event.layout);
     if (typeof event.shell === "boolean") applyShell(event.shell);
-    if (event.path) await openFile(event.path, event.view || "file", true, event.of || null);
+    if (event.path) await openFile(event.path, event.view || "file", true, event.of || null, event.at || null, event.marks || null);
     if (event.mode && event.mode !== ui.state.mode) { ui.state.mode = event.mode; drawMoves(); drawNotes(); drawSteps(); drawWalks(); }
     // The window that asked gets the keys: a tab it clicked, or a command it typed from the notes.
     if (event.track) selectTab(event.track, event.from === PAGE);

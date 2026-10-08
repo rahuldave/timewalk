@@ -196,8 +196,14 @@ Rahul expects every change to the page to ship as a release, with its docs, in o
   timewalk-test's `test_drawing.py`, which checks both.
 - **ghostty-web's `fit.fit()` skips a size equal to the last one it fitted**, though a Room size may have come
   between. `fitTerminal` compares `proposeDimensions()` with the terminal's real size instead.
-- **What the server shares:** walk, step and move, slide, layout, Shell, open file and view, tab, clock, and in a
+- **What the server shares:** walk, step and move, slide, layout, Shell, open file and view, `of` and `at` (the move
+  whose change, or whose version of the file, the reader shows), tab, clock, and in a
   tutorial the mode (`do` or `watch`) and the count of moves marked done (`showing`); a per-step
   memory of slide and scroll (`memory`); scrolls (as fractions, and a terminal's as lines) are relayed between windows over `/ws/events`. In Shell mode
   each shell keeps the Room's size (`Terminal.room_size`), and a window that asks for another is told it again. A shell gets
-  an Enter after a move only when it is idle at an empty line (`Terminal.refresh_prompt`).
+  an Enter after a move only when it is idle at an empty line (`Terminal.refresh_prompt`). The lines that an item of
+  the notes marks (`marks`) are relayed in the `show` event only, and not kept in `showing`, so a window opened later
+  shows the file without them.
+- **`/api/match` runs often.** Every window in do mode asks every two seconds. It runs `Repo.differ_from` off the event
+  loop (`asyncio.to_thread`), so a slow git does not hold up the sockets. Read git paths with `-z` (`status --porcelain -z`,
+  `diff --name-only -z`, `ls-tree -z`): without it, git quotes a path with a space or an accent.

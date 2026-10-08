@@ -199,7 +199,17 @@ timewalk-notes repo --toc toc.toml --walk tutorial --write    # write them into 
 ```
 
 A draft has the title of the move, a list "What changed:" from the diff, a line `files:` and a comment.
-Add the instructions to make the move by hand, and end the section with its anchor commands. See
+Under `files:`, it drafts one item for each file of the move, with no words. Add the instructions to make
+the move by hand. Give each item its words, and quote the main line of the change with `show:`. End the
+section with its anchor commands.
+
+```markdown
+files:
+- diff `src/tally/__init__.py`: one word, `lower()`, answers the failing test.
+  show: `for word in text.lower().split():`
+```
+
+An item is one file to look at, with words. See [The items under files](walks.md#the-items-under-files) and
 [Tutorial walks](walks.md#tutorial-walks).
 
 Write a manifest for each walk, with an entry for each step, even of one slide. A manifest can use the

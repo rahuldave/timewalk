@@ -41,7 +41,7 @@ untidy.
 - In the notes column on your screen, click `uvx pytest -q`. The command appears in the terminal in
   every window. Press Enter to run it.
 - Click `uvx ruff format`, and press Enter. Within one second, the file list marks `src/greet.py` **edited**.
-- Look at the reader. It now offers **Edits since the step**, which shows exactly what ruff changed. See
+- Look at the reader. It now offers **Your edits**, which shows exactly what ruff changed. See
   [Live edits](edits.md).
 - Look at the step bar. It warns that the next move discards the edited file.
 - Press **Right**. The move drops the edit and does not ask. See
@@ -59,7 +59,7 @@ The history now has the change that ruff made live, with its rule in `pyproject.
 **document** instead of slides. A document is one longer Markdown page that scrolls. See
 [Slides and documents](slides.md#a-document-instead-of-slides).
 
-- Open `src/greet.py`, and choose **Changes in this step**.
+- Open `src/greet.py`, and choose the view **Last change**.
 
 The changes match what the class saw ruff do at step-02.
 
@@ -67,7 +67,7 @@ The changes match what the class saw ruff do at step-02.
 
 Each parameter gets a type and a comment. Each function gets a docstring of one line.
 
-- Open `greet.py`, and choose **Changes in this step**. The view shows how the signature grows.
+- Open `greet.py`, and choose the view **Last change**. The view shows how the signature grows.
 - In the notes column, click `uvx pytest -q` again, and press Enter. The tests show that the behaviour
   did not change.
 

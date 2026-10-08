@@ -285,7 +285,7 @@ def shoot(browser, base: str, repo: timewalk.Repo) -> None:
 
 
 def shoot_tutorial(browser, tmp: Path) -> None:
-    "Take the tutorial walk of timewalk-test at step-02, in do mode and in watch mode, and the step bar with the walk menu."
+    "Take the tutorial walk of timewalk-test at step-02, in do mode and in watch mode, the step bar with the walk menu, the items and Apply."
     from timewalk.walks import load_toc
 
     local = ROOT.parent / "timewalk-test"
@@ -337,7 +337,7 @@ def shoot_tutorial(browser, tmp: Path) -> None:
         page.wait_for_selector("#moves:not([hidden])")
         page.wait_for_selector('#notes .p-move.here[data-move="1"]')
         section(1).locator(".p-files button").first.click()
-        page.wait_for_function("document.getElementById('view-diff').textContent === 'Changes in step-02.1'")
+        page.wait_for_function("document.getElementById('view-next').textContent === 'Next change: step-02.1'")
         page.wait_for_timeout(800)
         save("tutorial-do")
         # The step bar: the walk menu, the label of the kind, the switch between Do and Watch, and the row of moves.
@@ -347,7 +347,7 @@ def shoot_tutorial(browser, tmp: Path) -> None:
         page.locator("#moves button.nav").last.click()
         page.wait_for_selector('#notes .p-move.here[data-move="2"]')
         section(2).locator(".p-files button").first.click()
-        page.wait_for_function("document.getElementById('view-diff').textContent === 'Changes in step-02.2'")
+        page.wait_for_function("document.getElementById('view-next').textContent === 'Next change: step-02.2'")
         page.wait_for_timeout(800)
         save("tutorial")
 
@@ -358,9 +358,45 @@ def shoot_tutorial(browser, tmp: Path) -> None:
         page.wait_for_function("document.getElementById('step-name').textContent === 'step-02.1'")
         page.wait_for_selector('#notes .p-move.here[data-move="1"]')
         section(1).locator(".p-files button").first.click()
-        page.wait_for_function("['Changes in this move', 'Changes in step-02.1'].includes(document.getElementById('view-diff').textContent)")
+        page.wait_for_function("document.getElementById('view-diff').textContent === 'Last change: step-02.1'")
         page.wait_for_timeout(800)
         save("tutorial-watch")
+
+        # Back to do mode, at the start of step-02, in a new window with wider notes, so that an item, its words and its
+        # excerpt fit, and lower terminals, so that the marked line of the reader shows. The Code layout gives the reader room.
+        page.locator('#move-modes button[data-mode="do"]').click()
+        page.wait_for_selector('#move-modes button[data-mode="do"][aria-pressed="true"]')
+        post("/api/move", {"to": 2, "name": "step-02"})
+        page.wait_for_function("document.getElementById('step-name').textContent === 'step-02'")
+        page.close()
+        page = browser.new_page(viewport=WIDE, device_scale_factor=1)
+        page.on("pageerror", lambda error: errors.append(str(error)))
+        page.add_init_script("localStorage.setItem('timewalk.notes-width', '560'); localStorage.setItem('timewalk.term-height', '200');")
+        page.goto(f"http://127.0.0.1:{port}/?t={TOKEN}")
+        page.wait_for_selector('#notes .p-move.here[data-move="1"]')
+        page.wait_for_timeout(1000)
+        page.locator("#layouts button[data-layout=code]").click()
+
+        # The items of move 1: a button with its words, and the show: line as a small excerpt of the real diff. The
+        # item opens Next change, with the same line marked, and the Apply bar with what the files match.
+        section(1).locator(".p-item button").first.click()
+        page.wait_for_function("document.getElementById('view-next').textContent === 'Next change: step-02.1'")
+        page.wait_for_selector("#apply-bar:not([hidden])")
+        page.wait_for_selector("#file-body .line.mark")
+        page.wait_for_function("document.getElementById('apply-match').textContent.includes('step-02.1')")
+        section(1).locator(".p-items").scroll_into_view_if_needed()
+        page.wait_for_timeout(800)
+        save("tutorial-items")
+
+        # Apply the whole move: the command goes into the shell at the step, the files match step-02.1, and the move is
+        # marked done by itself. The item of move 2 then opens its Next change, with the Apply bar for that move.
+        page.locator("#apply-move").click()
+        page.wait_for_selector('#notes .p-move.here[data-move="2"]', timeout=15000)
+        section(2).locator(".p-item button").first.click()
+        page.wait_for_function("document.getElementById('view-next').textContent === 'Next change: step-02.2'")
+        page.wait_for_function("document.getElementById('apply-match').textContent.includes('step-02.2')")
+        page.wait_for_timeout(800)
+        save("tutorial-apply")
         page.close()
         if errors:
             raise SystemExit("screenshots: the tutorial reported errors: " + "; ".join(errors))

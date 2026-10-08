@@ -99,9 +99,14 @@ then happen, in this order:
 | A scroll of the slide, the file or the notes | Sends the place, as a fraction, to every other window over the events socket | None |
 | A scroll of a terminal | Sends the number of lines that the terminal is scrolled back, to every other window over the events socket | None |
 | The handles between the panes | Change the width of the slides, the file list or the notes, or the height of the terminals, in this browser. A double-click resets a width | None |
-| A file in the file list, **File** | Reads the file from disk, and refuses paths outside the copy | None. It reads a file in the replay copy |
-| **Changes in this step** | The diff of the step for that file | `git diff <step before> <step> -- <file>`, in the replay copy |
-| **Edits since the step** | The edits since the commit of the step | `git diff HEAD -- <file>`, in the replay copy |
+| A file in the file list, **Your file** | Reads the file from disk, and refuses paths outside the copy | None. It reads a file in the replay copy |
+| **At step-02.3** | In do mode, the file as a move leaves it | `git cat-file blob <move>:<file>`, in the replay copy |
+| **Last change** | The diff of the step, or of the move just made, for that file | `git diff <before> <after> -- <file>`, in the replay copy |
+| **Next change** | The diff of the next step, or of the next move, for that file | `git diff <before> <after> -- <file>`, in the replay copy |
+| **Your edits** | The edits since the commit that the replay copy stands on | `git diff HEAD -- <file>`, in the replay copy |
+| **Apply this file**, **Apply the whole move** | Types a command into the **At this step** tab, and runs it | `git diff <before> <move> -- <file> \| git apply --3way`, or `git cherry-pick --no-commit <move>`. The shell writes the files, as edits |
+| "Your files match", every two seconds in do mode | Compares the files on the disk with the commit of the move, by content. A match marks the move done, once | None. `git diff --name-only`, `git ls-tree` and `git hash-object` read |
+| **Open in VS Code** | A link that opens the file in your editor | None. The editor opens the file |
 | **At this step** | A login shell | Starts in the replay copy |
 | **Runs**, **Runs 2** to **9**, **+** | More login shells, each with its own process | Start in the replay copy |
 | **Claude** | A login shell that types `claude` (or `--assistant`) when it starts | Starts in the replay copy |

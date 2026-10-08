@@ -53,7 +53,8 @@ the audience sees. Keep the notes file outside the repository. timewalk refuses 
   changes the walk, and `timewalk-check` checks the notes and slides of every walk.
 - **Tutorials**, walks that stop at each small commit between two tags. In do mode the learner makes each
   move by hand from the notes, and in watch mode timewalk checks out each commit. `timewalk-notes` drafts
-  the notes of each move from its diff.
+  the notes of each move from its diff. The notes point at the files of a move, and quote its main lines.
+  The reader shows the last change and the next one, and **Apply** types the git command that makes it.
 - **Shell.** One button, or Alt+Enter, gives the terminals the space of the slides and the files, in every window.
 - **Keyboard.** Left and Right change the step, and Up and Down change the slide.
 

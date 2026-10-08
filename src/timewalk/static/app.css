@@ -122,6 +122,23 @@ body.has-moves .bar { flex-wrap: wrap; row-gap: 6px; }
 .p-move-actions button.primary { background: var(--accent); border-color: var(--accent); color: var(--surface); font-weight: 600; }
 .p-anchor-label { font-size: 0.8em; color: var(--ink-3); margin: 0.6em 0 0.2em; }
 .p-move.here .p-anchor button { border-color: var(--accent); }
+/* files: items: a button to a file or a change, with its words; show: lines as small read-only excerpts of the diff. */
+.p-items { display: flex; flex-direction: column; gap: 6px; }
+.p-item { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.p-item button { font-family: var(--mono); font-size: 0.85em; padding: 2px 8px; flex: none; }
+.p-item button.p-item-diff::before { content: "\00b1  "; color: var(--ink-3); }
+.p-item-words { flex: 1; min-width: 12em; }
+.p-items, .p-item, .p-excerpt { min-width: 0; max-width: 100%; }
+/* A long line of an excerpt scrolls in its own box, and never widens the notes column. */
+.p-excerpt pre.diff { margin: 0 0 4px; font-size: 0.82em; border: 1px solid var(--rule); border-radius: 4px; overflow-x: auto; max-width: 100%; }
+.p-excerpt.p-gone { font-size: 0.85em; color: var(--removed); border: 1px dashed var(--removed); border-radius: 4px; padding: 4px 8px; }
+.diff .line.mark, .gutter .mark { outline: 2px solid var(--accent); outline-offset: -1px; background: var(--accent-soft); }
+.match { font-size: 0.85em; color: var(--ink-2); }
+.match.ok { color: var(--accent); font-weight: 600; }
+.p-match { display: block; margin: 0 0 4px; }
+.apply-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 4px 10px; border-bottom: 1px solid var(--rule); background: var(--bg); }
+.apply-note { font-size: 0.85em; color: var(--ink-2); flex: 1; min-width: 12em; }
+.open-editor { font-size: 0.85em; margin-left: 8px; color: var(--accent); white-space: nowrap; }
 .p-hint { font-size: 0.88em; color: var(--ink-2); background: var(--bg); border: 1px dashed var(--rule); border-radius: 6px; padding: 6px 10px; }
 .move-modes { display: inline-flex; flex: none; border: 1px solid var(--rule); border-radius: 6px; overflow: hidden; margin-left: -10px; }
 .move-modes button { border: none; border-radius: 0; font-size: 0.85em; padding: 2px 8px; }

@@ -80,6 +80,7 @@ class GitError(RuntimeError):
 def git(
     cwd: Path,  # Directory to run git in
     *args: str,  # Arguments to git
+    input_text: str | None = None,  # Text for git's standard input, if any
 ) -> str:  # What git printed, without the trailing newline
     """Run git and return its output, raising `GitError` with git's own message when it fails.
 
@@ -88,7 +89,7 @@ def git(
     """
     # A stash is never run twice: it may have stored the edits before it met the lock.
     for wait in (0.1, 0.2, 0.4, None) if args[:1] != ("stash",) else (None,):
-        done = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+        done = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace", input=input_text)
         if done.returncode == 0 or wait is None or "index.lock" not in done.stderr:
             break
         time.sleep(wait)
@@ -426,8 +427,17 @@ class Repo:
 
     def edits(self) -> list[str]:  # Paths of tracked files with uncommitted changes
         "List tracked files that differ from the step. Untracked files are not edits and are never touched."
-        out = git(self.work, "status", "--porcelain", "--untracked-files=no")
-        return [line[3:] for line in out.splitlines() if line]
+        # -z: a path with a space or an accent comes as it is, not quoted
+        fields = git(self.work, "status", "--porcelain", "-z", "--untracked-files=no").split("\x00")
+        paths, i = [], 0
+        while i < len(fields):
+            entry = fields[i]
+            if len(entry) > 3:
+                paths.append(entry[3:])
+                if entry[0] in "RC":
+                    i += 1   # a rename or copy is followed by the path it came from
+            i += 1
+        return paths
 
     def edit_marks(self) -> tuple:  # Each edited path with its modification time and size, None for a deleted file
         "Fingerprint the edits cheaply, so a second edit to an already edited file is noticed too."
@@ -541,6 +551,45 @@ class Repo:
             return ""
         return git(self.work, "diff", "--no-color", f"{move.sha}^", move.sha, "--", relative)
 
+    def read_at(
+        self,
+        commit: str,  # A commit
+        relative: str,  # Path inside the repository
+    ) -> dict:  # The file as that commit has it, or the reason it is not shown
+        "Read one file as a commit has it: the answer of a move, read only, whatever the working copy is."
+        found = subprocess.run(["git", "cat-file", "blob", f"{commit}:{relative}"], cwd=self.work, capture_output=True)
+        if found.returncode:
+            return {"path": relative, "missing": True}
+        data = found.stdout
+        if len(data) > MAX_FILE_BYTES:
+            return {"path": relative, "skipped": f"{len(data):,} bytes, too large to show"}
+        if b"\x00" in data:
+            return {"path": relative, "skipped": "a binary file"}
+        return {"path": relative, "text": data.decode("utf-8", errors="replace")}
+
+    def differ_from(
+        self,
+        base: str,  # The commit the working copy stands on
+        target: str,  # The commit to compare the learner's files with
+    ) -> list[str]:  # The files whose contents differ, tracked or not; empty when the files match
+        """Compare the learner's files with a commit, by content: every file that the commits between base and target touch,
+        and every file the learner edited. A file the learner made, and git does not track yet, counts too.
+
+        Two git commands, whatever the number of files: the commit's blob for each path, and the blob of each file on disk.
+        """
+        touched = git(self.work, "diff", "--name-only", "-z", "--no-renames", base, target).split("\x00")
+        paths = sorted({p for p in touched if p} | set(self.edits()))
+        if not paths:
+            return []
+        wanted = {}
+        for entry in git(self.work, "ls-tree", "-r", "-z", target, "--", *paths).split("\x00"):
+            if "\t" in entry:
+                info, path = entry.split("\t", 1)
+                wanted[path] = info.split()[2]
+        on_disk = [p for p in paths if (self.work / p).is_file()]
+        hashes = dict(zip(on_disk, git(self.work, "hash-object", "--stdin-paths", input_text="\n".join(on_disk)).splitlines(), strict=True)) if on_disk else {}
+        return [p for p in paths if wanted.get(p) != hashes.get(p)]
+
     def tree(self) -> dict:  # Files of the working copy, with what the current step did to each
         "Describe the working copy: its tracked files and which of them the current step, or move, changed."
         index, span = self.current(), self.span()
@@ -627,6 +676,20 @@ def recipes(
     return out
 
 
+# Under a files: line: "- diff `src/x.py`: why", "- file step-02.1 `src/y.py`: why", and under an item "  show: `a line`".
+FILES_ITEM = re.compile(r"^\s*-\s+(diff|file)\s+(?:([\w.-]+)\s+)?`([^`]+)`\s*:?\s*(.*)$")
+SHOW_LINE = re.compile(r"^\s+show:\s*`(.+)`\s*$")
+
+
+def _items_follow(
+    lines: list[str],  # The lines of the notes
+    at: int,  # The index of a files: line
+) -> bool:  # Whether its next line that is not blank is an item
+    "Say whether a files: line has items, so that a files: outside a tutorial's move is read as items, not as prose."
+    later = next((line for line in lines[at + 1:] if line.strip()), "")
+    return bool(FILES_ITEM.match(later))
+
+
 def parse_notes(
     text: str,  # The notes file
 ) -> dict[str, dict]:  # Step name to its notes: planned start, commands, the prose, and the section as written
@@ -644,6 +707,10 @@ def parse_notes(
         > Say: ...            a cue; shown with the prose, set apart in its own shade
         ### step-02.1 Title   in a tutorial, starts the notes of one move of the step, which is one commit
         files:                in a tutorial, the files that the move's commit added or changed, each a link
+        files:                followed by items, the files to look at, each with words:
+        - diff `src/x.py`: why   a button to the change of the move (or the step), and a sentence
+        - file `src/y.py`: why   a button to the file, as the move leaves it
+          show: `a line`         under an item: a line of the change, drawn as a small excerpt, and marked in the reader
 
     Every other line is prose, shown as written. Inside a fenced code block every line is prose, so a `$ ` line
     there is code to read, not a command. `parts` keeps the prose and the commands in the order of the file, so the
@@ -655,11 +722,13 @@ def parse_notes(
     current: dict | None = None
     name = ""  # the step whose section this is
     fence: str | None = None  # the fence character while inside a fenced code block, ` or ~
-    for line in text.splitlines():
+    lines = text.splitlines()
+    items: list | None = None  # the items of the files: line being read, or None
+    for at, line in enumerate(lines):
         mark = re.match(r"^\s*(```+|~~~+)", line)
         heading = re.match(r"^##\s+(\S+)", line) if fence is None else None
         if heading:
-            name = heading.group(1)
+            name, items = heading.group(1), None
             current = notes.setdefault(name, {"time": None, "commands": [], "text": [], "raw": [], "parts": []})
             title = line[heading.end():].strip()
             if title:
@@ -679,15 +748,30 @@ def parse_notes(
         if planned:
             current["time"] = int(planned.group(1)) * 60 + int(planned.group(2))
         elif move:
+            items = None
             current["text"].append(line)
             parts.append({"kind": "move", "name": move.group(1), "title": (move.group(2) or "").strip()})
-        elif fence is None and line.strip() == "files:" and any(part["kind"] == "move" for part in parts):
-            parts.append({"kind": "files"})
+        elif fence is None and line.strip() == "files:" and (any(part["kind"] == "move" for part in parts) or _items_follow(lines, at)):
+            items = []
+            parts.append({"kind": "files", "items": items})
+        elif fence is None and items is not None and not command and (item := FILES_ITEM.match(line)):
+            items.append({"kind": item.group(1), "move": item.group(2), "path": item.group(3), "text": item.group(4).strip(), "show": []})
+            current["text"].append(line)  # the PDF prints an item as written
+        elif fence is None and items and (shown := SHOW_LINE.match(line)):
+            if shown.group(1).strip():
+                items[-1]["show"].append(shown.group(1))
+            current["text"].append(line)
+        elif fence is None and items and not command and line.startswith("  ") and line.strip() and lines[at - 1].strip():
+            items[-1]["text"] = (items[-1]["text"] + " " + line.strip()).strip()   # an item's words, over more lines
+            current["text"].append(line)
         elif command:
+            items = None
             entry = {"track": command.group(1) or "replay", "text": command.group(2).strip()}
             current["commands"].append(entry)
             parts.append({"kind": "command", **entry})
         else:
+            if line.strip():
+                items = None   # a line of prose ends the items of a files: line
             current["text"].append(line)
             if parts and parts[-1]["kind"] == "text":
                 parts[-1]["text"] += "\n" + line
@@ -1133,6 +1217,28 @@ def make_app(
             owners += [number] * len(own)
         return deck, owners
 
+    def changes_now() -> dict:  # "last" and "next": each {label, name, before, after}, or None
+        """Say what the reader's two tabs compare, for the place on show and the mode.
+
+        Last change looks back: the move (or the step) just made. Next change looks forward: the move to make next, or
+        the next step. In a tutorial's do mode the code does not move, so both follow the moves marked done.
+        """
+        index, move = repo.position()
+        if index is None:
+            return {"last": None, "next": None}
+        moves = repo.moves[index]
+
+        def of_move(number: int) -> dict:
+            return {"name": moves[number - 1].name, "before": repo.commit_at(index, number - 1), "after": repo.commit_at(index, number)}
+
+        if moves:
+            made = move if showing["mode"] == "watch" else showing["done"]
+            return {"last": of_move(made) if made else None, "next": of_move(made + 1) if made < len(moves) else None}
+        step = repo.steps[index]
+        last = {"name": step.name, "before": repo.steps[index - 1].sha, "after": step.sha} if index else None
+        later = repo.steps[index + 1] if index + 1 < len(repo.steps) else None
+        return {"last": last, "next": {"name": later.name, "before": step.sha, "after": later.sha} if later else None}
+
     def slides_now() -> list[str]:  # The slides of the step the working copy is at
         "The deck of the step on show."
         return deck_now()[0]
@@ -1228,6 +1334,7 @@ def make_app(
                 "view": showing["view"], "track": showing["track"], "shell": showing["shell"],
                 "room_sizes": {name: term.room_size for name, term in terminals.items() if showing["shell"] and term.room_size},
                 "slide_moves": owners, "sync": synced(), "mode": showing["mode"], "done": showing["done"], "of": showing["of"],
+                "changes": changes_now(), "at": showing.get("at"),
                 "walk": {"id": active["walk"].id, "title": active["walk"].title, "kind": active["walk"].kind, "mode": active["walk"].mode} if active["walk"] else None,
                 "walks": [{"id": w.id, "title": w.title, "kind": w.kind} for w in walks]}
 
@@ -1238,12 +1345,40 @@ def make_app(
 
     @guarded
     async def file(request: Request) -> dict:
-        "One file's text, what the current step did to it, and what has been edited since. With `of`, what that move did to it."
+        """One file: its text in the working copy, the Last change and the Next change to it, and its edits.
+
+        With `of`, the change of that move instead of the Last change. With `at`, the text as that move or step leaves
+        it, read only: for a file the learner has not made yet.
+        """
         path = request.query_params["path"]
         found = repo.read(path)
-        of = request.query_params.get("of")
-        diff = repo.move_diff(of, path) if of else ("" if found.get("missing") else repo.diff(path))
-        return {**found, "diff": diff, "edits": repo.edit_diff(path), **({"of": of} if of and repo.move_named(of) else {})}
+        if not (repo.work / path).resolve().is_relative_to(repo.work.resolve()):
+            return {**found, "diff": "", "edits": ""}   # outside the copy: nothing at all, not even a diff
+        of, at = request.query_params.get("of"), request.query_params.get("at")
+        changes = changes_now()
+        diff = lambda c: git(repo.work, "diff", "--no-color", c["before"], c["after"], "--", path) if c else ""   # noqa: E731
+        last = repo.move_diff(of, path) if of else (diff(changes["last"]) if changes["last"] else ("" if found.get("missing") else repo.diff(path)))
+        answer = {**found, "diff": last, "next": diff(changes["next"]), "edits": repo.edit_diff(path),
+                  "last_name": of or (changes["last"] or {}).get("name"), "next_name": (changes["next"] or {}).get("name")}
+        if of and repo.move_named(of):
+            answer["of"] = of
+        if at:
+            commit = (repo.move_named(at).sha if repo.move_named(at) else next((s.sha for s in repo.steps if s.name == at), None))
+            if commit:
+                answer["at"], answer["at_text"] = at, repo.read_at(commit, path)
+        return answer
+
+    @guarded
+    async def match(request: Request) -> dict:
+        "In do mode, whether the learner's files match the commit of the move being worked on, and which differ."
+        index, _ = repo.position()
+        moves = repo.moves[index] if index is not None else []
+        if showing["mode"] != "do" or not moves or showing["done"] >= len(moves):
+            return {"move": None}
+        working = showing["done"] + 1
+        head = git(repo.work, "rev-parse", "HEAD")
+        differ = await asyncio.to_thread(repo.differ_from, head, repo.commit_at(index, working))   # off the event loop
+        return {"move": moves[working - 1].name, "number": working, "differ": differ, "match": not differ}
 
     @guarded
     async def move(request: Request) -> dict:
@@ -1255,6 +1390,7 @@ def make_app(
         repo.move(to, set_aside=bool(body.get("set_aside")), move=int(number) if number is not None else None)
         # A move to a step starts it with no move done; a move to a move (watch mode, or Catch me up) has made that many.
         showing["done"] = int(number) if number is not None else 0
+        showing["at"] = None   # the answer of a move: it belongs to the place it was opened at
         showing["step"] = repo.steps[to].name
         showing["slide"] = memory.get(showing["step"], {}).get("slide", 0)   # back where you left this step
         if repo.moves[to] and synced():
@@ -1425,11 +1561,12 @@ def make_app(
         if body.get("path"):
             showing["path"], showing["view"] = str(body["path"]), body.get("view") or "file"
             showing["of"] = str(body["of"]) if body.get("of") else None  # the move whose change the reader shows, or none
+            showing["at"] = str(body["at"]) if body.get("at") else None  # the move whose version of the file the reader shows
             if showing["layout"] == "slides":
                 showing["layout"] = "split"  # a file asked for must be seen
         if body.get("track") and terminal_for(str(body["track"])) is not None:
             showing["track"] = str(body["track"])
-        await hub.tell({"type": "show", **{k: body[k] for k in ("path", "view", "of", "track", "layout", "from", "focus") if k in body},
+        await hub.tell({"type": "show", **{k: body[k] for k in ("path", "view", "of", "at", "marks", "track", "layout", "from", "focus") if k in body},
                         "layout": showing["layout"], "shell": showing["shell"], "mode": showing["mode"]})
         return {"ok": True}
 
@@ -1579,6 +1716,7 @@ def make_app(
         Route("/api/slide", slide, methods=["POST"]),
         Route("/api/walk", change_walk, methods=["POST"]),
         Route("/api/done", mark_done, methods=["POST"]),
+        Route("/api/match", match),
         Route("/api/recipes", just_recipes),
         Route("/api/notes", notes),
         Route("/api/notes", save_notes, methods=["POST"]),
