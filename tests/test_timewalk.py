@@ -1535,3 +1535,15 @@ def test_two_walks_that_share_a_notes_file_can_both_save(repo: timewalk.Repo, cl
     client.post("/api/walk", params=auth, json={"id": "part"})
     refused = client.post("/api/notes", params=auth, json={"walk": "narrative", "step": "step-03", "base": "Tidy, again", "text": "x"})
     assert refused.status_code == 409
+
+
+def test_a_class_folder_given_through_a_link_still_serves_its_slides(repo: timewalk.Repo, class_folder: Path, tmp_path: Path) -> None:
+    "The class folder named through a symbolic link: the walks' paths are resolved, and so is the folder, so the slides stay in."
+    from timewalk.walks import load_toc
+
+    link = tmp_path / "linked"
+    link.symlink_to(class_folder)
+    client = TestClient(timewalk.make_app(repo, TOKEN, PORT, assistant="", walks=load_toc(link / "toc.toml"), root=link), headers=HOST)
+    auth = {"t": TOKEN}
+    client.post("/api/move", params=auth, json={"to": 1})
+    assert client.get("/api/state", params=auth).json()["slides"] == ["slides/talk.md#2"]

@@ -28,6 +28,11 @@ Keep the text of these headings. A link from another page uses each one as an an
 | page.md | Several windows |
 | walks.md | The checks |
 | walks.md | Tutorial walks |
+| walks.md | Slides for moves |
+| walks.md | The table of contents |
+| steps.md | How to change an earlier step |
+| steps.md | Where the class material goes |
+| class.md | A check the evening before |
 | slides.md | A PDF of the slides |
 | class.md | If a window stops answering |
 

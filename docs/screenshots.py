@@ -7,7 +7,8 @@
     uv run docs/screenshots.py            writes docs/images/*.png
 
 It clones the demo (demo/timewalk-demo) into a temporary folder, serves it with timewalk, and drives both
-pages in headless Chrome or Edge. The shells use bash with a short prompt and a temporary home, so no
+pages in headless Chrome or Edge. The picture of a tutorial comes from timewalk-test: a copy of
+../timewalk-test when it is there, or else a clone from GitHub. The shells use bash with a short prompt and a temporary home, so no
 personal prompt or path shows. Nothing in the real demo or its replay copy is touched.
 """
 
@@ -95,6 +96,8 @@ def main() -> None:
                     port = probe.getsockname()[1]
                 walks_server = serve(repo, port, walks=True)
                 shoot_walks(browser, f"http://127.0.0.1:{port}")
+                walks_server.should_exit = True
+                shoot_tutorial(browser, tmp)
                 browser.close()
         finally:
             server.should_exit = True
@@ -299,6 +302,52 @@ def shoot_walks(browser, base: str) -> None:
     page.mouse.move(2, 2)
     page.locator("header.bar").screenshot(path=str(OUT / "walks.png"))
     page.close()
+
+
+def shoot_tutorial(browser, tmp: Path) -> None:
+    "Take a tutorial walk from timewalk-test: step-02 with its first move made, and the file the move added open."
+    from timewalk.walks import load_toc
+
+    local = ROOT.parent / "timewalk-test"
+    kit = tmp / "timewalk-test"
+    if (local / "history" / "build.py").is_file():
+        # A copy of the files, edits included, as the class there stands; not what it built or ignores.
+        import shutil
+
+        shutil.copytree(local, kit, ignore=shutil.ignore_patterns(".git", "repo", "repo-replay", ".venv", "build", "__pycache__", ".pytest_cache"))
+    else:
+        subprocess.run(["git", "clone", "--quiet", "https://github.com/rahuldave/timewalk-test", str(kit)], check=True)
+    subprocess.run([sys.executable, str(kit / "history" / "build.py"), str(kit / "repo")], check=True, capture_output=True)
+    walks = load_toc(kit / "toc.toml")
+    tutorial = next(w for w in walks if w.id == "tutorial")
+    repo = timewalk.Repo(kit / "repo")
+    repo.select(tutorial.tags, tutorial.steps, tutorial=True)
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    app = timewalk.make_app(repo, TOKEN, port, None, "", None, walks=walks, root=kit, start_walk="tutorial")
+    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
+    threading.Thread(target=server.run, daemon=True).start()
+    while not server.started:
+        time.sleep(0.05)
+    try:
+        page = browser.new_page(viewport=WIDE, device_scale_factor=1)
+        page.goto(f"http://127.0.0.1:{port}/?t={TOKEN}")
+        page.wait_for_selector("#tabs button")
+        page.mouse.click(300, 400)
+        for name in ("step-01", "step-02"):
+            page.keyboard.press("ArrowRight")
+            page.wait_for_function("(s) => document.getElementById('step-name').textContent === s", arg=name)
+        page.keyboard.press("Shift+ArrowRight")
+        page.wait_for_function("document.getElementById('step-name').textContent === 'step-02.1'")
+        page.wait_for_selector("#notes .p-move.here .p-files button")
+        page.locator("#notes .p-move.here .p-files button").first.click()
+        page.wait_for_timeout(1500)
+        page.mouse.move(2, 2)
+        page.screenshot(path=str(OUT / "tutorial.png"))
+        page.close()
+    finally:
+        server.should_exit = True
 
 
 if __name__ == "__main__":

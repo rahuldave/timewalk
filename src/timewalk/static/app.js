@@ -49,6 +49,7 @@ const ui = {
   notesPath: null,
   skew: 0,                // the server's clock minus this one's
   askedMove: null,        // in a tutorial, the move this window last asked for, until the page redraws
+  askedSlide: null,       // the slide this window last asked for, until the server's answer is drawn
   shellToggledHere: false, // this window turned Shell on or off: it gives the shells its size
 };
 
@@ -121,7 +122,10 @@ function drawSteps() {
   const here = current === null ? null : steps[current];
   const made = ui.state.move ? ui.state.moves[ui.state.move - 1] : null;   // in a tutorial, the last move made
   $("step-name").textContent = here ? (made ? made.name : here.name) : "between steps";
-  $("step-subject").textContent = here ? (made ? made.subject : here.subject) : "The working copy is not at one of the steps. Choose a step to return.";
+  // At Start, none of the step's moves is made: the code is still the step before's, so say that, not the step's subject.
+  const atStart = here && ui.state.moves?.length && ui.state.move === 0;
+  $("step-subject").textContent = !here ? "The working copy is not at one of the steps. Choose a step to return."
+    : made ? made.subject : atStart ? `before its first move, with the code of ${ui.state.steps[ui.state.current - 1]?.name ?? "the step before"}` : here.subject;
   $("note").hidden = !(here && here.note);
   $("note").textContent = here ? here.note : "";
   $("prev").disabled = current === null || current === 0;
@@ -299,12 +303,28 @@ function followSize(event) {
   fitTerminal(entry);
 }
 
-async function showSlide(to, setAside = false) {
+/** The slide this window asks for next: one past the one it last asked for, so that quick presses all count. */
+function slideFrom() {
+  // Only for a moment: after that the server's answer is drawn, and another window may have changed the slide since.
+  const fresh = ui.askedSlide && ui.askedSlide.step === ui.state.current && Date.now() - ui.askedSlide.at < 1500;
+  return fresh ? ui.askedSlide.slide : ui.state.slide;
+}
+
+/** Slide changes asked for one after another reach the server in that order, one at a time. */
+let slideQueue = Promise.resolve();
+function showSlide(to, setAside = false) {
+  ui.askedSlide = { step: ui.state.current, slide: Math.min(Math.max(to, 0), Math.max((ui.state.slides?.length || 1) - 1, 0)), at: Date.now() };
+  slideQueue = slideQueue.then(() => askSlide(to, setAside));
+  return slideQueue;
+}
+
+async function askSlide(to, setAside) {
   try {
     const here = ui.state.current === null ? null : ui.state.steps[ui.state.current]?.name;
     await api("/api/slide", { to, step: here, set_aside: setAside });
   } catch (error) {
     // In a tutorial with sync, a slide can make a move: with edits, ask first, as a move does.
+    ui.askedSlide = null;
     if (error.body?.edits?.length && error.message === "uncommitted edits") askAboutEdits(() => showSlide(to, true), error.body.edits);
     else showNotice(error.message, true);
   }
@@ -676,9 +696,9 @@ function wireControls() {
   $("prev").onclick = () => move((ui.state.current ?? 1) - 1);
   $("next").onclick = () => move((ui.state.current ?? -1) + 1);
   $("only-changed").onchange = drawTree;
-  $("slide-prev").onclick = () => showSlide(ui.state.slide - 1);
+  $("slide-prev").onclick = () => showSlide(slideFrom() - 1);
   $("slide-first").onclick = () => showSlide(0);
-  $("slide-next").onclick = () => showSlide(ui.state.slide + 1);
+  $("slide-next").onclick = () => showSlide(slideFrom() + 1);
   for (const button of $("layouts").querySelectorAll("button")) button.onclick = () => show({ layout: button.dataset.layout });
   $("shell-toggle").onclick = () => { ui.shellToggledHere = true; show({ shell: !ui.shell }); };
   for (const view of ["file", "diff", "edits"]) $("view-" + view).onclick = () => ui.open && show({ path: ui.open, view });

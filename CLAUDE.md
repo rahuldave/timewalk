@@ -110,7 +110,7 @@ just demo            # fetch the sample submodule if needed, and open it with --
 just demo-walks      # the same, with the two walks of demo/toc.toml
 just walk <repo> ... # run timewalk on a repository
 just pdf <manifest> -o out.pdf --title "..."
-just screenshots     # retake docs/images from a throwaway clone of the demo
+just screenshots     # retake docs/images from a throwaway clone of the demo, and the tutorial from ../timewalk-test
 just site            # build docs/_site and serve it at http://127.0.0.1:8000
 ```
 
@@ -141,7 +141,9 @@ socket.
 ## Checking a change
 
 1. Run `just test` and `just lint`.
-2. For anything in `src/timewalk/static/`, drive the page in headless Chrome, in two windows, through a throwaway clone
+2. Run timewalk-test's suite against this copy: `cd ~/Projects/timewalk-test && TIMEWALK_LOCAL=~/Projects/timewalk just test`.
+   It drives every walk, step, move and slide in two windows. For anything in `src/timewalk/static/`, also drive the
+   page in headless Chrome, in two windows, through a throwaway clone
    of the demo. Run `git clone ~/Projects/timewalk-demo` into the scratchpad. Do not use
    `demo/timewalk-demo-replay`, which can hold edits of Rahul.
 3. Go through every step and slide, and type in a terminal. Playwright with `channel="chrome"` works.

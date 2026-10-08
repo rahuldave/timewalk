@@ -928,6 +928,7 @@ def make_app(
     "Build the web application: the two pages, the read-only repository API, the terminals, and the event hub."
     terminals: dict[str, Terminal] = {}
     walks = walks or []
+    root = root.resolve() if root is not None else None  # as load_toc resolves the walks' paths, or slides would fall outside
     first = next((w for w in walks if w.id == start_walk), walks[0]) if walks else None
     # The walk on show, and its files. Without a table of contents there is one walk, with no id, the files given.
     active: dict = {"walk": first, "notes": first.notes if first else notes_path, "slides": first.slides if first else slides_path,

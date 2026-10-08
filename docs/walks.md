@@ -5,7 +5,8 @@ have several walks. For example, one walk tells the whole story of the project, 
 walk covers only the tests. A table of contents lists the walks, and a menu at the left of the step bar
 changes the walk in every window.
 
-Try it on the demo. In a clone of timewalk, run `just demo-walks`. The demo has two walks. "The demo, step
+To build a class with several walks, see [Build a class with several walks](build-walks.md). Try it on the demo. In a clone of
+timewalk, run `just demo-walks`. The demo has two walks. "The demo, step
 by step" has all five steps, and "Only the checks" has two of them.
 
 ![The walk menu at the left of the step bar, with the two walks of the demo](images/walks.png)
