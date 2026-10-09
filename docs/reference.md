@@ -187,8 +187,7 @@ Add these to the address that timewalk prints, after the token, with `&`.
 | Up, Down | Previous or next slide, when there is more than one. On a document, or with one slide, they scroll |
 | Alt with an arrow | Moves the step or the slide, even inside a terminal or on a document |
 | Shift+Up, Shift+Down | The first or the last slide of the step |
-| Shift+Right, Shift+Left | In a tutorial, do mode: marks the move done and goes to the next, or marks the last move done as not done. The code does not move |
-| Shift+Right, Shift+Left | In a tutorial, watch mode: checks out the commit of the next or the previous move |
+| Shift+Right, Shift+Left | In a tutorial: the next move (do mode: marks it done, and the code does not move; watch mode: checks out its commit), or back to the step's Start, which checks out the tag before the step |
 | Alt+Shift+Right, Alt+Shift+Left | The same, inside a terminal |
 | Home, End | The top or the bottom of the slide, the file or the notes under the mouse |
 | Alt+Enter | **Shell** on or off, in every window |

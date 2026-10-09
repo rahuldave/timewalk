@@ -168,40 +168,64 @@ function drawMoves() {
   row.hidden = !moves.length;
   if (!moves.length) return;
   const watch = mode === "watch";
+  const reached = movesReached();
   const label = document.createElement("span");
   label.className = "label";
   label.textContent = "Moves";
-  const here = moveOnShow();
-  const step = (delta) => (watch ? goMove(Math.min(Math.max((move ?? 0) + delta, 0), moves.length))
-                                 : markDone(Math.min(Math.max(done + delta, 0), moves.length)));
+  // Back goes only to the step's Start, where just setup makes the environment again; forward goes one move at a time.
   const back = document.createElement("button");
   back.className = "nav";
   back.innerHTML = "&#9664;";
-  back.title = watch ? "Show the move before (Shift+Left)" : "Back one move (Shift+Left)";
-  back.disabled = watch ? !move : !done;
-  back.onclick = () => step(-1);
+  back.title = "Back to the step's Start, then run just setup (Shift+Left)";
+  back.disabled = !reached && (watch ? !move : true);
+  back.onclick = () => toStart();
   const forward = document.createElement("button");
   forward.className = "nav";
   forward.innerHTML = "&#9654;";
   forward.title = watch ? "Show the next move's commit (Shift+Right)" : "Mark this move done, and go to the next (Shift+Right)";
-  forward.disabled = watch ? move >= moves.length : done >= moves.length;
-  forward.onclick = () => step(1);
-  const buttons = [{ name: "Start", subject: "Before the first move of this step" }, ...moves].map((m, number) => {
+  forward.disabled = reached >= moves.length;
+  forward.onclick = () => nextMove();
+  const buttons = [{ name: "Start", subject: "The step's start: back here, run just setup" }, ...moves].map((m, number) => {
     const button = document.createElement("button");
     button.textContent = number ? String(number) : "Start";
-    button.title = number ? `${m.name}: ${m.subject}` : m.subject;
-    const isDone = watch ? number < move : number <= done && number > 0;
-    button.className = number === (watch ? move : here) ? "here" : isDone ? "done" : "";
+    button.className = number === 0 ? (reached === 0 ? "here" : "") : number <= reached ? "done" : number === reached + 1 ? "next" : "";
+    if (watch && number === move && number) button.className = "here";
     if (button.className === "here") button.setAttribute("aria-current", "step");
-    // Watch: go to that commit. Do: work on that move, so the ones before it count as done.
-    button.onclick = () => (watch ? goMove(number) : markDone(Math.max(number - 1, 0)));
+    // Only Start and the next move can be reached: the moves go in order, and back is the Start. The move on show
+    // stays bright: it is where you are, not a place you cannot go.
+    const current = button.className === "here";
+    button.disabled = number !== 0 && number !== reached + 1 && !current;
+    button.title = number === 0 ? m.subject : number === reached + 1 ? `${m.name}: ${m.subject}`
+      : number <= reached ? `${m.name}: made. To go back, go to Start` : `${m.name}: after ${moves[reached].name}`;
+    button.onclick = () => (current ? null : number === 0 ? toStart() : nextMove());
     return button;
   });
   const subject = document.createElement("span");
   subject.className = "move-subject";
-  subject.textContent = watch ? (move ? moves[move - 1].subject : `${moves.length} moves to show`)
-    : done >= moves.length ? "Every move is done" : `Now: ${moves[here - 1].name}, ${moves[here - 1].subject.replace(/^[^:]*:\s*/, "")}`;
+  const edited = (ui.tree?.edits || ui.state.edits || []).length;
+  subject.textContent = reached >= moves.length ? "Every move is made"
+    : `Next: ${moves[reached].name}, ${moves[reached].subject.replace(/^[^:]*:\s*/, "")}`
+      + (watch && edited ? ". Your edits will be set aside at the next Show" : "");
   row.replaceChildren(label, back, ...buttons, forward, subject);
+}
+
+/** How many of the step's moves are made: in watch mode the move on show, in do mode the moves marked done. */
+function movesReached() {
+  const { move = 0, done = 0, mode } = ui.state;
+  return mode === "watch" ? move ?? 0 : done;
+}
+
+/** Make the next move: in watch mode show its commit; in do mode mark the move worked on done. */
+function nextMove() {
+  const { moves = [] } = ui.state;
+  const reached = ui.askedMove?.step === ui.state.current ? ui.askedMove.move : ui.askedDone?.step === ui.state.current ? ui.askedDone.done : movesReached();
+  if (reached >= moves.length) return;
+  return ui.state.mode === "watch" ? goMove(reached + 1) : markDone(reached + 1);
+}
+
+/** Back to the step's Start: the code goes back to the step before, edits are asked about, and just setup is the next thing. */
+function toStart() {
+  return goMove(0);   // the notes' hint at the Start says to run just setup
 }
 
 /** A tutorial's mode, beside the walk's kind, at every step: Do, the learner makes each move by hand; Watch, timewalk
@@ -884,14 +908,8 @@ function wireControls() {
       event.preventDefault();
       event.stopPropagation();
       if (event.repeat) return;
-      const delta = event.key === "ArrowRight" ? 1 : -1;
-      if (ui.state.mode === "watch") {
-        const from = ui.askedMove?.step === ui.state.current ? ui.askedMove.move : ui.state.move ?? 0;
-        goMove(Math.min(Math.max(from + delta, 0), ui.state.moves.length));
-      } else {
-        const from = ui.askedDone?.step === ui.state.current ? ui.askedDone.done : ui.state.done ?? 0;
-        markDone(Math.min(Math.max(from + delta, 0), ui.state.moves.length));
-      }
+      if (event.key === "ArrowRight") nextMove();
+      else toStart();   // back is the step's Start, where just setup makes the environment again
       return;
     }
     // Shift+Up and Shift+Down: the first and the last slide of the step. Other keys with Shift are left alone.
@@ -1170,17 +1188,19 @@ function drawNotes() {
   // The prose and the commands, in the order of the notes file: each command is a button where it is written.
   const box = $("notes");
   box.replaceChildren();
-  // In a tutorial, each move has a section. Nothing is locked: in do mode the learner makes each move by hand and marks
-  // it done; in watch mode each move's commit is shown on demand. The commands at the end of a section anchor the move.
+  // In a tutorial, each move has a section, and the moves go in order: a move has no just setup of its own, so it builds
+  // on what the moves before it did. The moves after the next one are greyed and do nothing; back is the step's Start.
+  // The commands at the end of a section anchor the move.
   const { moves = [], move: made = 0, done = 0, mode } = ui.state;
   const watch = mode === "watch";
   const onShow = moveOnShow();
   if (moves.length) {
     const hint = document.createElement("p");
     hint.className = "p-hint";
-    hint.textContent = watch
-      ? `Watch: ${moves.length} moves, each a commit. Press Show on a move, or \u25B6 above, to check out its commit; then run the command at the end of its section.`
-      : `Do: ${moves.length} moves. Make each one by hand from its notes, run the command at its end, then press Done. Lost? Catch me up sets the code to the end of a move.`;
+    const atStart = movesReached() === 0 ? "Run just setup first. " : "";
+    hint.textContent = atStart + (watch
+      ? `Watch: ${moves.length} moves, in order. Press Show \u25B6 on the next move, or \u25B6 above, then run the command at the end of its section. To go back, go to Start and run just setup.`
+      : `Do: ${moves.length} moves, in order. Make the next one by hand from its notes, run the command at its end, then press Done. Lost? Catch me up sets the code to the end of the move you are on. To go back, go to Start and run just setup.`);
     box.append(hint);
   }
   let into = box;       // where the parts go: the notes, or the section of a move
@@ -1205,8 +1225,10 @@ function drawNotes() {
       files = number ? moves[number - 1].files : [];
       owner = number;
       into = document.createElement("section");
-      const state = !number ? "" : watch ? (number === made ? "here" : number < made ? "done" : "ahead")
-        : number === onShow && done < moves.length ? "here" : number <= done ? "done" : "";
+      const reached = watch ? made : done;
+      const state = !number ? "" : watch
+        ? (number === made ? "here" : number < made ? "done" : number === made + 1 ? "next" : "later")
+        : (number <= done ? "done" : number === done + 1 ? "here" : "later");
       into.className = "p-move " + state;
       into.dataset.move = String(number);
       const head = document.createElement("div");
@@ -1225,10 +1247,16 @@ function drawNotes() {
           button.onclick = onclick;
           actions.append(button);
         };
-        if (watch && number !== made) action("Show \u25B6", `Check out ${part.name}'s commit, in every window`, () => goMove(number), true);
+        // Only the next move has buttons: Show in watch mode; Done and Catch me up in do mode. The order is the rule.
+        if (watch && number === reached + 1) action("Show \u25B6", `Check out ${part.name}'s commit, in every window`, () => goMove(number), true);
         if (!watch && state === "here") action("Done \u2713", "I made this move: go to the next", () => markDone(number), true);
-        if (!watch && number <= done) action("Not done", "Mark this move as not done yet", () => markDone(number - 1));
-        if (!watch) action("Catch me up", `Set the code to the end of ${part.name}. Your edits are asked about first, and kept`, () => goMove(number));
+        if (!watch && state === "here") action("Catch me up", `Set the code to the end of ${part.name}. Your edits are asked about first, and kept`, () => goMove(number));
+        if (state === "later") {
+          const after = document.createElement("span");
+          after.className = "p-after";
+          after.textContent = `after ${moves[reached]?.name}`;
+          actions.append(after);
+        }
         head.append(actions);
       }
       into.append(head);
@@ -1256,10 +1284,12 @@ function drawNotes() {
     group.append(commandButton(part));
   }
   markAnchor(into);
+  // A move after the next one waits: its commands, items and buttons do nothing until the moves before it are made.
+  for (const button of box.querySelectorAll(".p-move.later button")) button.disabled = true;
   // When the move on show changes, scroll the notes, and only the notes, to its section, in every window alike. A window
   // with the notes hidden does it when they show.
   const step = here?.name ?? null;
-  const section = box.querySelector(".p-move.here");
+  const section = box.querySelector(".p-move.here") || box.querySelector(".p-move.next");
   const scroller = $("notes-body");
   const key = `${step} ${mode} ${watch ? made : onShow}`;
   if (moves.length && section && scroller.offsetParent && ui.drawnMove !== key) {
@@ -1495,6 +1525,7 @@ const events = onEvents(async (event) => {
     await refresh();
   }
   if (event.type === "edits") {
+    checkMatch();   // edits are often a move being made: no need to wait for the next poll
     await loadTree();
     if (ui.open) await openFile(ui.open, ui.view, false, ui.of, ui.at, ui.marks);
   }

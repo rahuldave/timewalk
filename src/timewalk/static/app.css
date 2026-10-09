@@ -114,7 +114,10 @@ body.has-moves .bar { flex-wrap: wrap; row-gap: 6px; }
 .p-move.here { border-left-color: var(--accent); }
 .p-move.done { border-left-color: var(--accent-soft); }
 .p-move.done h3::before { content: "\2713  "; color: var(--accent); }
-.p-move.ahead > :not(.p-move-head) { opacity: 0.7; }
+.p-move.next { border-left: 3px dashed var(--accent); }
+.p-move.later { opacity: 0.45; }
+.p-after { font-size: 0.8em; color: var(--ink-3); }
+.moves button.next { border-color: var(--accent); }
 .p-move-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 .p-move h3 { font-family: var(--mono); font-size: 0.95em; margin: 0.4em 0; flex: 1; min-width: 12em; }
 .p-move-actions { display: flex; gap: 4px; flex: none; }
@@ -138,6 +141,10 @@ body.has-moves .bar { flex-wrap: wrap; row-gap: 6px; }
 .p-match { display: block; margin: 0 0 4px; }
 .apply-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 4px 10px; border-bottom: 1px solid var(--rule); background: var(--bg); }
 .apply-note { font-size: 0.85em; color: var(--ink-2); flex: 1; min-width: 12em; }
+/* The reader's head: the path keeps room, and the tabs wrap to a second line when the labels are long. */
+.file-pane .pane-head { flex-wrap: wrap; row-gap: 4px; }
+.file-pane .file-path { min-width: 10em; }
+.file-pane .views { flex-wrap: wrap; }
 .open-editor { font-size: 0.85em; margin-left: 8px; color: var(--accent); white-space: nowrap; }
 .p-hint { font-size: 0.88em; color: var(--ink-2); background: var(--bg); border: 1px dashed var(--rule); border-radius: 6px; padding: 6px 10px; }
 .move-modes { display: inline-flex; flex: none; border: 1px solid var(--rule); border-radius: 6px; overflow: hidden; margin-left: -10px; }

@@ -89,7 +89,7 @@ then happen, in this order:
 | **Set the edits aside and move** | Stashes the edits with the name of the step, then moves | `git stash push -m "timewalk: edits made at step-NN"`, in the replay copy |
 | A move, with `--discard-edits` | Moves and does not ask. Edits to tracked files are lost. Commits of a learner are kept | `git checkout --force -B timewalk/replay <step>`, in the replay copy |
 | In a tutorial, **Show ▶**, **Catch me up**, or a move button in watch mode | Moves to the commit of a move, as a step button does | The same, with the commit of the move |
-| In a tutorial, **Done ✓**, **Not done**, or a move button in do mode | Changes the shared count of moves done. The code does not move | None |
+| In a tutorial, **Done ✓**, or the button of the next move in do mode | Changes the shared count of moves done. The code does not move | None |
 | In a tutorial, **Do** or **Watch** | Changes the shared mode, in every window | None |
 | **Up**, **Down**, the slide arrows | Changes the shared slide number. On a document, **Up** and **Down** scroll it, and Alt with **Up** or **Down** changes the slide | None |
 | **Show**: **Slides**, **Both**, **Code** | Changes the shared layout, in every window | None |

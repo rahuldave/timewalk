@@ -1387,6 +1387,8 @@ def make_app(
         to, number = int(body["to"]), body.get("move")
         if body.get("name") is not None and not (0 <= to < len(repo.steps) and repo.steps[to].name == body["name"]):
             raise GitError(f"the steps changed while you asked for {body['name']}; ask again")  # another window changed the walk
+        if number is not None:
+            check_move_order(to, int(number))
         repo.move(to, set_aside=bool(body.get("set_aside")), move=int(number) if number is not None else None)
         # A move to a step starts it with no move done; a move to a move (watch mode, or Catch me up) has made that many.
         showing["done"] = int(number) if number is not None else 0
@@ -1444,6 +1446,24 @@ def make_app(
                 term.refresh_prompt()
         return repo.state()
 
+    def check_move_order(
+        index: int,  # The step of the move asked for
+        number: int,  # The move asked for; 0 is the step's Start
+    ) -> None:
+        """Keep a tutorial's moves in order: forward one move at a time, and back only to the step's Start.
+
+        A step starts with `just setup`, so any step is a safe place to land; a move has no setup of its own, so it
+        builds on the environment that the moves before it left. A skip would miss what a move did to it.
+        """
+        step_now, move_now = repo.position()
+        reached = (move_now or 0) if showing["mode"] == "watch" else showing["done"]
+        if number == 0 or (step_now == index and number in (reached, reached + 1)):
+            return
+        if step_now != index:
+            raise GitError(f"a step starts at its Start: go to {repo.steps[index].name} first")
+        nxt = repo.moves[index][reached].name if reached < len(repo.moves[index]) else "none"
+        raise GitError(f"the moves go in order: the next is {nxt}. To go back, go to the step's Start and run just setup")
+
     @guarded
     async def mark_done(request: Request) -> dict:
         "In do mode, mark how many of the step's moves the learner has made. The code does not move; with sync, the slides follow."
@@ -1452,7 +1472,11 @@ def make_app(
             raise GitError(f"the step changed while you marked a move of {body.get('step')}; mark it again")
         index = repo.current()
         moves = repo.moves[index] if index is not None else []
-        showing["done"] = min(max(int(body.get("done", 0)), 0), len(moves))
+        wanted = int(body.get("done", 0))
+        if wanted not in (showing["done"], showing["done"] + 1):
+            # Done goes forward one move at a time. Back is the step's Start, which also puts the code back.
+            raise GitError("Done goes one move at a time. To go back, go to the step's Start and run just setup")
+        showing["done"] = min(max(wanted, 0), len(moves))
         remember(showing["step"], done=showing["done"])
         if moves and synced():
             owners = deck_now()[1]
@@ -1473,7 +1497,7 @@ def make_app(
         index, number = repo.position()
         owner = owners[to] if to < len(owners) else 0
         # In watch mode, a slide of another move shows that move. In do mode the learner moves the code, so slides do not.
-        if index is not None and number is not None and owner and owner != number and synced() and showing["mode"] == "watch":
+        if index is not None and number is not None and owner and owner > number and synced() and showing["mode"] == "watch":
             if owner > number + 1:
                 # That slide is past the next move: make the next move only, and show its first slide, or stay if it has none.
                 owner = number + 1

@@ -233,7 +233,7 @@ Without a window for the class, Shell mode keeps that rule too.
 | Up, Down | The previous or next slide, when the step has more than one. On a document, or with one slide, they scroll |
 | Alt with an arrow | Moves the step or the slide, from anywhere, a terminal included |
 | Shift+Up, Shift+Down | The first or the last slide of the step |
-| Shift+Right, Shift+Left | In a tutorial, do mode: marks the move done, or not done. Watch mode: checks out the next or the previous move. In a terminal, add Alt |
+| Shift+Right, Shift+Left | In a tutorial: the next move (do mode: marks it done; watch mode: checks out its commit), or back to the step's Start. In a terminal, add Alt |
 | Home, End | The top or the bottom of the slide, the file or the notes under the mouse |
 | Alt+Enter | **Shell** on or off |
 | Alt+1, Alt+2, Alt+3 | **Slides**, **Both**, **Code** |

@@ -1568,11 +1568,11 @@ def test_catch_me_up_sets_the_code_to_the_end_of_a_move(tutored: TestClient, tut
     auth = {"t": TOKEN}
     tutored.post("/api/move", params=auth, json={"to": 1})
     (tutorial.work / "README.md").write_text("my own try\n")
-    refused = tutored.post("/api/move", params=auth, json={"to": 1, "name": "step-01", "move": 2})
+    refused = tutored.post("/api/move", params=auth, json={"to": 1, "name": "step-01", "move": 1})
     assert refused.status_code == 409 and refused.json()["edits"]
-    assert tutored.post("/api/move", params=auth, json={"to": 1, "name": "step-01", "move": 2, "set_aside": True}).status_code == 200
+    assert tutored.post("/api/move", params=auth, json={"to": 1, "name": "step-01", "move": 1, "set_aside": True}).status_code == 200
     state = tutored.get("/api/state", params=auth).json()
-    assert (state["move"], state["done"]) == (2, 2)
+    assert (state["move"], state["done"]) == (1, 1)
     assert "timewalk: edits made at step-01" in run_git(tutorial.work, "stash", "list")
 
 
@@ -1851,7 +1851,8 @@ def test_the_two_tabs_and_a_file_as_a_move_leaves_it(tutored: TestClient) -> Non
     changes = tutored.get("/api/state", params=auth).json()["changes"]
     assert (changes["last"]["name"], changes["next"]["name"]) == ("step-01.1", "step-01.2")
     tutored.post("/api/show", params=auth, json={"mode": "watch"})
-    tutored.post("/api/move", params=auth, json={"to": 1, "move": 3})
+    for number in (1, 2, 3):   # watch mode follows the code, which do mode left at the Start
+        assert tutored.post("/api/move", params=auth, json={"to": 1, "move": number}).status_code == 200
     changes = tutored.get("/api/state", params=auth).json()["changes"]
     assert changes["last"]["name"] == "step-01.3" and changes["next"] is None, "the last move of a step: nothing next"
 
@@ -1910,3 +1911,22 @@ def test_an_item_naming_another_moves_name_is_checked(tutorial: timewalk.Repo, t
     _, warnings = check(load_toc(tutorial_class / "toc.toml"), tutorial.main, tutorial_class)
     assert any("names step-09.9, which is not a move of the walk" in w for w in warnings)
     assert not any("a.txt" in w for w in warnings)
+
+
+def test_moves_go_in_order_and_back_is_the_start(tutored: TestClient, tutorial: timewalk.Repo) -> None:
+    "A move has no just setup of its own: forward one move at a time, in both modes; back only to the step's Start."
+    auth = {"t": TOKEN}
+    tutored.post("/api/move", params=auth, json={"to": 1})
+    skip = tutored.post("/api/move", params=auth, json={"to": 1, "move": 2})
+    assert skip.status_code == 409 and "the next is step-01.1" in skip.json()["error"]
+    assert tutored.post("/api/done", params=auth, json={"step": "step-01", "done": 2}).status_code == 409, "Done skips nothing"
+    assert tutored.post("/api/done", params=auth, json={"step": "step-01", "done": 1}).status_code == 200
+    assert tutored.post("/api/done", params=auth, json={"step": "step-01", "done": 0}).status_code == 409, "back is the Start"
+    tutored.post("/api/show", params=auth, json={"mode": "watch"})
+    tutored.post("/api/move", params=auth, json={"to": 1, "move": 1})
+    tutored.post("/api/move", params=auth, json={"to": 1, "move": 2})
+    assert tutored.post("/api/move", params=auth, json={"to": 1, "move": 1}).status_code == 409, "not back one move"
+    assert tutored.post("/api/move", params=auth, json={"to": 1, "move": 0}).status_code == 200, "back to the Start"
+    state = tutored.get("/api/state", params=auth).json()
+    assert (state["move"], state["done"]) == (0, 0)
+    assert run_git(tutorial.work, "rev-parse", "HEAD") == tutorial.steps[0].sha

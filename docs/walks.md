@@ -247,8 +247,12 @@ In do mode, each move section has these buttons:
 | Button | Does |
 |---|---|
 | **Done ✓** | On the move that the learner works on: marks it done, and goes on to the next move. The code does not move |
-| **Not done** | On a move marked done: marks it, and the moves after it, as not done |
-| **Catch me up** | Checks out the commit at the end of that move, in every window. If the replay copy has edits, the page asks first, and then stashes them. It never discards them |
+| **Catch me up** | On the move that the learner works on: checks out the commit at the end of that move, in every window. If the replay copy has edits, the page asks first, and then stashes them. It never discards them |
+
+The moves go in order, in both modes. A step starts with `just setup`, so any step is a safe place to
+start. A move has no setup of its own, so it builds on what the moves before it did to the environment. A
+skip would miss that. So the moves after the next one are grey, and their buttons, commands and items do
+nothing. The way back is the step's **Start**, and then `just setup`.
 
 An item under `files:` opens the change of its move in the reader, even before the file exists. In do
 mode, the reader then shows the change in the tab **Next change**, with an **Apply** bar. See
@@ -256,8 +260,9 @@ mode, the reader then shows the change in the tab **Next change**, with an **App
 
 ![A tutorial in watch mode after Show on the first move: the commit of step-02.1 checked out, the hint at the top of the notes, and the slide of the move](images/tutorial-watch.png)
 
-In watch mode, each move section that is not on show has a **Show ▶** button. It checks out the commit of
-that move, in every window. Any move can be reached, and no move is locked.
+In watch mode, the next move has a **Show ▶** button. It checks out the commit of that move, in every
+window. If the replay copy has edits, the page asks first, and then stashes them. With `--discard-edits`, the
+edits are dropped.
 
 ### Moves on the page
 
@@ -268,9 +273,11 @@ first move. Beside the buttons, the row shows the move on show and its subject.
 | Control | In do mode | In watch mode |
 |---|---|---|
 | **▶**, or Shift+Right | Marks the move done, and goes to the next | Checks out the commit of the next move |
-| **◀**, or Shift+Left | Marks the last move done as not done | Checks out the commit of the move before |
-| **1**, **2** | Works on that move: the moves before it count as done | Checks out the commit of that move |
-| **Start** | Marks no move done | Checks out the tag before the step |
+| **◀**, or Shift+Left, or **Start** | Checks out the tag before the step, after asking about edits, and marks no move done | Checks out the tag before the step |
+| The number of the next move | The same as **▶** | The same as **▶** |
+| Other numbers | Do nothing: the moves go in order | Do nothing: the moves go in order |
+
+After **Start**, run `just setup`, as the hint at the top of the notes says.
 
 - **In a terminal,** use Alt with Shift+Right and Shift+Left.
 - **Right and Left** go to the next or the previous step, as in a narrative.
@@ -376,8 +383,8 @@ that the learner works on. The answer shows on the section of that move, and in 
 - **"Your files match step-02.3 ✓"** when every file is the same as in the commit.
 - **"2 files differ from step-02.3: a.py, b.py"** with the names of the files that differ.
 
-A match marks the move done by itself. It does so once for each move, so if the learner then presses
-**Not done**, the move stays not done. Only your own window marks the move, and never the Room window.
+A match marks the move done by itself, once for each move. Only your own window marks the move, and never
+the Room window.
 
 The comparison is by content. It takes every file that differs between HEAD and the commit of the
 move, and every file with edits. A new file of the move counts, even when git does not track it yet. The
