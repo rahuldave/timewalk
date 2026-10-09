@@ -26,6 +26,7 @@ each walk. The first walk is the default.
 [[walk]]
 id = "story"
 title = "The project, step by step"
+description = "How the project was built, one tagged step at a time."
 kind = "narrative"
 notes = "notes.md"
 slides = "slides/slides.toml"
@@ -33,6 +34,7 @@ slides = "slides/slides.toml"
 [[walk]]
 id = "tests"
 title = "Only the tests"
+description = "Three steps of the project: the code, its tests, and a fix."
 kind = "narrative"
 folder = "walks/tests"            # its notes.md, and slides/slides.toml, are in this folder
 steps = ["step-01", "step-02", "step-05"]
@@ -42,6 +44,7 @@ steps = ["step-01", "step-02", "step-05"]
 |---|---|
 | `id` | The name of the walk, for `--walk`. Letters, digits, `-` and `_` |
 | `title` | What the menu shows. Default: the `id` |
+| `description` | Optional. What the walk is about, in a sentence or two. The status band shows it at the first step of the walk. See [The status band](page.md#the-status-band) |
 | `kind` | `"narrative"`: the tagged steps, and nothing between them. `"tutorial"`: the tagged steps, and the small commits between them. See [Tutorial walks](#tutorial-walks). Default: `"narrative"` |
 | `notes` | The notes file of the walk |
 | `slides` | The slides manifest of the walk |
@@ -103,6 +106,9 @@ the slides of that walk.
 - **In a tutorial,** a switch beside the label changes the mode, **Do** or **Watch**.
 - **The Room window** has no menu. It shows the title of the walk, with its kind, and for a tutorial its
   mode, for example "(tutorial, watch mode)".
+- **The status band** under the step bar names the kind of the walk and the step. At the first step of
+  the walk, it also shows the `description` of the walk. A sentence after it says what the kind of walk
+  asks of you. See [The status band](page.md#the-status-band).
 
 If the bar has no room for the menu, its buttons move to a second row.
 
@@ -152,8 +158,9 @@ A picture that a Markdown slide shows counts as used.
 
 ## Tutorial walks
 
-A tutorial walk stops at every small commit between two steps. Each small commit is a move. The class
-makes the moves of a step one at a time, and reads the notes of each move.
+A tutorial walk stops at every small commit between two steps. Each small commit is a move. A tutorial
+has one or more steps, and each step has zero or more moves. The class makes the moves of a step one at a
+time, and reads the notes of each move.
 
 The moves of a step are the commits after the step before it, up to the commit of the step, on the
 first-parent line. The first-parent line is the line of commits that git follows back from a commit
@@ -240,29 +247,30 @@ tutorial starts in.
 A move to a tagged step always starts that step at the tag before it, with no move made. So in both modes,
 each step starts from the code of the step before.
 
-![A tutorial in do mode at the start of step-02: the moves row, the first move with Done and Catch me up, its anchor command, and its change in the reader before the file exists](images/tutorial-do.png)
+![A tutorial in do mode at the start of step-02: the moves row, the first move with Done and Catch me up, its See diff item, and its change in the reader before the file exists](images/tutorial-do.png)
 
 In do mode, each move section has these buttons:
 
 | Button | Does |
 |---|---|
 | **Done ✓** | On the move that the learner works on: marks it done, and goes on to the next move. The code does not move |
-| **Catch me up** | On the move that the learner works on: checks out the commit at the end of that move, in every window. If the replay copy has edits, the page asks first, and then stashes them. It never discards them |
+| **⇥ Catch me up** | On the move that the learner works on: checks out the commit at the end of that move, in every window. If the replay copy has edits, the page asks first, and then stashes them. It never discards them |
+| **Made ✓** | On a move already made, in place of **Done ✓**. It is grey, and does nothing |
 
 The moves go in order, in both modes. A step starts with `just setup`, so any step is a safe place to
 start. A move has no setup of its own, so it builds on what the moves before it did to the environment. A
 skip would miss that. So the moves after the next one are grey, and their buttons, commands and items do
-nothing. The way back is the step's **Start**, and then `just setup`.
+nothing. The way back is the step's **Start**, or **↺ Restart step** in the notes, and then `just setup`.
 
 An item under `files:` opens the change of its move in the reader, even before the file exists. In do
 mode, the reader then shows the change in the tab **Next change**, with an **Apply** bar. See
 [The reader in a tutorial](#the-reader-in-a-tutorial) and [Apply](#apply).
 
-![A tutorial in watch mode after Show on the first move: the commit of step-02.1 checked out, the hint at the top of the notes, and the slide of the move](images/tutorial-watch.png)
+![A tutorial in watch mode after Show on the first move: the commit of step-02.1 checked out, the move with a grey Shown button, and the slide of the move](images/tutorial-watch.png)
 
 In watch mode, the next move has a **Show ▶** button. It checks out the commit of that move, in every
 window. If the replay copy has edits, the page asks first, and then stashes them. With `--discard-edits`, the
-edits are dropped.
+move drops the edits. A move already shown has a grey **Shown ✓** button in its place, which does nothing.
 
 ### Moves on the page
 
@@ -277,15 +285,38 @@ first move. Beside the buttons, the row shows the move on show and its subject.
 | The number of the next move | The same as **▶** | The same as **▶** |
 | Other numbers | Do nothing: the moves go in order | Do nothing: the moves go in order |
 
-After **Start**, run `just setup`, as the hint at the top of the notes says.
+After **Start**, run `just setup`, as the first line of the notes says.
 
 - **In a terminal,** use Alt with Shift+Right and Shift+Left.
 - **Right and Left** go to the next or the previous step, as in a narrative.
-- **A hint** at the top of the notes says how to go on in the mode on show.
-- **The notes** mark the section of the move on show with a line at its left, and scroll to it in every
-  window.
+- **The status band** gives the mode, the step and the count of moves made. It then says what to do now,
+  for example "press Show on step-02.1". The first line of the notes says the same thing.
+- **The notes** scroll to the section of the move on show, in every window. At **Start**, they go to the
+  top, where `just setup` is.
 - **Last change** and **Next change** in the reader follow the moves. See
   [The reader in a tutorial](#the-reader-in-a-tutorial).
+
+In the notes, the sections of the moves have no boxes. Each section runs from edge to edge of the column,
+with a bar on its left:
+
+| Section | Looks |
+|---|---|
+| The text before the first move | A section of its own, with the label "Before the moves" and no bar. The text is about the whole step |
+| A move made | A grey bar, and a check before its name |
+| The move on show | A dark bar |
+| The next move | A blue bar |
+| A move after the next | Faded, with no bar |
+
+Once a move is made, each section of a move made ends with **↺ Restart step**, and so does the section of
+the move on show. The button goes back to the step's **Start**, in every window, as **Start** does. The
+code goes back to the step before. If the replay copy has edits, the page asks first. With
+`--discard-edits`, the move drops them. Then run `just setup` again.
+
+When every move of the step is made, a green **Next step** button ends the notes, with the name of the
+next step. The same button shows in the head of the slides, at the last slide. The Room window does not
+show the button on the slides.
+
+![The notes of step-01 in watch mode, with both moves shown: the text before the moves, two moves with Shown and Restart step, and Next step at the end](images/tutorial-next.png)
 
 timewalk writes down the move on show in the git folder of the replay copy. After a restart, the page
 comes back at the same move.
@@ -305,20 +336,21 @@ files:
 
 | Line | Does |
 |---|---|
-| ``- diff `path`: words`` | A button that opens the change of the move to that file, and its words |
-| ``- file `path`: words`` | A button that opens the file itself, and its words |
+| ``- diff `path`: words`` | A button **± See diff path** that opens the change of the move to that file, and its words |
+| ``- file `path`: words`` | A button **▤ See file path** that opens the file itself, and its words |
 | ``- diff step-02.1 `path`: words`` | The same for another move, named before the path |
 | ``  show: `a line` `` | Under an item: a line of the change, quoted. The notes draw it as an excerpt, and the reader marks it |
 | An indented line under an item | More of the words of the item |
 
-On the page, each item is a button with the path, and its words beside it. A `diff` button opens the
-tab of the reader that holds the change:
+On the page, each item is one button with an icon, a verb and the path. The button is **± See diff** for
+a `diff` item, and **▤ See file** for a `file` item. The words of the item go on the line under the button. A
+**± See diff** button opens the tab of the reader that holds the change:
 
 - **Next change** for the move that the learner works on.
 - **Last change** for the move just made.
 - **Changes in step-02.1** for any other move.
 
-A `file` button opens **Your file**. In do mode, the button of a move that is not made yet opens
+A **▤ See file** button opens **Your file**. In do mode, the button of a move that is not made yet opens
 **At step-02.3** instead. The view shows the file as the move leaves it, read only.
 
 A `show:` line names one line of the change by its text. Under a `diff` item, the notes draw an excerpt
@@ -326,13 +358,16 @@ of the real diff there. An excerpt is a small part of the diff, read only. It ho
 lines of context on each side, or the whole hunk when the hunk is about eight lines or fewer. A hunk is
 one run of changed lines in a diff. When the item opens the reader, the reader marks the same line.
 
+The excerpt is a band across the whole column, and the named line is shaded. A click on the excerpt opens
+the change, as the button of its item does. In a move after the next one, the click does nothing.
+
 ![The notes of step-02.1 in do mode: an item with its words and its excerpt, and the reader on Next change with the quoted line marked, and the Apply bar](images/tutorial-items.png)
 
-If a `show:` line is no longer in the change, the notes draw a box that says so. A fix to the history can
-remove a quoted line. `timewalk-check` warns of it too.
+If a `show:` line is no longer in the change, the notes draw a red band that says so. A click on the band
+opens the change too. A fix to the history can remove a quoted line. `timewalk-check` warns of it too.
 
-A line `files:` with no items under it shows a button for each file that the commit of the move added
-or changed. Items also work in a narrative. There, a `diff` item opens **Last change**, the change of the
+A line `files:` with no items under it shows a **± See diff** button for each file that the commit of
+the move added or changed. Items also work in a narrative. There, a `diff` item opens **Last change**, the change of the
 step. The PDF prints each item line as it is written.
 
 ### The reader in a tutorial
@@ -363,13 +398,13 @@ exactly what ran.
 
 | Button | Types into the shell |
 |---|---|
-| **Apply this file** | ``(cd "$(git rev-parse --show-toplevel)" && git diff A B -- path \| git apply --3way)``, where `A` is the commit before the move and `B` is the commit of the move |
-| **Apply the whole move** | `git cherry-pick --no-commit B`, for the commit `B` of the move |
+| **⇣ Apply this file** | ``(cd "$(git rev-parse --show-toplevel)" && git diff A B -- path \| git apply --3way)``, where `A` is the commit before the move and `B` is the commit of the move |
+| **⇣ Apply the whole move** | `git cherry-pick --no-commit B`, for the commit `B` of the move |
 
 - **The changes become edits.** HEAD stays where it is. HEAD is the commit that the replay copy stands
   on. The file list marks the files, and **Your edits** shows them.
 - **A button is disabled** when the learner has already changed a file that it touches. The bar then
-  says to compare the file with **Next change**, or to use **Catch me up**.
+  says to compare the file with **Next change**, or to use **⇥ Catch me up**.
 - **The page itself never writes a file.** The shell runs the command, as any terminal does.
 - **The Room window has no Apply bar.**
 

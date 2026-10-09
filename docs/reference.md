@@ -131,6 +131,7 @@ In the timewalk folder, `just` lists these:
 |---|---|
 | `[[walk]]` | One table for each walk. The first is the default |
 | `id`, `title`, `kind` | The name, the title in the menu, and `"narrative"` or `"tutorial"` |
+| `description` | What the walk is about, in a sentence or two. The status band shows it at the first step of the walk |
 | `notes`, `slides`, `folder` | The notes file and the manifest, or a folder that holds `notes.md` and `slides/slides.toml` |
 | `steps`, `tags` | Some of the steps by name, or a glob for tags of its own |
 | `moves` | In a tutorial: the mode it starts in, `"do"` or `"watch"`. Default: `"do"` |
@@ -147,11 +148,11 @@ In the timewalk folder, `just` lists these:
 | `> text` | A cue. Every window shows it, in its own shade. Remove private cues before you give the notes to students |
 | `$ cmd`, `runs$ cmd`, `runs2$ cmd` to `runs9$ cmd`, `main$ cmd` | A command for that tab |
 | `### step-NN.k Title` | In a tutorial: starts the section of move `k` of step `NN`. Write the sections in the order of the commits |
-| `files:` | Starts a list of items. In a move section with no items: a button for each file that its commit added or changed |
-| ``- diff `path`: words`` | An item: a button to the change of the move, or of the step, to that file, with its words |
-| ``- file `path`: words`` | An item: a button to the file. In do mode, for a move not made yet, the file as the move leaves it |
+| `files:` | Starts a list of items. With no items: a **± See diff** button for each file that the commit of the move added or changed |
+| ``- diff `path`: words`` | An item: a button **± See diff path** to the change of the move, or of the step, to that file. Its words go under the button |
+| ``- file `path`: words`` | An item: a button **▤ See file path** to the file. In do mode, for a move not made yet, the file as the move leaves it |
 | ``- diff step-02.1 `path`: words`` | An item of another move |
-| ``  show: `a line` `` | Under an item: a line of the change, drawn as an excerpt in the notes and marked in the reader |
+| ``  show: `a line` `` | Under an item: a line of the change, drawn as an excerpt in the notes and marked in the reader. A click on the excerpt opens the change |
 | The last commands of a move section | The anchor commands of the move, under "After this move, run:". They show what the move did. `timewalk-check` warns of a move section with no command |
 
 ## The views of the reader

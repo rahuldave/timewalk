@@ -46,6 +46,8 @@ Keep the text of these headings. A link from another page uses each one as an an
 | walks.md | The items under files |
 | walks.md | The reader in a tutorial |
 | page.md | The reader |
+| page.md | The status band |
+| page.md | The theme |
 
 ## Glossary
 
@@ -71,6 +73,8 @@ only that page could not know it.
 | the file list | The tree of files. Do not write "file tree" |
 | the reader | The pane that shows one file |
 | the clock band | The band at the top of the page, with `--clock` |
+| the status band | The band under the step bar: what to do now, the description of the walk at its first step, and the message of the tag |
+| description | The `description` of a walk in `toc.toml`: what the walk is about, in a sentence or two |
 | the notes column | The notes on the right of the page, with `--notes` |
 | edit (noun) | A change to a tracked file that is not committed |
 | tracked file, untracked file | A file that git records, and a file that git does not record |

@@ -37,7 +37,7 @@ from pathlib import Path
 from timewalk import GitError, expand_entry, git, parse_notes, pick_steps, replace_section, split_slides, step_moves, tag_steps
 
 KINDS = ("narrative", "tutorial")
-WALK_KEYS = ("id", "title", "kind", "folder", "notes", "slides", "steps", "tags", "setup", "sync", "moves")
+WALK_KEYS = ("id", "title", "description", "kind", "folder", "notes", "slides", "steps", "tags", "setup", "sync", "moves")
 SLIDE_FILES = (".md", ".markdown", ".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".pdf", ".html")
 
 
@@ -55,6 +55,7 @@ class Walk:
     setup: str  # "manual": `just setup` is run by hand at each step
     sync: bool = True  # In a tutorial: a move shows its first slide, and in watch mode a move's slide makes the move
     mode: str = "do"  # In a tutorial, how it starts: "do", the learner makes each move; "watch", timewalk shows each commit
+    description: str = ""  # What the walk is about, in a sentence or two: the page shows it at the walk's first step
 
 
 class TocError(ValueError):
@@ -93,7 +94,7 @@ def load_toc(
         kind = entry.get("kind", "narrative")
         if kind not in KINDS:
             raise TocError(f"{where}: kind = {kind!r}; this version of timewalk knows only {', '.join(repr(k) for k in KINDS)}")
-        for key in ("title", "folder", "notes", "slides", "tags", "setup"):
+        for key in ("title", "description", "folder", "notes", "slides", "tags", "setup"):
             if key in entry and not isinstance(entry[key], str):
                 raise TocError(f"{where}: {key} must be text in quotes")
         steps = entry.get("steps")
@@ -120,7 +121,8 @@ def load_toc(
         if folder is not None and not folder.is_dir():
             raise TocError(f"{where}: its folder {entry['folder']} does not exist")
         walks.append(Walk(ident, entry.get("title", ident), kind, notes.resolve() if notes else None, slides.resolve() if slides else None,
-                          entry.get("tags", "step-*"), steps, "manual", entry.get("sync", True), entry.get("moves", "do")))
+                          entry.get("tags", "step-*"), steps, "manual", entry.get("sync", True), entry.get("moves", "do"),
+                          entry.get("description", "").strip()))
     return walks
 
 

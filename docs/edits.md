@@ -66,11 +66,11 @@ step tracks a file with the same name. Every other untracked file stays.
 Use the flag when you do not need to keep anything that the class typed in the replay copy. `just demo`
 uses the flag.
 
-Every window shows the flag in the step bar. With no edits, the step bar shows a quiet note:
+Every window shows the flag in the step bar. With no edits, the step bar shows a quiet label, "Moves discard edits":
 
-![The step bar with --discard-edits and no edits, which shows a note](images/discard-moved.png)
+![The step bar with --discard-edits and no edits, which shows a quiet label](images/discard-moved.png)
 
-With edits, the note becomes a warning with the number of edits. If you hover over the **edited** badge or
+With edits, the label becomes a red warning with the number of edited files. If you hover over the **edited** badge or
 the **Your edits** view, they say the same:
 
 ![The step bar with --discard-edits and an edit, which warns that the next move drops the edit](images/discard-warning.png)

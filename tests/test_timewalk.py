@@ -861,15 +861,25 @@ def test_shells_do_not_inherit_this_tools_python() -> None:
     assert env["HOME"] == "/home/me" and env["TIMEWALK"] == "1"
 
 
+def next_event(socket) -> dict:
+    "The next event on a window's socket, past the edits watcher's: it tells every window when the edits change, at any time."
+    while True:
+        message = socket.receive_json()
+        if message.get("type") != "edits":
+            return message
+
+
 def test_a_scroll_in_one_window_reaches_the_other_windows(served: TestClient) -> None:
     "A window that scrolls says so on its event socket; the server passes it on to the other windows, not back."
     auth = f"?t={TOKEN}"
     with served.websocket_connect("/ws/events" + auth) as mine, served.websocket_connect("/ws/events" + auth) as theirs:
+        assert next_event(mine) == {"type": "hello"}   # on the list of windows: no event can be missed
+        assert next_event(theirs) == {"type": "hello"}   # on the list of windows: no event can be missed
         mine.send_json({"type": "scroll", "pane": "notes", "at": 0.4})
-        assert theirs.receive_json() == {"type": "scroll", "pane": "notes", "at": 0.4}
+        assert next_event(theirs) == {"type": "scroll", "pane": "notes", "at": 0.4}
         mine.send_json({"type": "scroll", "pane": "nowhere", "at": 0.4})   # not a pane: ignored
         mine.send_json({"type": "scroll", "pane": "slide", "at": 7})       # kept between 0 and 1
-        assert theirs.receive_json() == {"type": "scroll", "pane": "slide", "at": 1.0}
+        assert next_event(theirs) == {"type": "scroll", "pane": "slide", "at": 1.0}
 
 
 def test_the_shell_toggle_is_shared_by_every_window(served: TestClient) -> None:
@@ -877,8 +887,9 @@ def test_the_shell_toggle_is_shared_by_every_window(served: TestClient) -> None:
     auth = {"t": TOKEN}
     assert served.get("/api/state", params=auth).json()["shell"] is False
     with served.websocket_connect(f"/ws/events?t={TOKEN}") as window:
+        assert next_event(window) == {"type": "hello"}   # on the list of windows: no event can be missed
         served.post("/api/show", params=auth, json={"shell": True})
-        event = window.receive_json()
+        event = next_event(window)
         assert event["type"] == "show" and event["shell"] is True
     assert served.get("/api/state", params=auth).json()["shell"] is True
     served.post("/api/show", params=auth, json={"shell": "yes"})  # not a yes or no: ignored
@@ -891,27 +902,30 @@ def test_a_terminal_scroll_reaches_the_other_windows(served: TestClient) -> None
     "A terminal scrolled back by some lines: the other windows hear the shell and the lines; a bad count is ignored."
     auth = f"?t={TOKEN}"
     with served.websocket_connect("/ws/events" + auth) as mine, served.websocket_connect("/ws/events" + auth) as theirs:
+        assert next_event(mine) == {"type": "hello"}   # on the list of windows: no event can be missed
+        assert next_event(theirs) == {"type": "hello"}   # on the list of windows: no event can be missed
         mine.send_json({"type": "scroll", "pane": "term", "track": "replay", "lines": "many"})
         mine.send_json({"type": "scroll", "pane": "term", "track": "replay", "lines": -3})
-        assert theirs.receive_json() == {"type": "scroll", "pane": "term", "track": "replay", "lines": 0}
+        assert next_event(theirs) == {"type": "scroll", "pane": "term", "track": "replay", "lines": 0}
         mine.send_json({"type": "scroll", "pane": "term", "track": "runs", "lines": 12})
-        assert theirs.receive_json() == {"type": "scroll", "pane": "term", "track": "runs", "lines": 12}
+        assert next_event(theirs) == {"type": "scroll", "pane": "term", "track": "runs", "lines": 12}
 
 
 def test_the_room_window_sizes_a_shell_and_tells_the_others(served: TestClient) -> None:
     "In Shell mode the Room's size stands: another window's resize is answered with it. Off, the Room's size is forgotten."
     auth = {"t": TOKEN}
     with served.websocket_connect(f"/ws/events?t={TOKEN}") as window, served.websocket_connect(f"/ws/term/runs?t={TOKEN}") as shell:
+        assert next_event(window) == {"type": "hello"}   # on the list of windows: no event can be missed
         shell.send_json({"type": "resize", "rows": 30, "cols": 100, "room": True})   # not in Shell mode: an ordinary resize
         served.post("/api/show", params=auth, json={"shell": True})
-        assert window.receive_json()["shell"] is True
+        assert next_event(window)["shell"] is True
         shell.send_json({"type": "resize", "rows": 40, "cols": 160, "room": True})
-        assert window.receive_json() == {"type": "size", "track": "runs", "rows": 40, "cols": 160}
+        assert next_event(window) == {"type": "size", "track": "runs", "rows": 40, "cols": 160}
         shell.send_json({"type": "resize", "rows": 20, "cols": 80})
-        assert window.receive_json() == {"type": "size", "track": "runs", "rows": 40, "cols": 160}, "told the Room's size again"
+        assert next_event(window) == {"type": "size", "track": "runs", "rows": 40, "cols": 160}, "told the Room's size again"
         assert served.get("/api/state", params=auth).json()["room_sizes"] == {"runs": [40, 160]}
         served.post("/api/show", params=auth, json={"shell": False})
-        assert window.receive_json()["shell"] is False
+        assert next_event(window)["shell"] is False
         shell.send_json({"type": "resize", "rows": 20, "cols": 80})
         shell.send_json({"type": "resize", "rows": float("inf"), "cols": 80})   # ignored, and the socket stays
     assert served.get("/api/state", params=auth).json()["room_sizes"] == {}
@@ -992,8 +1006,10 @@ def test_a_step_is_back_where_you_left_it(served: TestClient) -> None:
     served.post("/api/slide", params=auth, json={"to": 1})
     served.get("/api/state", params=auth)
     with served.websocket_connect(f"/ws/events?t={TOKEN}") as window, served.websocket_connect(f"/ws/events?t={TOKEN}") as other:
+        assert next_event(window) == {"type": "hello"}   # on the list of windows: no event can be missed
+        assert next_event(other) == {"type": "hello"}   # on the list of windows: no event can be missed
         window.send_json({"type": "scroll", "pane": "notes", "at": 0.6})
-        assert other.receive_json()["at"] == 0.6
+        assert next_event(other)["at"] == 0.6
     served.post("/api/move", params=auth, json={"to": 2})
     later = served.get("/api/state", params=auth).json()
     assert (later["slide"], later["restore"]) == (0, {}), "a step not visited yet starts at the top"
@@ -1041,7 +1057,7 @@ def class_folder(tmp_path: Path) -> Path:
     (part / "slides" / "own.md").write_text("# Only here\n")
     (part / "slides" / "slides.toml").write_text('[slides]\nstep-01 = ["../../../slides/talk.md#2", "own.md"]\nstep-03 = ["own.md"]\n')
     (part / "notes.md").write_text("## step-01 The file, again\nThe part walk.\n\n## step-03 Tidy, again\n")
-    (root / "toc.toml").write_text('[[walk]]\nid = "narrative"\ntitle = "Every step"\nnotes = "notes.md"\nslides = "slides/slides.toml"\n\n'
+    (root / "toc.toml").write_text('[[walk]]\nid = "narrative"\ntitle = "Every step"\ndescription = "  The whole story. "\nnotes = "notes.md"\nslides = "slides/slides.toml"\n\n'
                                    '[[walk]]\nid = "part"\ntitle = "A part"\nfolder = "walks/part"\nsteps = ["step-01", "step-03"]\n')
     return root
 
@@ -1053,6 +1069,7 @@ def test_a_table_of_contents_lists_walks_with_their_files(class_folder: Path) ->
     narrative, part = load_toc(class_folder / "toc.toml")
     assert (narrative.id, narrative.kind, narrative.notes, narrative.steps) == ("narrative", "narrative", class_folder / "notes.md", None)
     assert part.slides == class_folder / "walks" / "part" / "slides" / "slides.toml" and part.steps == ["step-01", "step-03"]
+    assert (narrative.description, part.description) == ("The whole story.", "")
 
 
 @pytest.mark.parametrize("toc, says", [
@@ -1063,6 +1080,7 @@ def test_a_table_of_contents_lists_walks_with_their_files(class_folder: Path) ->
     ('[[walk]]\nid = "a"\nsteps = ["step-01"]\ntags = "x-*"\n', "give steps or tags, not both"),
     ('title = "x"\n[[walk]]\nid = "a"\n', "has title, which a table of contents does not have"),
     ('', "lists no walk"),
+    ('[[walk]]\nid = "a"\ndescription = 3\n', "description must be text in quotes"),
 ])
 def test_a_table_of_contents_with_a_mistake_says_which(tmp_path: Path, toc: str, says: str) -> None:
     "A mistake in toc.toml stops with a sentence that names the file and the key."
@@ -1129,8 +1147,9 @@ def test_a_change_of_walk_changes_the_steps_notes_and_slides(walked: TestClient,
     walked.post("/api/move", params=auth, json={"to": 2})
     assert walked.get("/slides/slides/talk.md", params=auth).status_code == 200, "slides are served from the class folder"
     with walked.websocket_connect(f"/ws/events?t={TOKEN}") as window:
+        assert next_event(window) == {"type": "hello"}   # on the list of windows: no event can be missed
         walked.post("/api/walk", params=auth, json={"id": "part"})
-        assert window.receive_json() == {"type": "walk"}
+        assert next_event(window) == {"type": "walk"}
     state = walked.get("/api/state", params=auth).json()
     assert [s["name"] for s in state["steps"]] == ["step-01", "step-03"] and state["current"] == 0
     assert state["slides"] == ["slides/talk.md#2", "walks/part/slides/own.md#1"]
@@ -1595,8 +1614,9 @@ def test_the_mode_starts_from_the_table_and_is_shared(tutorial: timewalk.Repo, t
     auth = {"t": TOKEN}
     assert client.get("/api/state", params=auth).json()["mode"] == "watch"
     with client.websocket_connect(f"/ws/events?t={TOKEN}") as window:
+        assert next_event(window) == {"type": "hello"}   # on the list of windows: no event can be missed
         client.post("/api/show", params=auth, json={"mode": "do"})
-        assert window.receive_json()["mode"] == "do"
+        assert next_event(window)["mode"] == "do"
     toc.write_text(toc.read_text().replace('"watch"', '"look"'))
     with pytest.raises(TocError, match='write "do" or "watch"'):
         load_toc(toc)

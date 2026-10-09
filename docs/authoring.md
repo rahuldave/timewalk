@@ -36,6 +36,15 @@ uv is the tool that makes the Python environment of a project from its lockfile,
 
 See [Making the steps](steps.md).
 
+### The description
+
+- **Give each walk a `description` in `toc.toml`.** Say what the walk is about, in a sentence or two. The
+  status band under the step bar shows it at the first step of the walk.
+- **Give each tag a short title, a blank line, and then a sentence or two.** The band shows the title in
+  bold.
+
+See [The status band](page.md#the-status-band).
+
 ### The notes
 
 Keep the notes file outside the repository, in the class folder. Give each step one `## step` section.
@@ -95,6 +104,10 @@ line of commits that git follows back through the first parent of each merge.
 - **Keep the subject of the step on its last commit,** for example `step-02: the tests pass`. That
   commit carries the tag.
 - **Expect no moves in the first step, or in a step of one commit.**
+- **Give moves to the first steps after the first one,** for example to step-01. Then the class meets
+  moves early.
+- **Keep one step without moves after the first step.** Then the class also meets a step of one commit,
+  which ends with **Next step**.
 - **Give the tutorial every tag of its glob.** A tutorial cannot have `steps = [...]`. For a tutorial on
   one part of the history, make tags of its own for that part, on a branch.
 
@@ -111,6 +124,10 @@ See [Commits for a tutorial](build-walks.md#commits-for-a-tutorial), and
   the items, their words and the quoted lines must see what the move did.
 
 ### The section of each move
+
+Write the text of the step before its first move section. That text is about the whole step. The notes
+column shows it in a section of its own, "Before the moves". Put `$ just setup` there, and say what the
+moves do together.
 
 Give each move a `### step-NN.k Title` section, in the order of the commits. Each section has these
 parts:
@@ -192,7 +209,7 @@ Run the checks in this order:
 | A walk with a key that a walk does not have |
 | An `id` that is missing, has other characters than letters, digits, `-` and `_`, or is used twice |
 | A `kind` other than `"narrative"` or `"tutorial"` |
-| A `title`, `folder`, `notes`, `slides`, `tags` or `setup` that is not text |
+| A `title`, `description`, `folder`, `notes`, `slides`, `tags` or `setup` that is not text |
 | `steps` that is not a list of names, names a step twice, or comes with `tags` |
 | `steps` in a tutorial |
 | A `moves` value other than `"do"` or `"watch"` |

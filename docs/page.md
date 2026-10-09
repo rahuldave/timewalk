@@ -43,8 +43,8 @@ The step bar has one button for each step, with numbers from 00. A step is a poi
 default it is a git tag that matches `step-*`. The bar fills the button of the current step, and shades
 the buttons of earlier steps.
 
-Next to the buttons, the bar shows the name of the step and the subject of its commit. Under them, a band
-shows the message of the tag, which is the note that the audience sees.
+Next to the buttons, the bar shows the name of the step and the subject of its commit. Under the bar, the
+status band says what to do now. See [The status band](#the-status-band).
 
 To go to a step, do one of these:
 
@@ -56,7 +56,7 @@ Sometimes the replay copy is on a commit that is not a step, for example after s
 in a terminal. Then the bar says "between steps". To go back, choose a step.
 
 If you start timewalk with `--discard-edits`, the bar also says "Moves discard edits". When files have
-edits, the note becomes a red warning with a count of the edited files. The next move throws those
+edits, this label becomes a red warning with a count of the edited files. The next move throws those
 edits away. See [Live edits](edits.md#with---discard-edits).
 
 If you start timewalk with `--toc`, a menu at the left of the bar lists the walks of the class. A walk is
@@ -76,6 +76,25 @@ shows under the bar, in every window. It has the arrows ◀ and ▶, and the but
 and so on. In do mode, the arrows mark moves done. In watch mode, they check out the commit of the next or
 the previous move. See [Moves on the page](walks.md#moves-on-the-page).
 
+### The status band
+
+The status band is the band under the step bar. Every window shows the same band. It has up to three
+parts:
+
+- **The direction,** in the font of the code. It names the kind of walk, and in a tutorial its mode. Then
+  it gives the step, for example "step 3 of 6", and in a tutorial the count of moves made. It ends with what
+  to do now, and names a control on the screen, for example **Next step** or **Show**.
+- **The description of the walk,** at the first step of the walk only. It is the `description` of the walk
+  in `toc.toml`. A sentence after it says what the kind of walk asks of you. In a tutorial, that sentence
+  depends on the mode.
+- **The message of the tag,** the note that the audience sees. Its first line is in bold, and the rest
+  follows it on the same line.
+
+Without `--toc`, the page has no walk. The direction then gives only the step and what to do, and the band
+has no description.
+
+![The step bar and the status band at step-00 of a tutorial in do mode: the direction, the description of the walk with the sentence on tutorials, and the tag in bold](images/tutorial-band.png)
+
 ## The buttons on the right of the bar
 
 | Button | Does |
@@ -88,7 +107,7 @@ the previous move. See [Moves on the page](walks.md#moves-on-the-page).
 | **Shell** | Gives the terminals the space of the slides, the file list and the reader, in every window. The notes stay. Press it again to go back. See [Shell](#shell) |
 | **Show**: **Slides**, **Both**, **Code** | One control, with the label **Show**: choose what fills the page, in every window |
 | **A−**, **A+** | Change the size of all the text in this window. The terminals use the same size |
-| **Dark**, **Light** | Change the theme of this window |
+| **Dark**, **Light** | Change the theme, light or dark, in this browser. See [The theme](#the-theme) |
 
 The **PDF** button makes the same PDF as the export command, without the notes, which are for this page. The export uses the browser on your machine, so it can take a few seconds. See
 [Slides and documents](slides.md#a-pdf-of-the-slides).
@@ -98,6 +117,18 @@ The **PDF** button makes the same PDF as the export command, without the notes, 
 ![The Code layout, where the file list and the reader fill the page](images/layout-code.png)
 
 ![The same step in the dark theme](images/page-dark.png)
+
+### The theme
+
+The page uses the theme of GitHub, Primer, in a light mode and a dark mode. The theme sets three things:
+
+- **The colours of the page,** for example the panes, the buttons and the bands.
+- **The colours of the code,** in the reader, the notes and the slides. highlight.js colours the code with
+  its GitHub stylesheets, `github` and `github-dark`.
+- **The colours of the terminals,** GitHub Light Default and GitHub Dark Default.
+
+**Dark** and **Light** change the mode. The browser remembers the mode, so it applies to every window of
+that browser.
 
 ## The widths of the panes
 
@@ -134,6 +165,10 @@ has more than one slide, **Up** and **Down** change the slide.
 Past the first slide, a **⇤ First** button
 shows beside the arrows. Click it to go back to the first slide of the step. **Shift+Up** goes to the
 first slide too, and **Shift+Down** goes to the last.
+
+At the last slide, a green **Next step** button shows in the head of the pane, with the name of the next
+step. It goes to that step, in every window. In a tutorial, it shows only when every move of the step is made. The Room
+window does not show it.
 
 A step can show one longer Markdown **document** instead, or a document among its slides. A document
 scrolls, and **Up** and **Down** scroll it. A line such as `$ uvx pytest -q` on a slide or in a document
@@ -187,7 +222,8 @@ The link shows only in a window on the machine that runs timewalk. The Room wind
 ## The notes column
 
 If you start timewalk with `--notes`, a column on the right shows the notes for the step. The notes hold
-the prose of the step, its cues and its commands. See [Notes](notes.md).
+the prose of the step, its cues and its commands. The first line of the column says what to do now, as the
+status band does. A green **Next step** button ends the notes. See [Notes](notes.md).
 
 ## The terminals
 

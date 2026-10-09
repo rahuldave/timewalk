@@ -1,20 +1,26 @@
 /* timewalk: a step bar across the top, files and a reader in the middle, a terminal along the bottom. */
 :root {
-  --bg: #f6f7f9;
+  /* The colours come from one theme with a light and a dark mode: GitHub's (Primer), the theme of the highlight.js
+     stylesheets that index.html loads. Another theme would be another pair of these blocks, and its own stylesheets. */
+  --bg: #f6f8fa;
   --surface: #ffffff;
-  --ink: #17202b;
-  --ink-2: #4d5969;
-  --ink-3: #6f7b8b;
-  --rule: #d9dee6;
-  --accent: #2456b5;
-  --accent-soft: #e4ebf9;
-  --added: #1d7a4c;
-  --added-soft: #e3f4ea;
-  --changed: #a85b00;
-  --changed-soft: #fbefdd;
-  --removed: #b3372f;
-  --removed-soft: #fbe6e4;
-  --term-bg: #fbfbfc;
+  --ink: #1f2328;
+  --ink-2: #59636e;
+  --ink-3: #6e7781;
+  --rule: #d1d9e0;
+  --accent: #0969da;
+  --accent-soft: #ddf4ff;
+  --accent-strong: #0550ae;
+  --added: #1a7f37;
+  --added-soft: #dafbe1;
+  --changed: #9a6700;
+  --changed-soft: #fff8c5;
+  --removed: #d1242f;
+  --removed-soft: #ffebe9;
+  --term-bg: #ffffff;
+  --go: #1f883d;
+  --code-bg: #f6f8fa;
+  --code-surface: #ffffff;
   --size: 14px;
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   --sans: -apple-system, "Segoe UI", system-ui, sans-serif;
@@ -22,21 +28,25 @@
   color-scheme: light;
 }
 :root[data-theme="dark"] {
-  --bg: #11161d;
-  --surface: #181f29;
-  --ink: #e7ebf1;
-  --ink-2: #b0bac8;
-  --ink-3: #8d99aa;
-  --rule: #2b3543;
-  --accent: #8db0f7;
-  --accent-soft: #1d2b47;
-  --added: #58c48e;
-  --added-soft: #15301f;
-  --changed: #f0a84e;
-  --changed-soft: #3a2a12;
-  --removed: #f0827a;
-  --removed-soft: #3a1c1a;
-  --term-bg: #0f141b;
+  --bg: #010409;
+  --surface: #0d1117;
+  --ink: #f0f6fc;
+  --ink-2: #9198a1;
+  --ink-3: #7d8590;
+  --rule: #3d444d;
+  --accent: #4493f8;
+  --accent-soft: #18304f;   /* Primer's accent.subtle is too faint on #0d1117 for a state: a quarter of its blue */
+  --accent-strong: #79c0ff;
+  --added: #3fb950;
+  --added-soft: #12261e;
+  --changed: #d29922;
+  --changed-soft: #272115;
+  --removed: #f85149;
+  --removed-soft: #25171c;
+  --term-bg: #0d1117;
+  --go: #238636;
+  --code-bg: #151b23;
+  --code-surface: #0d1117;
   color-scheme: dark;
 }
 
@@ -93,7 +103,7 @@ code, pre, .mono { font-family: var(--mono); }
 #step-list button.here { background: var(--accent); border-color: var(--accent); color: var(--surface); font-weight: 600; }
 .where { display: flex; align-items: baseline; gap: 10px; min-width: 0; flex: 1; overflow: hidden; }
 /* The window for the class leaves out what only the presenter needs. */
-body.room #pdf, body.room #mode, body.room #notes-edit, body.room #shell-toggle { display: none !important; }
+body.room #pdf, body.room #slide-step, body.room #mode, body.room #notes-edit, body.room #shell-toggle { display: none !important; }
 .step-name { font-family: var(--mono); font-weight: 600; white-space: nowrap; }
 .walk-picker { flex: none; min-width: 8.5em; max-width: 13em; font: inherit; padding: 4px 6px; border: 1px solid var(--rule); border-radius: 6px; background: var(--bg); color: var(--ink); }
 /* With several walks, the menu needs room: the tools go to a second row, so the step buttons keep theirs. */
@@ -110,31 +120,42 @@ body.has-moves .bar { flex-wrap: wrap; row-gap: 6px; }
 /* In the notes: one section for each move. The moves still to make are grayed, and their buttons do nothing. */
 /* A move's section: here is the move on show; done is checked off; ahead (watch mode) is a commit not shown yet, only
    shaded, never locked. Its last commands, the anchor, show what the move did. */
-.p-move { margin: 0.8em 0; padding-left: 10px; border-left: 3px solid transparent; }
-.p-move.here { border-left-color: var(--accent); }
-.p-move.done { border-left-color: var(--accent-soft); }
+/* No boxes: each section runs to both edges of the column, with a bar on its left. The move on show has a dark bar, the
+   next move a light one, a move made a gray one and a check; a move after the next is faded and has no bar. */
+/* --gutter is the notes' side padding; a section's bar takes 4px of it. */
+.p-move, .p-bridge { margin: 1.4em calc(-1 * var(--gutter)) 0.6em; padding: 2px var(--gutter) 4px calc(var(--gutter) - 4px); border-left: 4px solid transparent; }
+.p-move.here { border-left-color: var(--accent-strong); }
+.p-move.next { border-left-color: var(--accent); }
+.p-move.done { border-left-color: var(--ink-3); }
 .p-move.done h3::before { content: "\2713  "; color: var(--accent); }
-.p-move.next { border-left: 3px dashed var(--accent); }
 .p-move.later { opacity: 0.45; }
+.p-bridge-label { font-size: 0.75em; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); margin: 0.3em 0; }
+.p-restart { display: flex; gap: 8px; align-items: baseline; margin: 0.6em 0 0.2em; font-size: 0.85em; color: var(--ink-3); }
+.p-restart button { font-size: 0.95em; padding: 2px 8px; white-space: nowrap; flex: none; }
+.p-next-step { margin: 1.2em 0 0.4em; }
+button.go { background: var(--go); border-color: var(--go); color: #ffffff; font-weight: 600; }
+button.go:hover { filter: brightness(1.1); border-color: var(--go); }
+#slide-step { margin-left: 8px; font-size: 0.85em; padding: 2px 10px; flex: none; }
 .p-after { font-size: 0.8em; color: var(--ink-3); }
 .moves button.next { border-color: var(--accent); }
 .p-move-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 .p-move h3 { font-family: var(--mono); font-size: 0.95em; margin: 0.4em 0; flex: 1; min-width: 12em; }
+.p-move-actions button:disabled { opacity: 0.6; }
 .p-move-actions { display: flex; gap: 4px; flex: none; }
 .p-move-actions button { font-size: 0.8em; padding: 2px 8px; }
 .p-move-actions button.primary { background: var(--accent); border-color: var(--accent); color: var(--surface); font-weight: 600; }
 .p-anchor-label { font-size: 0.8em; color: var(--ink-3); margin: 0.6em 0 0.2em; }
-.p-move.here .p-anchor button { border-color: var(--accent); }
+
 /* files: items: a button to a file or a change, with its words; show: lines as small read-only excerpts of the diff. */
 .p-items { display: flex; flex-direction: column; gap: 6px; }
-.p-item { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
-.p-item button { font-family: var(--mono); font-size: 0.85em; padding: 2px 8px; flex: none; }
-.p-item button.p-item-diff::before { content: "\00b1  "; color: var(--ink-3); }
-.p-item-words { flex: 1; min-width: 12em; }
+.p-item { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+.p-item button { font-size: 0.85em; padding: 2px 8px; max-width: 100%; text-align: left; }
+.p-item-words { min-width: 0; }
 .p-items, .p-item, .p-excerpt { min-width: 0; max-width: 100%; }
 /* A long line of an excerpt scrolls in its own box, and never widens the notes column. */
-.p-excerpt pre.diff { margin: 0 0 4px; font-size: 0.82em; border: 1px solid var(--rule); border-radius: 4px; overflow-x: auto; max-width: 100%; }
-.p-excerpt.p-gone { font-size: 0.85em; color: var(--removed); border: 1px dashed var(--removed); border-radius: 4px; padding: 4px 8px; }
+.p-excerpt pre.diff { min-width: 0; margin: 0 0 4px; font-size: 0.82em; background: var(--code-bg); border-radius: 6px; overflow-x: auto; max-width: 100%; }
+.p-excerpt.p-gone { font-size: 0.85em; color: var(--removed); background: var(--removed-soft); padding: 4px var(--gutter); margin: 0 calc(-1 * var(--gutter)) 4px; cursor: pointer; }
+.p-move .p-excerpt.p-gone { margin-left: calc(4px - var(--gutter)); padding-left: calc(var(--gutter) - 4px); }
 .diff .line.mark, .gutter .mark { outline: 2px solid var(--accent); outline-offset: -1px; background: var(--accent-soft); }
 .match { font-size: 0.85em; color: var(--ink-2); }
 .match.ok { color: var(--accent); font-weight: 600; }
@@ -146,7 +167,7 @@ body.has-moves .bar { flex-wrap: wrap; row-gap: 6px; }
 .file-pane .file-path { min-width: 10em; }
 .file-pane .views { flex-wrap: wrap; }
 .open-editor { font-size: 0.85em; margin-left: 8px; color: var(--accent); white-space: nowrap; }
-.p-hint { font-size: 0.88em; color: var(--ink-2); background: var(--bg); border: 1px dashed var(--rule); border-radius: 6px; padding: 6px 10px; }
+.p-hint { margin: 0 0 0.8em; }
 .move-modes { display: inline-flex; flex: none; border: 1px solid var(--rule); border-radius: 6px; overflow: hidden; margin-left: -10px; }
 .move-modes button { border: none; border-radius: 0; font-size: 0.85em; padding: 2px 8px; }
 .move-modes button + button { border-left: 1px solid var(--rule); }
@@ -162,17 +183,25 @@ body.has-moves .bar { flex-wrap: wrap; row-gap: 6px; }
 .mode { font-size: 0.85em; padding: 2px 8px; border-radius: 3px; border: 1px solid var(--rule); color: var(--ink-2); margin-right: 8px; white-space: nowrap; }
 .mode.warn { background: var(--removed-soft); border-color: var(--removed); color: var(--removed); font-weight: 600; }
 
+/* The status band: what to do now, in the font of the code so that it does not read as part of the notes; the walk's
+   description at its first step; and the step's tag, its first line in bold. */
 .note {
   margin: 0;
-  padding: 8px 14px;
+  padding: 5px 14px 6px;
   background: var(--accent-soft);
   border-bottom: 1px solid var(--rule);
   color: var(--ink);
-  white-space: pre-wrap;
   max-height: 22vh;
   overflow-y: auto;
   flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
+.note .status, .p-hint { font: 0.8em/1.45 var(--mono); color: var(--ink-2); }
+.note .about { font-size: 0.92em; color: var(--ink-2); }
+.note .tag { white-space: pre-wrap; }
+.note .tag:empty { display: none; }
 .notice {
   padding: 8px 14px;
   background: var(--changed-soft);
@@ -276,7 +305,7 @@ body[data-layout="slides"] .tree-pane, body[data-layout="slides"] .file-pane { d
 .tabs { margin-left: 0; }
 [role="tab"] { border-color: transparent; background: none; color: var(--ink-2); }
 [role="tab"][aria-selected="true"] { background: var(--accent-soft); color: var(--ink); border-color: var(--rule); }
-.file-body { overflow: auto; flex: 1; background: var(--surface); }
+.file-body { overflow: auto; flex: 1; background: var(--code-surface); }
 .file-body pre { margin: 0; font-size: 0.92em; line-height: 1.5; tab-size: 4; }
 .code { display: flex; align-items: flex-start; min-width: max-content; }
 .gutter { padding: 8px 12px 8px 14px; text-align: right; color: var(--ink-3); user-select: none; border-right: 1px solid var(--rule); background: var(--bg); position: sticky; left: 0; }
@@ -339,7 +368,7 @@ body.with-notes .notes-pane { grid-area: notes; }
 /* The handle on the left edge of the notes: drag it to change their width. On a narrow screen it is on the top edge. */
 .notes-resizer { position: absolute; left: -3px; top: 0; bottom: 0; width: 6px; cursor: col-resize; z-index: 3; }
 .notes-resizer:hover, .notes-resizer.dragging { background: var(--accent); }
-.notes-body { overflow-y: auto; padding: 12px 16px 24px; min-height: 0; flex: 1; }
+.notes-body { --gutter: 10px; overflow-y: auto; padding: 8px var(--gutter) 24px; min-height: 0; flex: 1; }
 .notes-pane .pane-head { gap: 8px; }
 .notes-tools { display: flex; gap: 8px; align-items: center; margin-left: auto; flex: none; }
 /* The Top button of a pane: shown only when the pane is scrolled down */
@@ -355,7 +384,10 @@ body.with-notes .notes-pane { grid-area: notes; }
 .p-notes p { margin: 0 0 0.7em; }
 .p-notes ul { margin: 0 0 0.7em; padding-left: 1.2em; }
 .p-notes li { margin-bottom: 0.3em; }
-.p-notes code { background: var(--accent-soft); padding: 0 0.3em; border-radius: 3px; font-size: 0.9em; }
+.p-notes code { font-size: 0.9em; }   /* code in a sentence: the font of the code, and no shade */
+/* A block of code: one background for the whole block, the theme's, and not a shade behind each line. */
+.p-notes pre { background: var(--code-bg); border-radius: 6px; padding: 8px 12px; margin: 0 0 0.8em; overflow-x: auto; font-size: 0.88em; line-height: 1.5; }
+.p-notes pre code, .p-notes pre code.hljs { background: none; padding: 0; font-size: 1em; border-radius: 0; }
 /* A "> " line in the notes is a cue, set apart from the rest of the script in its own shade. */
 .p-notes blockquote { margin: 0 0 0.7em; padding: 0.4em 0.8em; background: var(--accent-soft); color: var(--ink-2); border-left: 4px solid var(--rule); border-radius: 0 4px 4px 0; }
 .p-notes blockquote p { margin: 0 0 0.4em; }
@@ -363,7 +395,7 @@ body.with-notes .notes-pane { grid-area: notes; }
 body.hide-cues .p-notes blockquote { display: none; }   /* the Cues button: the class sees the notes without the cues */
 .p-commands { display: flex; flex-direction: column; gap: 6px; margin: 0.2em 0 0.9em; }
 
-.p-commands button { text-align: left; font-family: var(--mono); font-size: 0.9em; padding: 6px 10px; display: flex; gap: 8px; align-items: baseline; }
+.p-commands button { text-align: left; font-family: var(--mono); font-size: 0.9em; padding: 4px 8px; display: flex; gap: 8px; align-items: baseline; }
 .p-commands .track { font: 0.8em var(--sans); color: var(--ink-3); flex: none; margin-left: auto; }
 .p-empty { color: var(--ink-3); }
 @media (max-width: 1000px) {
@@ -400,3 +432,29 @@ body.with-notes.shell-mode { grid-template-rows: auto auto auto auto 0 0 minmax(
   body.with-notes.shell-mode { grid-template-rows: auto auto auto auto 0 0 minmax(0, 1fr) var(--notes-height, 30vh); }
 }
 body.shell-mode .layouts { opacity: 0.55; }   /* Shell covers the layout; the layout comes back when Shell is off */
+
+/* The blocks of the notes: code and the excerpts of a diff. No borders and no round corners: each is a band across
+   the whole column, and the bands divide the notes. Inside a move's section, a band starts after the section's bar.
+   The commands stay bordered buttons, inside the column: they are things to click. */
+.p-notes pre, .p-excerpt pre.diff {
+  margin-left: calc(-1 * var(--gutter)); margin-right: calc(-1 * var(--gutter)); padding-left: var(--gutter); padding-right: var(--gutter);
+  border: none; border-radius: 0; max-width: none;
+}
+.p-move pre, .p-bridge pre, .p-move .p-excerpt pre.diff { margin-left: calc(4px - var(--gutter)); padding-left: calc(var(--gutter) - 4px); }
+.p-move.here .p-anchor button { border-color: var(--accent); }
+/* An item of a files: line: a button with a verb, See diff or See file, as Restart step has; then the path and the
+   author's words. Its excerpt opens the change too. */
+.p-item-path { font-family: var(--mono); overflow-wrap: anywhere; }   /* a long path wraps in its button */
+.p-excerpt pre.diff { cursor: pointer; }
+.p-excerpt pre.diff:hover .line { filter: brightness(0.97); }
+/* An excerpt: one background, the diff's own: the lines fill the band, with no padding of another colour around them.
+   The line that show: names is shaded, without a box. */
+.p-excerpt pre.diff, .p-move .p-excerpt pre.diff { padding: 0; background: var(--code-bg); }
+.p-excerpt .diff .line { padding: 1px var(--gutter); }
+.p-move .p-excerpt .diff .line { padding-left: calc(var(--gutter) - 4px); }
+/* A quarter of the theme's blue over the code's background: the line shows in both modes, over green or red. */
+.p-excerpt .diff .line.mark { outline: none; background: color-mix(in srgb, var(--accent) 25%, var(--code-bg)); font-weight: 600; }
+.p-move.later .p-excerpt pre.diff, .p-move.later .p-excerpt.p-gone { cursor: default; }
+.p-move.later .p-excerpt pre.diff:hover .line { filter: none; }
+/* A See diff or See file button reads as Restart step does: the verb in the page's font, the path in the code's. */
+.p-files button, .p-item button { font-family: var(--sans); font-size: 0.85em; padding: 2px 8px; }

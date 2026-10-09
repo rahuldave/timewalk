@@ -88,7 +88,7 @@ then happen, in this order:
 | A step button, **Left**, **Right**, the step arrows | Looks for edits, refuses if an untracked file is in the way, keeps the commits of a learner, moves, and tells every window | `git status`, `git ls-files --others`, `git ls-tree`, `git branch timewalk/saved/<step>` if a learner committed, then `git checkout -B timewalk/replay <step>`, in the replay copy |
 | **Set the edits aside and move** | Stashes the edits with the name of the step, then moves | `git stash push -m "timewalk: edits made at step-NN"`, in the replay copy |
 | A move, with `--discard-edits` | Moves and does not ask. Edits to tracked files are lost. Commits of a learner are kept | `git checkout --force -B timewalk/replay <step>`, in the replay copy |
-| In a tutorial, **Show ▶**, **Catch me up**, or a move button in watch mode | Moves to the commit of a move, as a step button does | The same, with the commit of the move |
+| In a tutorial, **Show ▶**, **⇥ Catch me up**, or a move button in watch mode | Moves to the commit of a move, as a step button does | The same, with the commit of the move |
 | In a tutorial, **Done ✓**, or the button of the next move in do mode | Changes the shared count of moves done. The code does not move | None |
 | In a tutorial, **Do** or **Watch** | Changes the shared mode, in every window | None |
 | **Up**, **Down**, the slide arrows | Changes the shared slide number. On a document, **Up** and **Down** scroll it, and Alt with **Up** or **Down** changes the slide | None |
@@ -104,7 +104,8 @@ then happen, in this order:
 | **Last change** | The diff of the step, or of the move just made, for that file | `git diff <before> <after> -- <file>`, in the replay copy |
 | **Next change** | The diff of the next step, or of the next move, for that file | `git diff <before> <after> -- <file>`, in the replay copy |
 | **Your edits** | The edits since the commit that the replay copy stands on | `git diff HEAD -- <file>`, in the replay copy |
-| **Apply this file**, **Apply the whole move** | Types a command into the **At this step** tab, and runs it | `git diff <before> <move> -- <file> \| git apply --3way`, or `git cherry-pick --no-commit <move>`. The shell writes the files, as edits |
+| **± See diff** or **▤ See file** in the notes, or a click on an excerpt | Opens the change or the file in the reader, in every window | None. It reads, as the views of the reader do |
+| **⇣ Apply this file**, **⇣ Apply the whole move** | Types a command into the **At this step** tab, and runs it | `git diff <before> <move> -- <file> \| git apply --3way`, or `git cherry-pick --no-commit <move>`. The shell writes the files, as edits |
 | "Your files match", every two seconds in do mode | Compares the files on the disk with the commit of the move, by content. A match marks the move done, once | None. `git diff --name-only`, `git ls-tree` and `git hash-object` read |
 | **Open in VS Code** | A link that opens the file in your editor | None. The editor opens the file |
 | **At this step** | A login shell | Starts in the replay copy |
@@ -115,9 +116,9 @@ then happen, in this order:
 | A command in the notes | Types the command into its tab, and does not press Enter. That tab comes to the front in every window, and gets the keyboard in the window where you clicked | None until you press Enter. Then the work of the command, in the folder of that tab |
 | **run on click**, in the notes column | A click on a command also presses Enter, in this window | The work of the command, in the folder of that tab |
 | **Notes** | Shows or hides the notes column, in this window | None |
-| **Edit**, then **Save**, in the notes column | Writes the section of the current step into the notes file, unless the section changed in the file since the page read it. Every window then shows the new notes | None. The server writes the notes file in your class folder |
+| **✎ Edit**, then **Save**, in the notes column | Writes the section of the current step into the notes file, unless the section changed in the file since the page read it. Every window then shows the new notes | None. The server writes the notes file in your class folder |
 | **PDF** | Makes a PDF of the slides, one page each, and downloads it | None. It reads the manifest and the slide files |
-| **Start the clock**, with `--clock` | Records the start time | None |
+| **▶ Start the clock**, with `--clock` | Records the start time. **↺ Reset** clears it | None |
 | (no control, each second) | The edits watcher looks for edits, and tells every window when they change | `git status`, in the replay copy |
 | (no control, each second) | The content watcher looks at the notes file, the manifest and each slide file. When one changes, every window draws the notes and the slide again | None |
 

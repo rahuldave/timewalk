@@ -12,9 +12,19 @@ git tag --annotate step-03 -m "The code after ruff format. Only its layout chang
 ```
 
 An annotated tag is a tag that stores a message. For an **annotated** tag, the audience sees the message
-as the note of the step, in the band under the step bar. A lightweight tag (`git tag step-03`) has no
-message. It also works as a step, with no note. The page shows the subject of the commit next to the name
-of the step.
+as the note of the step, in the status band under the step bar. A lightweight tag (`git tag step-03`) has
+no message. It also works as a step, with no note.
+
+The band shows the first paragraph of the message in bold, and the rest after a dash. So write a short
+title, a blank line, and then a sentence or two:
+
+```
+git tag --annotate step-02 -m "Tests
+
+Two tests, one failing, and the fix."
+```
+
+The page shows the subject of the commit next to the name of the step.
 
 | Option | Steps are |
 |---|---|

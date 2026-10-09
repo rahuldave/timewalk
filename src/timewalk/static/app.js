@@ -15,13 +15,14 @@ const SCROLLERS = { slide: "slide", file: "file-body", notes: "notes-body" };
 const following = {};
 const LANGUAGES = { py: "python", toml: "ini", cfg: "ini", ini: "ini", yaml: "yaml", yml: "yaml", json: "json", jsonl: "json", md: "markdown",
   qmd: "markdown", sh: "bash", zsh: "bash", js: "javascript", ts: "typescript", html: "xml", css: "css", lua: "lua", lock: "ini" };
+// The terminal colours of the same theme as the page: GitHub Light Default and GitHub Dark Default (GitHub's VS Code theme).
 const TERM_THEMES = {
-  light: { background: "#fbfbfc", foreground: "#17202b", cursor: "#2456b5", selectionBackground: "#cfdcf5",
-    black: "#17202b", red: "#b3372f", green: "#1d7a4c", yellow: "#946200", blue: "#2456b5", magenta: "#8a3ea8", cyan: "#0f7b86", white: "#6f7b8b",
-    brightBlack: "#4d5969", brightRed: "#c9453c", brightGreen: "#22915a", brightYellow: "#a85b00", brightBlue: "#3468cf", brightMagenta: "#a14fc0", brightCyan: "#12909c", brightWhite: "#17202b" },
-  dark: { background: "#0f141b", foreground: "#e7ebf1", cursor: "#8db0f7", selectionBackground: "#2b3f66",
-    black: "#11161d", red: "#f0827a", green: "#58c48e", yellow: "#f0c05a", blue: "#8db0f7", magenta: "#d59cf0", cyan: "#6ed3de", white: "#b0bac8",
-    brightBlack: "#8d99aa", brightRed: "#ff9d95", brightGreen: "#7ddcaa", brightYellow: "#ffd77a", brightBlue: "#aac5ff", brightMagenta: "#e6b8fb", brightCyan: "#8fe6ef", brightWhite: "#ffffff" },
+  light: { background: "#ffffff", foreground: "#1f2328", cursor: "#0969da", selectionBackground: "#b6e3ff",
+    black: "#24292f", red: "#cf222e", green: "#116329", yellow: "#4d2d00", blue: "#0969da", magenta: "#8250df", cyan: "#1b7c83", white: "#6e7781",
+    brightBlack: "#57606a", brightRed: "#a40e26", brightGreen: "#1a7f37", brightYellow: "#633c01", brightBlue: "#218bff", brightMagenta: "#a475f9", brightCyan: "#3192aa", brightWhite: "#8c959f" },
+  dark: { background: "#0d1117", foreground: "#e6edf3", cursor: "#2f81f7", selectionBackground: "#264f78",
+    black: "#484f58", red: "#ff7b72", green: "#3fb950", yellow: "#d29922", blue: "#58a6ff", magenta: "#bc8cff", cyan: "#39c5cf", white: "#b1bac4",
+    brightBlack: "#6e7681", brightRed: "#ffa198", brightGreen: "#56d364", brightYellow: "#e3b341", brightBlue: "#79c0ff", brightMagenta: "#d2a8ff", brightCyan: "#56d4dd", brightWhite: "#ffffff" },
 };
 
 const ui = {
@@ -102,7 +103,9 @@ function restorePlaces(places = {}) {
     el.scrollTop = at * (el.scrollHeight - el.clientHeight);
   };
   if (places.slide && places.slide[0] === ui.state.slide) put("slide", places.slide[1]);
-  if (typeof places.notes === "number") put("notes", places.notes);
+  // When the notes just scrolled to a new move (or to the top, at the Start), that place wins over the remembered one.
+  if (typeof places.notes === "number" && !ui.notesMoved) put("notes", places.notes);
+  ui.notesMoved = false;
   if (places.file && places.file[0] && places.file[0] === ui.open) put("file", places.file[1]);
 }
 
@@ -132,8 +135,7 @@ function drawSteps() {
   const atStart = here && ui.state.moves?.length && ui.state.move === 0;
   $("step-subject").textContent = !here ? "The working copy is not at one of the steps. Choose a step to return."
     : made ? made.subject : atStart ? `before its first move, with the code of ${ui.state.steps[ui.state.current - 1]?.name ?? "the step before"}` : here.subject;
-  $("note").hidden = !(here && here.note);
-  $("note").textContent = here ? here.note : "";
+  drawStatus();
   $("prev").disabled = current === null || current === 0;
   $("next").disabled = current !== null && current === steps.length - 1;
   document.title = (here ? `${here.name} | ` : "") + "timewalk";
@@ -207,6 +209,60 @@ function drawMoves() {
     : `Next: ${moves[reached].name}, ${moves[reached].subject.replace(/^[^:]*:\s*/, "")}`
       + (watch && edited ? ". Your edits will be set aside at the next Show" : "");
   row.replaceChildren(label, back, ...buttons, forward, subject);
+}
+
+/** What each kind of walk asks of you, said once, at the walk's first step. */
+const STYLES = {
+  narrative: "A narrative goes from tag to tag: each step is one commit of the history, and you go on to the next step when you are ready.",
+  do: "A tutorial has one or more steps, and each step has zero or more moves: small commits between the tags. In do mode, you make each move "
+    + "by hand from the notes, run the command at the end of its section, and press Done.",
+  watch: "A tutorial has one or more steps, and each step has zero or more moves: small commits between the tags. In watch mode, Show checks "
+    + "out each move's commit for you, and you run the command at the end of its section.",
+};
+
+/** What to do now: where you are (the kind of walk, the step, the moves made) and the next thing to do. The band shows
+ *  both, and the notes show what to do. */
+function direction() {
+  const { walk, steps = [], current, moves = [], mode, has_notes: hasNotes } = ui.state;
+  if (current === null) return { where: "", todo: "" };
+  const last = current === steps.length - 1;
+  const step = `${steps[current].name}, step ${current + 1} of ${steps.length}`;
+  // Name a button that is on the screen: Next step ends the notes, when this window shows them; otherwise the step bar's.
+  const button = hasNotes && !notesHidden.get() ? "Next step, at the end of the notes" : "\u25B6 in the step bar";
+  const go = last ? "This is the last step." : `Press ${button}, or the Right arrow, for the next step.`;
+  if (walk?.kind !== "tutorial") return { where: (walk ? "Narrative \u00b7 " : "") + step, todo: go };
+  const watch = mode === "watch";
+  const kind = `Tutorial, ${watch ? "watch" : "do"} mode \u00b7 ${step}`;
+  if (!moves.length) return { where: `${kind} \u00b7 no moves`, todo: `Run just setup${hasNotes ? " and the commands in the notes" : ""}. ${go}` };
+  const reached = movesReached();
+  const where = `${kind} \u00b7 ${reached} of ${moves.length} moves made`;
+  if (reached >= moves.length) return { where, todo: `Every move is made. ${go}` };
+  const next = moves[reached].name;
+  return { where, todo: (reached ? "" : "Run just setup. Then ") + (watch
+    ? `press Show on ${next} (Shift+Right), and run the command at the end of its section.`
+    : `make ${next} by hand, run the command at the end of its section, and press Done.`).replace(/^./, (c) => (reached ? c.toUpperCase() : c)) };
+}
+
+/** The status band under the step bar: what to do now; at the walk's first step, what the walk is; and the step's tag. */
+function drawStatus() {
+  const { walk, steps = [], current, mode } = ui.state;
+  const here = current === null ? null : steps[current];
+  $("note").hidden = !here;
+  if (!here) return;
+  const { where, todo } = direction();
+  $("status").textContent = `${where} \u00b7 ${todo}`;
+  const style = walk ? STYLES[walk.kind === "tutorial" ? mode || "do" : "narrative"] : "";
+  $("about").hidden = current !== 0 || !walk;
+  $("about").textContent = [walk?.description, style].filter(Boolean).join(" ");
+  // The tag's message, compact: its first line in bold, and the rest after it, without the blank line between.
+  const [title, ...rest] = (here.note || "").trim().split(/\n\s*\n/);
+  const tag = $("tag");
+  tag.replaceChildren();
+  if (title) {
+    const strong = document.createElement("strong");
+    strong.textContent = title;
+    tag.append(strong, rest.length ? " \u2014 " + rest.join("\n") : "");
+  }
 }
 
 /** How many of the step's moves are made: in watch mode the move on show, in do mode the moves marked done. */
@@ -314,6 +370,11 @@ function drawSlides() {
   $("slide-prev").disabled = slide <= 0;
   $("slide-first").hidden = slide <= 0;   // shown once you are past the first slide
   $("slide-next").disabled = slide >= slides.length - 1;
+  // At the last slide of a step whose moves are all made: the next step, as at the end of the notes.
+  const { steps = [], current, moves = [] } = ui.state;
+  const after = current !== null && steps[current + 1];
+  $("slide-step").hidden = !after || !slides.length || slide < slides.length - 1 || movesReached() < moves.length;
+  if (after) $("slide-step").textContent = `Next step: ${after.name} \u25B6`;
   for (const entry of ui.terms.values()) requestAnimationFrame(() => fitTerminal(entry));
   return drawSlide($("slide"), slides[slide], { command: commandButton });   // a $ line on a slide is a button, as in the notes
 }
@@ -869,6 +930,7 @@ function wireControls() {
   $("slide-prev").onclick = () => showSlide(slideFrom() - 1);
   $("slide-first").onclick = () => showSlide(0);
   $("slide-next").onclick = () => showSlide(slideFrom() + 1);
+  $("slide-step").onclick = () => move(ui.state.current + 1);
   for (const button of $("layouts").querySelectorAll("button")) button.onclick = () => show({ layout: button.dataset.layout });
   $("shell-toggle").onclick = () => { ui.shellToggledHere = true; show({ shell: !ui.shell }); };
   for (const view of ["file", "at", "diff", "next", "edits"]) {
@@ -1183,7 +1245,13 @@ function drawNotes() {
   const { steps, current } = ui.state;
   const here = current === null ? null : steps[current];
   const mine = here ? ui.notes[here.name] : null;
-  $("notes-title").textContent = here ? `${here.name}, ${mine?.title || here.subject}` : "between steps";
+  const title = $("notes-title");
+  title.replaceChildren();
+  if (here) {
+    const name = document.createElement("strong");
+    name.textContent = here.name;
+    title.append(name, " " + (mine?.title || here.subject));
+  } else title.textContent = "between steps";
   $("notes-edit").hidden = !!ui.editing || !here;
   // The prose and the commands, in the order of the notes file: each command is a button where it is written.
   const box = $("notes");
@@ -1194,31 +1262,53 @@ function drawNotes() {
   const { moves = [], move: made = 0, done = 0, mode } = ui.state;
   const watch = mode === "watch";
   const onShow = moveOnShow();
-  if (moves.length) {
+  if (here) {
     const hint = document.createElement("p");
     hint.className = "p-hint";
-    const atStart = movesReached() === 0 ? "Run just setup first. " : "";
-    hint.textContent = atStart + (watch
-      ? `Watch: ${moves.length} moves, in order. Press Show \u25B6 on the next move, or \u25B6 above, then run the command at the end of its section. To go back, go to Start and run just setup.`
-      : `Do: ${moves.length} moves, in order. Make the next one by hand from its notes, run the command at its end, then press Done. Lost? Catch me up sets the code to the end of the move you are on. To go back, go to Start and run just setup.`);
+    hint.textContent = direction().todo;
     box.append(hint);
   }
+  // In a step with moves, the text before the first move is about the whole step: it gets a section of its own.
+  const parts = mine?.parts || [];
   let into = box;       // where the parts go: the notes, or the section of a move
+  if (moves.length && parts.length && parts[0].kind !== "move") {
+    into = document.createElement("section");
+    into.className = "p-bridge";
+    const label = document.createElement("div");
+    label.className = "p-bridge-label";
+    label.textContent = "Before the moves";
+    into.append(label);
+    box.append(into);
+  }
   let files = [];       // the files of that move's commit, for a files: line
   let owner = 0;        // the move whose section it is
   let group = null;     // the buttons of a run of commands, one after another in the file
   /** The last commands of a move's section are its anchor: what to run to see what the move did. */
+  // A made move, or the one on show, ends with Restart step: back to the step's Start, where just setup comes again.
   const markAnchor = (section) => {
-    if (!section || section === box) return;
+    if (!section?.classList.contains("p-move")) return;
     const last = [...section.querySelectorAll(":scope > .p-commands")].pop();
-    if (!last) return;
-    last.classList.add("p-anchor");
-    const label = document.createElement("div");
-    label.className = "p-anchor-label";
-    label.textContent = "After this move, run:";
-    section.insertBefore(label, last);
+    if (last) {
+      last.classList.add("p-anchor");
+      const label = document.createElement("div");
+      label.className = "p-anchor-label";
+      label.textContent = "After this move, run:";
+      section.insertBefore(label, last);
+    }
+    if (movesReached() > 0 && (section.classList.contains("done") || section.classList.contains("here"))) {
+      const restart = document.createElement("div");
+      restart.className = "p-restart";
+      const button = document.createElement("button");
+      button.textContent = "\u21BA Restart step";
+      button.title = "Back to the step's Start, in every window: the code of the step before. Then run just setup (Shift+Left)";
+      button.onclick = () => toStart();
+      const words = document.createElement("span");
+      words.textContent = "back to the start of the step, then just setup";
+      restart.append(button, words);
+      section.append(restart);
+    }
   };
-  for (const part of mine?.parts || []) {
+  for (const part of parts) {
     if (part.kind === "move") {
       markAnchor(into);
       const number = moves.findIndex((m) => m.name === part.name) + 1;
@@ -1245,12 +1335,16 @@ function drawNotes() {
           button.title = title;
           if (primary) button.className = "primary";
           button.onclick = onclick;
+          button.disabled = !onclick;
           actions.append(button);
         };
-        // Only the next move has buttons: Show in watch mode; Done and Catch me up in do mode. The order is the rule.
+        // Only the next move has buttons that act: Show in watch mode; Done and Catch me up in do mode. The order is the
+        // rule. A move already made keeps its button, grayed: Shown, or Made.
+        if (watch && number <= reached) action("Shown \u2713", `${part.name} is shown. To go back, press Restart step`, null);
+        if (!watch && number <= reached) action("Made \u2713", `${part.name} is made. To go back, press Restart step`, null);
         if (watch && number === reached + 1) action("Show \u25B6", `Check out ${part.name}'s commit, in every window`, () => goMove(number), true);
         if (!watch && state === "here") action("Done \u2713", "I made this move: go to the next", () => markDone(number), true);
-        if (!watch && state === "here") action("Catch me up", `Set the code to the end of ${part.name}. Your edits are asked about first, and kept`, () => goMove(number));
+        if (!watch && state === "here") action("\u21E5 Catch me up", `Set the code to the end of ${part.name}. Your edits are asked about first, and kept`, () => goMove(number));
         if (state === "later") {
           const after = document.createElement("span");
           after.className = "p-after";
@@ -1284,6 +1378,22 @@ function drawNotes() {
     group.append(commandButton(part));
   }
   markAnchor(into);
+  if (!parts.length) box.insertAdjacentHTML("beforeend", `<p class="p-empty">${!here ? "" : ui.notesPath
+    ? `No notes for ${escapeHtml(here.name)} in ${escapeHtml(ui.notesPath.split("/").pop())}. Click Edit to write them, or add a section headed "## ${escapeHtml(here.name)}".`
+    : "No notes file. Start timewalk with --notes notes.md, with one \"## step-name\" section per step."}</p>`);
+  // At the end of the notes, once the step's moves are all made: the next step, in its own colour.
+  const after = here && steps[current + 1];
+  if (after && movesReached() >= moves.length) {
+    const next = document.createElement("div");
+    next.className = "p-next-step";
+    const button = document.createElement("button");
+    button.className = "go";
+    button.textContent = `Next step: ${after.name} \u25B6`;
+    button.title = `Go to ${after.name}, ${after.subject}, in every window (Right arrow)`;
+    button.onclick = () => move(current + 1);
+    next.append(button);
+    box.append(next);
+  }
   // A move after the next one waits: its commands, items and buttons do nothing until the moves before it are made.
   for (const button of box.querySelectorAll(".p-move.later button")) button.disabled = true;
   // When the move on show changes, scroll the notes, and only the notes, to its section, in every window alike. A window
@@ -1294,12 +1404,12 @@ function drawNotes() {
   const key = `${step} ${mode} ${watch ? made : onShow}`;
   if (moves.length && section && scroller.offsetParent && ui.drawnMove !== key) {
     following.notes = Date.now() + 300;   // each window scrolls itself, so this scroll is not sent on
-    scroller.scrollTop += section.getBoundingClientRect().top - scroller.getBoundingClientRect().top - 40;
+    // At the Start, the top of the notes, where just setup is; otherwise the move's section.
+    ui.notesMoved = true;
+    if (movesReached() === 0) scroller.scrollTop = 0;
+    else scroller.scrollTop += section.getBoundingClientRect().top - scroller.getBoundingClientRect().top - 40;
     ui.drawnMove = key;
   }
-  if (!box.children.length) box.innerHTML = `<p class="p-empty">${!here ? "" : ui.notesPath
-    ? `No notes for ${escapeHtml(here.name)} in ${escapeHtml(ui.notesPath.split("/").pop())}. Click Edit to write them, or add a section headed "## ${escapeHtml(here.name)}".`
-    : "No notes file. Start timewalk with --notes notes.md, with one \"## step-name\" section per step."}</p>`;
 }
 
 /** Which tab of the reader a move's change opens in: Next change for the move to make next, Last change for the move just
@@ -1323,7 +1433,10 @@ function drawFiles(items, owner, files) {
     for (const file of files) {
       const target = changeView(owner);
       const button = document.createElement("button");
-      button.textContent = file.path;
+      const path = document.createElement("span");
+      path.className = "p-item-path";
+      path.textContent = file.path;
+      button.append("\u00B1 See diff ", path);   // the same button as an item's
       button.title = `What ${moves[owner - 1]?.name || "this step"} changed in this file`;
       button.onclick = () => show({ path: file.path, ...target });
       box.append(button);
@@ -1339,7 +1452,11 @@ function drawFiles(items, owner, files) {
     const row = document.createElement("div");
     row.className = "p-item";
     const button = document.createElement("button");
-    button.textContent = item.path;
+    // One button: an icon and a verb, as Restart step and Show have, then the path.
+    const path = document.createElement("span");
+    path.className = "p-item-path";
+    path.textContent = item.path;
+    button.append(item.kind === "file" ? "\u25A4 See file " : "\u00B1 See diff ", path);
     button.className = "p-item-" + item.kind;
     let target;
     if (item.kind === "file") {
@@ -1351,15 +1468,21 @@ function drawFiles(items, owner, files) {
       target = elsewhere ? { view: "diff", of: name } : changeView(number);
       button.title = `What ${name || "this step"} changes in this file`;
     }
-    button.onclick = () => show({ path: item.path, ...target, marks: item.show });
+    const open = () => show({ path: item.path, ...target, marks: item.show });
+    button.onclick = open;
     const words = document.createElement("span");
     words.className = "p-item-words";
-    words.innerHTML = renderMarkdown(item.text).replace(/^<p>|<\/p>\s*$/g, "");
-    row.append(button, words);
+    words.innerHTML = renderMarkdown(item.text).replace(/^<p>|<\/p>\s*$/g, "").trim();
+    row.append(button);
+    if (words.innerHTML) row.append(words);   // the author's words, on the line under the button
     box.append(row);
     for (const line of item.show) {
       const excerpt = document.createElement("div");
       excerpt.className = "p-excerpt";
+      excerpt.title = button.title;
+      // The excerpt opens the change too, except in a move after the next one, whose buttons do nothing yet.
+      // A click that ends a selection, to copy a line, is not a click on the excerpt.
+      excerpt.onclick = () => { if (getSelection().isCollapsed && !excerpt.closest(".p-move.later")) open(); };
       box.append(excerpt);
       if (item.kind === "diff") fillExcerpt(excerpt, item.path, name, line);
       else excerpt.remove();
@@ -1453,7 +1576,7 @@ function drawBand() {
   const next = current === null ? null : steps[current + 1];
   const elapsed = started ? Date.now() / 1000 + ui.skew - started : 0;
   $("elapsed").textContent = clockText(elapsed);
-  $("clock-start").textContent = started ? "Reset" : "Start the clock";
+  $("clock-start").textContent = started ? "\u21BA Reset" : "\u25B6 Start the clock";
   const planned = here ? ui.notes[here.name]?.time : null;
   const nextPlanned = next ? ui.notes[next.name]?.time : null;
   const plan = $("plan");
@@ -1472,7 +1595,7 @@ function drawBand() {
 // ---------- start ----------
 
 $("clock-start").onclick = () => api("/api/clock", { action: ui.state.clock ? "reset" : "start" });
-$("notes-toggle").onclick = () => { notesHidden.set(!notesHidden.get()); drawTools(); if (ui.state && !ui.editing) drawNotes(); };
+$("notes-toggle").onclick = () => { notesHidden.set(!notesHidden.get()); drawTools(); if (ui.state) drawSteps(); if (ui.state && !ui.editing) drawNotes(); };
 $("cues-toggle").onclick = () => { cuesHidden.set(!cuesHidden.get()); drawTools(); };
 $("room").hidden = ROOM;
 $("room").onclick = openRoom;
@@ -1535,7 +1658,7 @@ const events = onEvents(async (event) => {
   if (event.type === "done") {
     ui.state = await api("/api/state");
     ui.askedDone = null;
-    drawMoves(); drawNotes(); drawSlides(); drawSteps(); checkMatch();
+    drawMoves(); drawNotes(); ui.notesMoved = false; drawSlides(); drawSteps(); checkMatch();
     if (ui.open) await openFile(ui.open, ui.view, false, ui.of, ui.at, ui.marks);   // Next change is now the next move's
   }
   if (event.type === "notes" && !ui.editing) { await loadNotes(); drawNotes(); drawBand(); }
@@ -1546,7 +1669,7 @@ const events = onEvents(async (event) => {
     if (event.layout && event.layout !== ui.layout) applyLayout(event.layout);
     if (typeof event.shell === "boolean") applyShell(event.shell);
     if (event.path) await openFile(event.path, event.view || "file", true, event.of || null, event.at || null, event.marks || null);
-    if (event.mode && event.mode !== ui.state.mode) { ui.state.mode = event.mode; drawMoves(); drawNotes(); drawSteps(); drawWalks(); }
+    if (event.mode && event.mode !== ui.state.mode) { ui.state.mode = event.mode; drawMoves(); drawNotes(); ui.notesMoved = false; drawSteps(); drawWalks(); drawSlides(); }
     // The window that asked gets the keys: a tab it clicked, or a command it typed from the notes.
     if (event.track) selectTab(event.track, event.from === PAGE);
   }

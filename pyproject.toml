@@ -24,7 +24,11 @@ Homepage = "https://rahuldave.com/timewalk/"
 Repository = "https://github.com/rahuldave/timewalk"
 
 [dependency-groups]
-dev = ["pytest>=8", "httpx>=0.27"]
+dev = ["pytest>=8", "httpx>=0.27", "pytest-timeout>=2.3"]
+
+[tool.pytest.ini_options]
+# A test that waits on a socket fails after a minute, with a traceback, and never hangs the run.
+timeout = 60
 
 [build-system]
 requires = ["hatchling>=1.25"]

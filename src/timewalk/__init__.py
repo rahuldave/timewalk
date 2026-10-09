@@ -1335,7 +1335,8 @@ def make_app(
                 "room_sizes": {name: term.room_size for name, term in terminals.items() if showing["shell"] and term.room_size},
                 "slide_moves": owners, "sync": synced(), "mode": showing["mode"], "done": showing["done"], "of": showing["of"],
                 "changes": changes_now(), "at": showing.get("at"),
-                "walk": {"id": active["walk"].id, "title": active["walk"].title, "kind": active["walk"].kind, "mode": active["walk"].mode} if active["walk"] else None,
+                "walk": {"id": active["walk"].id, "title": active["walk"].title, "kind": active["walk"].kind, "mode": active["walk"].mode,
+                         "description": active["walk"].description} if active["walk"] else None,
                 "walks": [{"id": w.id, "title": w.title, "kind": w.kind} for w in walks]}
 
     @guarded
@@ -1670,6 +1671,8 @@ def make_app(
             return
         await socket.accept()
         hub.pages.add(socket)
+        # Say so, once it is on the list: what the server tells the windows from now on reaches this one too.
+        await socket.send_json({"type": "hello"})
         try:
             while True:
                 # A window that scrolls a slide, a file or the notes says so here, and the other windows follow.

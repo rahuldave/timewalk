@@ -166,24 +166,28 @@ List the walks in `toc.toml`. The first walk is the default:
 [[walk]]
 id = "narrative"
 title = "The project, step by step"
+description = "How the project was built, one tagged step at a time."
 notes = "notes.md"
 slides = "slides/slides.toml"
 
 [[walk]]
 id = "tests"
 title = "Only the tests"
+description = "Three steps of the project: the code, its tests, and a fix."
 folder = "walks/tests"
 steps = ["step-01", "step-02", "step-05"]
 
 [[walk]]
 id = "hooks"
 title = "A git hook, one move at a time"
+description = "A check that git runs before each commit, shown one commit at a time."
 kind = "tutorial"
 folder = "walks/hooks"
 tags = "hooks-*"
 ```
 
-[The table of contents](walks.md#the-table-of-contents) lists every key.
+Give each walk a `description` of a sentence or two. The status band shows it at the first step of the
+walk. [The table of contents](walks.md#the-table-of-contents) lists every key.
 
 ## Write the notes and the slides
 

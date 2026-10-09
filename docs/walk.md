@@ -150,7 +150,7 @@ To clone from another address, run `just setup url=<address>` before the first `
 
 A student saves two kinds of work, in two places.
 
-- **Notes.** **Edit** in the notes column saves the notes of the step in `walk.md`. The student commits
+- **Notes.** **✎ Edit** in the notes column saves the notes of the step in `walk.md`. The student commits
   `walk.md` and pushes it to their fork of the kit.
 - **Code.** The **Main** tab is a terminal in `repo/`, on the `main` branch of the project. A move never
   touches `repo/`. The student commits there, and pushes to their own fork of the project.

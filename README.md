@@ -35,7 +35,8 @@ To install the commands `timewalk` and `timewalk-pdf` for good, run
 `uv tool install git+https://github.com/rahuldave/timewalk@v1.0.14`.
 
 By default, the steps are the tags that match `step-*`. The message of an annotated tag is the note that
-the audience sees. Keep the notes file outside the repository. timewalk refuses a notes file inside it.
+the audience sees, in the status band under the step bar. The band also says what to do now.
+Keep the notes file outside the repository. timewalk refuses a notes file inside it.
 
 ## What it does
 
@@ -57,6 +58,7 @@ the audience sees. Keep the notes file outside the repository. timewalk refuses 
   The reader shows the last change and the next one, and **Apply** types the git command that makes it.
 - **Shell.** One button, or Alt+Enter, gives the terminals the space of the slides and the files, in every window.
 - **Keyboard.** Left and Right change the step, and Up and Down change the slide.
+- **GitHub's theme,** light or dark, for the page, the code and the terminals.
 
 ## What it will not do to your repository
 

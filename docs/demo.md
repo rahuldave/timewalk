@@ -15,8 +15,8 @@ window on your own screen. Each step below says what to look at and what to try.
 
 ## step-00: an empty project
 
-The project has a README and a `.gitignore`. The step bar shows five step buttons. The note under the
-step bar is the message of the tag.
+The project has a README and a `.gitignore`. The step bar shows five step buttons. The status band under
+the step bar says what to do now, and then gives the message of the tag.
 
 - Press **Right** to go to the next step. Press **Left** to come back.
 - Open the **Main** tab, and run `git log --oneline --decorate`.

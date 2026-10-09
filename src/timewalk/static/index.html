@@ -15,7 +15,7 @@
     <span class="band-label">Clock</span>
     <span id="elapsed" class="elapsed">0:00</span>
     <span id="plan" class="plan"></span>
-    <button id="clock-start">Start the clock</button>
+    <button id="clock-start">&#9654; Start the clock</button>
     <span id="upcoming" class="upcoming"></span>
   </div>
 
@@ -58,7 +58,13 @@
   </header>
 
   <div id="notice" class="notice" hidden></div>
-  <p id="note" class="note" hidden></p>
+  <!-- The status band: what to do now (the kind of walk, where you are, the next thing), the walk's description at its first
+       step, and the message of the step's tag. -->
+  <div id="note" class="note" hidden>
+    <div id="status" class="status"></div>
+    <div id="about" class="about" hidden></div>
+    <div id="tag" class="tag"></div>
+  </div>
 
   <main class="panes">
     <section class="slide-pane" id="slide-pane">
@@ -70,6 +76,7 @@
           <button id="slide-prev" title="Previous slide (Up arrow; Alt+Up inside a terminal)" aria-label="Previous slide">&#9650;</button>
           <button id="slide-next" title="Next slide (Down arrow; Alt+Down inside a terminal)" aria-label="Next slide">&#9660;</button>
         </span>
+        <button id="slide-step" class="go" hidden title="The last slide of this step: go to the next step (Right arrow)">Next step &#9654;</button>
       </div>
       <div id="slide" class="slide"></div>
     </section>
@@ -102,8 +109,8 @@
       <div id="apply-bar" class="apply-bar" hidden>
         <span id="apply-match" class="match"></span>
         <span id="apply-note" class="apply-note"></span>
-        <button id="apply-file" title="Types a git command into the shell at the step, which applies this file's change as edits">Apply this file</button>
-        <button id="apply-move" title="Types git cherry-pick --no-commit into the shell at the step: the whole move's change, as edits">Apply the whole move</button>
+        <button id="apply-file" title="Types a git command into the shell at the step, which applies this file's change as edits">&#8675; Apply this file</button>
+        <button id="apply-move" title="Types git cherry-pick --no-commit into the shell at the step: the whole move's change, as edits">&#8675; Apply the whole move</button>
       </div>
       <div id="file-body" class="file-body"><p class="empty">Files are shown as they are at this step. They cannot be edited here.</p></div>
     </section>
@@ -128,7 +135,7 @@
       <span class="notes-tools">
         <button class="to-top" data-pane="notes" hidden title="Back to the top of the notes (Home)">&#8593; Top</button>
         <label class="only" title="When on, a click on a command also presses Enter. When off, it only types the command, for you to read and run"><input type="checkbox" id="run-on-click"> run on click</label>
-        <button id="notes-edit" title="Edit the notes of this step, in the notes file">Edit</button>
+        <button id="notes-edit" title="Edit the notes of this step, in the notes file">&#9998; Edit</button>
       </span>
     </div>
     <div id="notes-editor" class="notes-editor" hidden>

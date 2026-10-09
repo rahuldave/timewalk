@@ -48,7 +48,9 @@ so. Drag that window to the projector, and click **Full screen** in it.
 | The notes and their commands | Yes | Yes |
 | The cues, the `>` lines | Yes | No |
 | The clock band | Yes, with `--clock` | No |
-| **PDF**, **Edit**, **Room** | Yes | No |
+| The status band | Yes | The same |
+| **PDF**, **✎ Edit**, **Room** | Yes | No |
+| **Next step** at the last slide | Yes | No |
 
 ## During the class
 

@@ -137,6 +137,13 @@ socket.
   ```
 - Keep prose plain in the README, docstrings, commit messages and the text of the page. Write short
   sentences and concrete names, with no jargon. Match the voice of the README.
+- **Keep the page's elements consistent.** A button that does something has a bordered look, an icon and a verb
+  (the toggles of the bar, such as Notes, Shell, Dark and the layouts, are nouns and need no icon):
+  `↺ Restart step`, `Show ▶`, `± See diff <path>`, `▤ See file <path>`, `Next step: step-NN ▶`. A button keeps one shape:
+  do not split its label into a button and loose text, or turn a button into a band. The words of the page are in its
+  font, and paths, commands and code in the font of the code. Before a change to how something looks, find its kind
+  (button, band, label, bar) and match the others of that kind. The colours come from one theme, GitHub's, in
+  `app.css` and `TERM_THEMES`; do not add colours of your own.
 - A new kind of notes line or slide entry needs four things. They are the parser, a test, the table in the
   site, and the code of the page that uses it.
 
@@ -150,6 +157,11 @@ socket.
    `demo/timewalk-demo-replay`, which can hold edits of Rahul.
 3. Go through every step and slide, and type in a terminal. Playwright with `channel="chrome"` works.
    Nobody checks Safari or Firefox.
+4. **An adversarial review by an Opus subagent before every commit.** When the change is built and its checks
+   pass, and before you ask Rahul to commit, start a subagent with the model `opus`. Ask it to break the change: wrong state in a second
+   window, a restart, an edit or untracked file in the way, a tag that moved, a slow git, odd paths, the rules above.
+   Fix what it finds, with a test for each finding, and run the checks again. Before anything goes onto `main` (a
+   release, or a merge of a branch), run one more review over the whole change, and fix its findings first.
 
 ## Commits
 
@@ -163,7 +175,8 @@ socket.
 
 Rahul expects every change to the page to ship as a release, with its docs, in one go:
 
-1. Build it, and drive it in headless Chrome against a throwaway clone (see Checking a change). For a long
+1. Build it, drive it in headless Chrome against a throwaway clone, and fix the findings of the adversarial
+   review (see Checking a change). For a long
    file to scroll, clone timewalk itself and run it with `--tags 'v*'`.
 2. Update the docs that describe it (often `page.md`, `notes.md`, `model.md`, `reference.md`, `class.md`),
    and retake the screenshots with `just screenshots` when the page looks different.
@@ -204,6 +217,11 @@ Rahul expects every change to the page to ship as a release, with its docs, in o
   an Enter after a move only when it is idle at an empty line (`Terminal.refresh_prompt`). The lines that an item of
   the notes marks (`marks`) are relayed in the `show` event only, and not kept in `showing`, so a window opened later
   shows the file without them.
+- **An events socket says `hello` once it is on the list of windows.** The test client returns from
+  `websocket_connect` when the server accepts, a moment before the server adds the socket to `hub.pages`. A test that
+  then posts and waits for the event missed it, and `receive_json()` waited for ever: the unit tests hung, now and then,
+  for hours. Wait for `{"type": "hello"}` first. `pytest-timeout` (60 s here, 120 s in timewalk-test) turns any other
+  hang into a failure with a traceback.
 - **`/api/match` runs often.** Every window in do mode asks every two seconds. It runs `Repo.differ_from` off the event
   loop (`asyncio.to_thread`), so a slow git does not hold up the sockets. Read git paths with `-z` (`status --porcelain -z`,
   `diff --name-only -z`, `ls-tree -z`): without it, git quotes a path with a space or an accent.

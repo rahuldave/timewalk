@@ -27,7 +27,7 @@ $ python3 -c "import sys; sys.path.insert(0, 'src'); from greet import shout; pr
 time: 0:04
 
 Four tests arrive. Run them first. Then format the code with ruff. The file list marks `src/greet.py` as
-edited, and the reader's "Edits since the step" view shows what ruff changed. Run the tests again: they
+edited, and the reader's "Your edits" view shows what ruff changed. Run the tests again: they
 still pass.
 
 > Ask: what would you test that is missing?
@@ -44,7 +44,7 @@ runs$ for epoch in 1 2 3 4 5; do echo "epoch $epoch"; sleep 2; done
 time: 0:07
 
 The change that ruff made at the last step is now in the history, and its rule is in `pyproject.toml`.
-Open `src/greet.py` in "Changes in this step", and compare it with what ruff did.
+Open `src/greet.py` in "Last change", and compare it with what ruff did.
 
 $ uvx ruff format --check
 $ uvx pytest -q
@@ -53,7 +53,7 @@ $ uvx pytest -q
 time: 0:09
 
 Each parameter now has a type and a comment, and each function has a docstring. Open `src/greet.py` in
-"Changes in this step". The behaviour is the same, and the signature now explains itself.
+"Last change". The behaviour is the same, and the signature now explains itself.
 
 > Say: run the tests once more, and point out that nothing broke.
 

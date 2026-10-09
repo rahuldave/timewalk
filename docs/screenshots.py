@@ -285,7 +285,7 @@ def shoot(browser, base: str, repo: timewalk.Repo) -> None:
 
 
 def shoot_tutorial(browser, tmp: Path) -> None:
-    "Take the tutorial walk of timewalk-test at step-02, in do mode and in watch mode, the step bar with the walk menu, the items and Apply."
+    "Take the tutorial walk of timewalk-test: the band at its first step, step-02 in do mode and in watch mode, step-01 with its moves all shown, the step bar with the walk menu, the items and Apply."
     from timewalk.walks import load_toc
 
     local = ROOT.parent / "timewalk-test"
@@ -330,6 +330,19 @@ def shoot_tutorial(browser, tmp: Path) -> None:
             page.wait_for_timeout(300)
             (page.locator(clip) if clip else page).screenshot(path=str(OUT / f"{name}.png"))
 
+        # The walk's first step, step-00: the band under the step bar says what to do, then the walk's description and
+        # what a tutorial in do mode asks, then the message of the tag.
+        post("/api/move", {"to": 0, "name": "step-00"})
+        page.wait_for_function("document.getElementById('step-name').textContent === 'step-00'")
+        page.wait_for_selector("#note:not([hidden]) #about:not([hidden])")
+        page.wait_for_timeout(800)
+        page.evaluate("document.activeElement && document.activeElement.blur()")
+        page.mouse.move(2, 2)
+        top = page.locator("header.bar").bounding_box()
+        band = page.locator("#note").bounding_box()
+        page.screenshot(path=str(OUT / "tutorial-band.png"), clip={"x": 0, "y": top["y"], "width": WIDE["width"],
+                                                                   "height": band["y"] + band["height"] - top["y"]})
+
         # Do mode, the walk's own: step-02 at Start, before its first move, with the code of step-01. The first
         # move's file opens as that move's change, though the file does not exist yet.
         post("/api/move", {"to": 2, "name": "step-02"})
@@ -361,6 +374,30 @@ def shoot_tutorial(browser, tmp: Path) -> None:
         page.wait_for_function("document.getElementById('view-diff').textContent === 'Last change: step-02.1'")
         page.wait_for_timeout(800)
         save("tutorial-watch")
+
+        # Watch mode at step-01, with both of its moves shown: the text before the moves in a section of its own, each
+        # shown move with Shown and Restart step, and Next step at the end. A tall window, so that the whole notes fit.
+        post("/api/move", {"to": 1, "name": "step-01"})
+        page.wait_for_function("document.getElementById('step-name').textContent === 'step-01'")
+        page.wait_for_selector('#notes .p-move.next[data-move="1"] button:has-text("Show")')
+        section(1).locator(".p-move-actions button", has_text="Show").click()
+        page.wait_for_selector('#notes .p-move.next[data-move="2"] button:has-text("Show")')
+        section(2).locator(".p-move-actions button", has_text="Show").click()
+        page.wait_for_selector("#notes .p-next-step button")
+        tall = browser.new_page(viewport={"width": WIDE["width"], "height": 1900}, device_scale_factor=1)
+        tall.on("pageerror", lambda error: errors.append(str(error)))
+        tall.add_init_script("localStorage.setItem('timewalk.notes-width', '520');")
+        tall.goto(f"http://127.0.0.1:{port}/?t={TOKEN}")
+        tall.wait_for_selector("#notes .p-next-step button")
+        tall.wait_for_timeout(1000)
+        tall.locator("#notes-body").evaluate("e => e.scrollTop = 0")
+        tall.mouse.move(2, 2)
+        tall.wait_for_timeout(300)
+        pane = tall.locator("#notes-pane").bounding_box()
+        end = tall.locator("#notes .p-next-step").bounding_box()
+        tall.screenshot(path=str(OUT / "tutorial-next.png"), clip={"x": pane["x"], "y": pane["y"], "width": pane["width"],
+                                                                  "height": end["y"] + end["height"] + 16 - pane["y"]})
+        tall.close()
 
         # Back to do mode, at the start of step-02, in a new window with wider notes, so that an item, its words and its
         # excerpt fit, and lower terminals, so that the marked line of the reader shows. The Code layout gives the reader room.
