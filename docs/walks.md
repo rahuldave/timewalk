@@ -281,7 +281,7 @@ first move. Beside the buttons, the row shows the move on show and its subject.
 | Control | In do mode | In watch mode |
 |---|---|---|
 | **▶**, or Shift+Right | Marks the move done, and goes to the next | Checks out the commit of the next move |
-| **◀**, or Shift+Left, or **Start** | Checks out the tag before the step, after asking about edits, and marks no move done | Checks out the tag before the step |
+| **◀**, or Shift+Left, or **Start** | Checks out the tag before the step, and marks no move done. Edits go on a saved branch first | Checks out the tag before the step |
 | The number of the next move | The same as **▶** | The same as **▶** |
 | Other numbers | Do nothing: the moves go in order | Do nothing: the moves go in order |
 
@@ -319,7 +319,8 @@ show the button on the slides.
 ![The notes of step-01 in watch mode, with both moves shown: the text before the moves, two moves with Shown and Restart step, and Next step at the end](images/tutorial-next.png)
 
 timewalk writes down the move on show in the git folder of the replay copy. After a restart, the page
-comes back at the same move.
+comes back at the same move. [What timewalk does with git](git.md#what-is-checked-out-and-when) says what
+each mode checks out, and when.
 
 ### The items under files
 
@@ -462,7 +463,9 @@ Without `--write`, it prints only the drafts. With `--write`, it writes them int
 notes file of the walk. A section that is already in the notes stays as it is. Each draft has these
 parts:
 
-- **A heading** `### step-NN.k`, with the subject of the commit after its name as the title.
+- **A heading** `### step-NN.k`, with the subject of the commit after its name as the title. A step that
+  has no section yet gets one too, `## step-NN Title`, with the first line of its tag's message, steps
+  without moves too. A walk whose folder has no `notes.md` yet gets one.
 - **"What changed:"**, a list with one item for each file of the commit. An item says if the file is new
   or removed, or how many lines the commit added and removed. For Python, it names the functions and
   classes that the commit added, removed or changed. For a `justfile`, it names the recipes that the

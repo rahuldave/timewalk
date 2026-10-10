@@ -238,12 +238,12 @@ timewalk := "uvx --from git+https://github.com/rahuldave/timewalk@v1.0.14"
 
 # Open the walks: just present, or just present tutorial for another walk
 present walk="" *args:
-    {{ timewalk }} timewalk-check repo --replay worktree --toc toc.toml
-    {{ timewalk }} timewalk repo --replay worktree --toc toc.toml {{ if walk == "" { "" } else { "--walk " + walk } }} {{ args }}
+    {{ timewalk }} timewalk-check repo --toc toc.toml
+    {{ timewalk }} timewalk repo --toc toc.toml {{ if walk == "" { "" } else { "--walk " + walk } }} {{ args }}
 
 # Check the notes and slides of every walk against the steps
 check:
-    {{ timewalk }} timewalk-check repo --replay worktree --toc toc.toml
+    {{ timewalk }} timewalk-check repo --toc toc.toml
 
 # Make the PDF of one walk's slides: just pdf tests
 pdf walk="":

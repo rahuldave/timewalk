@@ -80,7 +80,9 @@ step, and nothing more.
 - **Make it safe to run again.** A second run changes nothing.
 - **Make the environment,** for example with `uv sync`.
 - **Make the artifacts** that are missing.
-- **Never touch git.** `just setup` makes no commit, branch or tag, and changes no config or hook.
+- **Never touch git.** `just setup` makes no commit, branch or tag, and changes no config or hook. A
+  step that changes git, for example to install a hook, gives it a recipe of its own. See
+  [`just setup` and git](git.md#just-setup-and-git).
 
 ### Artifacts
 
@@ -111,8 +113,8 @@ line of commits that git follows back through the first parent of each merge.
 - **Give the tutorial every tag of its glob.** A tutorial cannot have `steps = [...]`. For a tutorial on
   one part of the history, make tags of its own for that part, on a branch.
 
-See [Commits for a tutorial](build-walks.md#commits-for-a-tutorial), and
-[Moves with jj](build-walks.md#moves-with-jj).
+See [Commits for a tutorial](build-walks.md#commits-for-a-tutorial),
+[Moves with jj](build-walks.md#moves-with-jj), and [Steps and moves as git](git.md#steps-and-moves-as-git).
 
 ### Keep each move small
 

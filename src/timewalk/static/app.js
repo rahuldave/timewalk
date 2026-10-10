@@ -365,7 +365,7 @@ function showKept(branches) {
   const text = document.createElement("span");   // one item of the notice's row, so that it wraps as a sentence
   text.append(`Your work is kept on ${branches.length > 1 ? "the branches" : "the branch"} `, ...branches.flatMap(
     (branch, i) => [...(i ? [", "] : []), code(branch)]), ". To see it: ", code(`git show ${name}`), ". To bring a file back: ",
-  code(`git checkout ${name} -- <file>`), ".");
+  code(`git restore --source ${name} -- <file>`), ".");
   notice.replaceChildren(text);
   notice.hidden = false;
   const close = document.createElement("button");

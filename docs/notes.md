@@ -9,8 +9,7 @@ page then shows the notes of the current step in a column on its right.
 ## Where the notes file goes
 
 Keep the notes file outside the repository that the class walks through. timewalk refuses a notes file
-inside that repository or inside its replay copy. A move would change a file there, or throw your edits
-away.
+inside that repository or inside its replay copy. A move would change a file there.
 
 A good place is the folder or repository that holds the class material, beside the slides. If a student
 forks that repository, the edits of the student show in the git of the fork, ready to commit.

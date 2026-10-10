@@ -52,6 +52,15 @@ Keep the text of these headings. A link from another page uses each one as an an
 | page.md | The reader |
 | page.md | The status band |
 | page.md | The theme |
+| git.md | The refs in the replay copy |
+| git.md | With `--in-place` |
+| git.md | Steps and moves as git |
+| git.md | What is checked out, and when |
+| git.md | How a move keeps the learner's work |
+| git.md | `just setup` and git |
+| model.md | What each control does |
+| model.md | One move, in order |
+| authoring.md | The recipe `just setup` |
 
 ## Glossary
 

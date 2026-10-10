@@ -73,7 +73,8 @@ Keep the notes file outside the repository. timewalk refuses a notes file inside
 - **The file view cannot write.** The page writes only the notes file, which lives outside the
   repository.
 
-More in [The replay copy](https://rahuldave.com/timewalk/replay.html).
+More in [The replay copy](https://rahuldave.com/timewalk/replay.html) and
+[What timewalk does with git](https://rahuldave.com/timewalk/git.html).
 
 ## Safety
 

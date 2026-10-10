@@ -1,6 +1,7 @@
 # The replay copy
 
-timewalk never moves the repository that you give it, and never writes to it. It moves a second working
+timewalk never moves the repository that you give it, and never writes to it. [What timewalk does with
+git](git.md) lists every git command and ref that the replay copy involves, and why. It moves a second working
 copy instead, the replay copy. timewalk makes the copy beside your repository and names it
 `<repo>-replay`.
 
@@ -59,8 +60,8 @@ has no tag of that name, or has the copy that timewalk made before. A tag that y
 replay copy too. A tag that the learner made is never moved or deleted.
 
 So a step that you tagged again is there at the next start. A step that you tag while timewalk runs is
-fetched when a move needs it. Restart timewalk after you tag again, because timewalk reads the list of
-steps when it starts.
+fetched when a move needs it. timewalk reads the list of steps when it starts, and when you change the
+walk. So restart timewalk after you tag again. See [The refs in the replay copy](git.md#the-refs-in-the-replay-copy).
 
 ## Saved branches
 
@@ -106,7 +107,7 @@ In a terminal at the step, use these commands:
 git branch --list 'timewalk/saved/*'                   # list the saved branches
 git show timewalk/saved/step-02                        # see the last commit of one
 git log --stat timewalk/saved/step-02                  # see all of its commits
-git checkout timewalk/saved/step-02 -- src/greet.py    # bring one file back, as an edit at this step
+git restore --source timewalk/saved/step-02 -- src/greet.py   # bring one file back, as an edit at this step
 ```
 
 git carries only commits between repositories. It never carries config or hooks.

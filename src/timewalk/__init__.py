@@ -100,6 +100,15 @@ def git(
     return done.stdout.rstrip("\n")
 
 
+def name_status(
+    cwd: Path,  # The working copy
+    *args: str,  # A git command that prints --name-status -z, such as diff or diff-tree, with its arguments
+) -> dict[str, str]:  # Each path, as it is, to its status letter: A, M or D
+    "Run a git command that lists changed files with -z, and read it: a path with a space or an accent comes as it is."
+    fields = git(cwd, args[0], "-z", *args[1:]).split("\x00")   # -z before any paths that follow --
+    return {path: status[0] for status, path in zip(fields[::2], fields[1::2], strict=False) if status and path}
+
+
 @dataclass
 class Step:
     "One point in the history that the browser can stand on."
@@ -668,9 +677,8 @@ class Repo:
         "List what a step added, modified or deleted. For the first step, everything is added."
         step = self.steps[index]
         if index == 0:
-            return dict.fromkeys(git(self.work, "ls-tree", "-r", "--name-only", step.sha).splitlines(), "A")
-        out = git(self.work, "diff", "--name-status", "--no-renames", self.steps[index - 1].sha, step.sha)
-        return {path: status[0] for status, path in (line.split("\t", 1) for line in out.splitlines() if line)}
+            return dict.fromkeys((path for path in git(self.work, "ls-tree", "-r", "-z", "--name-only", step.sha).split("\x00") if path), "A")
+        return name_status(self.work, "diff", "--name-status", "--no-renames", self.steps[index - 1].sha, step.sha)
 
     def span(self) -> tuple[str, str] | None:  # The commits before and after what the place on show changed; None at the first step
         """Say what "Changes in this step" compares: a step with the step before, or in a tutorial a move with the move before.
@@ -690,9 +698,8 @@ class Repo:
     ) -> list[dict]:  # The files its commit added or changed, each as {path, status}
         "List the files a move's commit added or changed, for a `files:` line of the notes. A commit's files never change, so once."
         if move.sha not in self.files_of:
-            out = git(self.work, "diff-tree", "--no-commit-id", "--name-status", "-r", "--no-renames", move.sha)
-            self.files_of[move.sha] = [{"path": path, "status": status[0]}
-                                       for status, path in (line.split("\t", 1) for line in out.splitlines() if line) if status[0] != "D"]
+            changed = name_status(self.work, "diff-tree", "--no-commit-id", "--name-status", "-r", "--no-renames", move.sha)
+            self.files_of[move.sha] = [{"path": path, "status": status} for path, status in changed.items() if status != "D"]
         return self.files_of[move.sha]
 
     def move_named(
@@ -760,9 +767,8 @@ class Repo:
         elif span is None:
             changed = self.changes(index)
         else:
-            out = git(self.work, "diff", "--name-status", "--no-renames", *span)
-            changed = {path: status[0] for status, path in (line.split("\t", 1) for line in out.splitlines() if line)}
-        files = [{"path": p, "status": changed.get(p, "")} for p in git(self.work, "ls-files").splitlines()]
+            changed = name_status(self.work, "diff", "--name-status", "--no-renames", *span)
+        files = [{"path": p, "status": changed.get(p, "")} for p in git(self.work, "ls-files", "-z").split("\x00") if p]
         stat = git(self.work, "diff", "--shortstat", *span).strip() if span else ""
         return {"files": files, "deleted": sorted(p for p, s in changed.items() if s == "D"), "summary": stat, "edits": self.edits()}
 

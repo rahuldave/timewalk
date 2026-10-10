@@ -519,6 +519,14 @@ def test_a_file_that_cannot_be_removed_stops_the_move_with_a_message(tmp_path: P
         (repo.work / "out" / "locked").chmod(0o755)
 
 
+def test_a_path_with_a_space_and_an_accent_comes_as_it_is(tmp_path: Path) -> None:
+    "The file tree and a step's changes name a file with a space and an accent as it is, not quoted by git."
+    repo = two_steps(tmp_path, {"a.txt": "a\n"}, {"a.txt": "a\n", "notes/thé café.md": "hi\n"})
+    repo.move(1)
+    assert repo.changes(1) == {"notes/thé café.md": "A"}
+    assert "notes/thé café.md" in [file["path"] for file in repo.tree()["files"]]
+
+
 def test_a_move_with_nothing_to_keep_makes_no_branch(repo: timewalk.Repo) -> None:
     "No edits, and no file in the way: nothing is saved, even with an untracked file that stays."
     repo.move(1)
@@ -2149,6 +2157,57 @@ def test_the_checks_verify_items_and_show_lines(tutorial: timewalk.Repo, tutoria
     assert "walk tut: step-01.1: the diff item zzz.txt is not changed by the move" in warnings
     assert "walk tut: step-01.2: the line `not there` is no longer in the change of README.md" in warnings
     assert not any("with b" in w or "a.txt" in w for w in warnings)
+
+
+def test_timewalk_notes_starts_the_notes_of_a_walk_folder_without_them(tutorial: timewalk.Repo, tmp_path: Path) -> None:
+    "A tutorial whose folder has no notes.md yet: --write makes it, with a titled section for each step and a draft for each move."
+    folder = tmp_path / "kit" / "walks" / "tut"
+    folder.mkdir(parents=True)
+    (tmp_path / "kit" / "toc.toml").write_text('[[walk]]\nid = "tut"\nkind = "tutorial"\nfolder = "walks/tut"\n')
+    done = subprocess.run([sys.executable, "-c", "from timewalk.walks import notes_main; notes_main()", str(tutorial.main),
+                           "--toc", str(tmp_path / "kit" / "toc.toml"), "--walk", "tut", "--write"], capture_output=True, text=True)
+    assert done.returncode == 0, done.stderr
+    notes = timewalk.parse_notes((folder / "notes.md").read_text())
+    assert list(notes) == [step.name for step in tutorial.steps]
+    assert all(notes[step.name]["title"] for step in tutorial.steps), "each heading has the first line of its tag's message"
+    assert [part["name"] for part in notes["step-01"]["parts"] if part["kind"] == "move"] == ["step-01.1", "step-01.2", "step-01.3"]
+
+
+def test_the_summary_names_functions_in_files_with_odd_names(tmp_path: Path) -> None:
+    "A function added in a file with a space, or with an accent, is named: git's tab and quotes do not hide the file."
+    from timewalk.walks import move_summary
+    main = tmp_path / "odd"
+    main.mkdir()
+    run_git(main, "init", "--quiet", "-b", "main")
+    run_git(main, "config", "user.name", "t")
+    run_git(main, "config", "user.email", "t@e")
+    (main / "a.txt").write_text("a\n")
+    run_git(main, "add", "-A")
+    run_git(main, "commit", "-qm", "one")
+    for name in ("sp ace.py", "café.py"):
+        (main / name).write_text("def b():\n    return 1\n")
+    run_git(main, "add", "-A")
+    run_git(main, "commit", "-qm", "two")
+    summary = "\n".join(move_summary(main, "HEAD"))
+    assert "`sp ace.py`: new file, 2 lines; adds `b`" in summary and "`café.py`: new file, 2 lines; adds `b`" in summary
+
+
+def test_timewalk_notes_keeps_the_order_the_line_ends_and_the_titles(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
+    "A missing step goes before the next step written; a lightweight tag's title loses its prefix; Windows line ends stay."
+    from timewalk.walks import add_move_sections, load_toc
+
+    run_git(tutorial.main, "tag", "-d", "step-01")
+    run_git(tutorial.main, "tag", "step-01", tutorial.steps[1].sha)   # lightweight: no message, the commit's subject is the title
+    (tutorial_class / "notes.md").write_bytes(b"## step-00\r\n\r\n## step-02 Two\r\n")
+    text, _, _ = add_move_sections(load_toc(tutorial_class / "toc.toml")[0], tutorial.main)
+    assert text.index("## step-01") < text.index("## step-02 Two"), "step-01 goes before step-02, which is written"
+    heading = next(line for line in text.split("\n") if line.startswith("## step-01"))
+    assert not heading.startswith("## step-01 step-01:") and len(heading) > len("## step-01 "), heading
+    done = subprocess.run([sys.executable, "-c", "from timewalk.walks import notes_main; notes_main()", str(tutorial.main),
+                           "--toc", str(tutorial_class / "toc.toml"), "--walk", "tut", "--write"], capture_output=True, text=True)
+    assert done.returncode == 0, done.stderr
+    raw = (tutorial_class / "notes.md").read_bytes()
+    assert b"\r\n" in raw and b"\n" not in raw.replace(b"\r\n", b""), "every line ends as the file's did"
 
 
 def test_timewalk_notes_drafts_items_for_each_file(tutorial: timewalk.Repo, tutorial_class: Path) -> None:

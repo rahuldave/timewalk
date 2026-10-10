@@ -46,6 +46,7 @@ PAGES = [
     ("authoring.md", "What a narrative and a tutorial need"),
     ("brand.md", "Brand a PDF"),
     ("replay.md", "The replay copy"),
+    ("git.md", "What timewalk does with git"),
     ("python.md", "Python projects"),
     ("safety.md", "Safety"),
     ("reference.md", "Reference"),

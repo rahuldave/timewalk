@@ -26,6 +26,7 @@ starting; a warning is printed and does not.
 """
 
 import argparse
+import dataclasses
 import os
 import re
 import subprocess
@@ -34,7 +35,7 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
-from timewalk import GitError, expand_entry, git, parse_notes, pick_steps, replace_section, split_slides, step_moves, tag_steps
+from timewalk import GitError, expand_entry, git, name_status, parse_notes, pick_steps, replace_section, split_slides, step_moves, tag_steps
 
 KINDS = ("narrative", "tutorial")
 WALK_KEYS = ("id", "title", "description", "kind", "folder", "notes", "slides", "steps", "tags", "setup", "sync", "moves")
@@ -56,6 +57,7 @@ class Walk:
     sync: bool = True  # In a tutorial: a move shows its first slide, and in watch mode a move's slide makes the move
     mode: str = "do"  # In a tutorial, how it starts: "do", the learner makes each move; "watch", timewalk shows each commit
     description: str = ""  # What the walk is about, in a sentence or two: the page shows it at the walk's first step
+    folder: Path | None = None  # Its folder, if the table gives one: where timewalk-notes starts a notes.md
 
 
 class TocError(ValueError):
@@ -122,7 +124,7 @@ def load_toc(
             raise TocError(f"{where}: its folder {entry['folder']} does not exist")
         walks.append(Walk(ident, entry.get("title", ident), kind, notes.resolve() if notes else None, slides.resolve() if slides else None,
                           entry.get("tags", "step-*"), steps, "manual", entry.get("sync", True), entry.get("moves", "do"),
-                          entry.get("description", "").strip()))
+                          entry.get("description", "").strip(), folder.resolve() if folder else None))
     return walks
 
 
@@ -293,6 +295,28 @@ def moves_without_commands(
     return missing
 
 
+def unquote_path(
+    name: str,  # A path as a diff's header prints it, perhaps in git's quotes: "b/caf\303\251.py"
+) -> str:  # The path as it is
+    "Undo git's quoting of a path in a diff header: the C escapes, and octal bytes for UTF-8."
+    if not (len(name) >= 2 and name.startswith('"') and name.endswith('"')):
+        return name
+    escapes = {"n": 10, "t": 9, "r": 13, "a": 7, "b": 8, "f": 12, "v": 11, '"': 34, "\\": 92}
+    out, text, i = bytearray(), name[1:-1], 0
+    while i < len(text):
+        if text[i] == "\\" and i + 1 < len(text):
+            if text[i + 1:i + 4].isdigit():
+                out.append(int(text[i + 1:i + 4], 8))
+                i += 4
+                continue
+            out.append(escapes.get(text[i + 1], ord(text[i + 1])))
+            i += 2
+            continue
+        out.extend(text[i].encode("utf-8"))
+        i += 1
+    return out.decode("utf-8", errors="replace")
+
+
 def move_summary(
     main: Path,  # The repository
     sha: str,  # A move's commit
@@ -300,9 +324,10 @@ def move_summary(
     """Say what one commit changed, from its diff alone: each file, its lines added and removed, and for Python the
     functions and classes it adds, removes or changes, and for a justfile the recipes it adds. No guessing: only names."""
     sha = git(main, "rev-parse", f"{sha}^{{commit}}")   # an annotated tag names its commit
-    status = dict(reversed(line.split("\t", 1)) for line in git(main, "diff-tree", "--no-commit-id", "--name-status", "-r", "--no-renames", sha).splitlines() if line)
+    status = name_status(main, "diff-tree", "--no-commit-id", "--name-status", "-r", "--no-renames", sha)
     counts = {}
-    for line in git(main, "show", "--numstat", "--format=", "--no-renames", sha).splitlines():
+    for line in git(main, "show", "--numstat", "-z", "--format=", "--no-renames", sha).split("\x00"):
+        line = line.lstrip("\n")   # the empty format leaves a newline before the first entry
         if line.count("\t") >= 2:
             added, removed, path = line.split("\t", 2)
             counts[path] = (added, removed)
@@ -314,10 +339,11 @@ def move_summary(
         if path is not None and context and not defines:
             names[path]["~"].add(context)
 
-    for line in git(main, "show", "-U0", "--format=", "--no-renames", sha).splitlines():
+    for line in git(main, "-c", "core.quotePath=false", "show", "-U0", "--format=", "--no-renames", sha).splitlines():
         if line.startswith("+++ "):
             close_hunk()
-            path, context, defines = (line[6:] if line.startswith("+++ b/") else None), None, False
+            name = unquote_path(line[4:].rstrip("\t"))   # git ends a name with a space by a tab, and quotes an odd one
+            path, context, defines = (name[2:] if name.startswith("b/") else None), None, False
             continue
         if line.startswith("--- ") or path is None:
             continue
@@ -367,9 +393,8 @@ def move_section(
     step = move.name.rsplit(".", 1)[0]
     prefixed = move.subject.startswith((f"{move.name}:", f"{step}:"))   # a move's subject, or the step's own on its last move
     title = move.subject.split(":", 1)[1].strip() if prefixed else move.subject
-    statuses = git(main, "diff-tree", "--no-commit-id", "--name-status", "-r", "--no-renames", move.sha).splitlines()
-    items = [f"- {'file' if status[0] == 'A' else 'diff'} `{path}`: " for status, path in (line.split("\t", 1) for line in statuses if line)
-             if status[0] != "D"]
+    statuses = name_status(main, "diff-tree", "--no-commit-id", "--name-status", "-r", "--no-renames", move.sha)
+    items = [f"- {'file' if status == 'A' else 'diff'} `{path}`: " for path, status in statuses.items() if status != "D"]
     return "\n".join([f"### {move.name} {title}", "", "What changed:", "", *move_summary(main, move.sha), "", "files:", *items, "",
                       "<!-- Add a command that shows what this move did, for example: $ just test -->", ""])
 
@@ -378,12 +403,26 @@ def add_move_sections(
     walk: Walk,  # A tutorial walk
     main: Path,  # The repository
 ) -> tuple[str, list[str], list[str]]:  # The notes with the missing move sections added, the moves added, and their drafts
-    "Add a draft section for each move that the notes do not have yet, at the end of its step. Sections already there stay as they are."
+    """Add a section for each step, and a draft section for each move, that the notes do not have yet. A step's heading
+    takes its title from the first line of its tag's message. Sections already there stay as they are."""
     text = walk.notes.read_text(encoding="utf-8") if walk.notes and walk.notes.is_file() else ""
     picked = pick_steps(tag_steps(main, walk.tags), walk.steps)
     added: list[str] = []
     drafts: list[str] = []
     for step, moves in zip(picked, step_moves(main, picked), strict=True):
+        if step.name not in parse_notes(text):
+            first = (step.note or step.subject).strip().split("\n")[0].strip()
+            title = first.split(":", 1)[1].strip() if first.startswith(f"{step.name}:") else first   # a lightweight tag: its commit's subject
+            heading = f"## {step.name} {title}".rstrip() + "\n"
+            # Before the next step that has a section, so that the notes keep the order of the steps; else at the end.
+            later = [s.name for s in picked[picked.index(step) + 1:]]
+            spot = next((m for name in later if (m := re.search(rf"^##\s+{re.escape(name)}(\s|$)", text, re.MULTILINE))), None)
+            if spot:
+                text = text[:spot.start()] + heading + "\n" + text[spot.start():]
+            else:
+                text = (text.rstrip("\n") + "\n\n" if text.strip() else "") + heading
+            added.append(step.name)
+            drafts.append(heading)
         written = {part["name"] for part in parse_notes(text).get(step.name, {}).get("parts", []) if part["kind"] == "move"}
         new = [move_section(main, move) for move in moves if move.name not in written]
         if not new:
@@ -396,8 +435,9 @@ def add_move_sections(
 
 
 def notes_main() -> None:
-    "Add a draft ### section for each move of a tutorial that its notes do not have, with what the move changed."
-    parser = argparse.ArgumentParser(description="Draft the notes of a tutorial's moves: what each commit changed, for you to finish.")
+    "Add a section for each step, and a draft ### section for each move, that a tutorial's notes do not have."
+    parser = argparse.ArgumentParser(description="Draft the notes of a tutorial: a section for each step, and for each move what its "
+                                                 "commit changed, for you to finish.")
     parser.add_argument("repo", type=Path, help="the repository that the class walks through")
     parser.add_argument("--toc", type=Path, required=True, help="the table of contents, toc.toml")
     parser.add_argument("--walk", required=True, help="the id of a tutorial walk")
@@ -408,14 +448,17 @@ def notes_main() -> None:
         walk = next((w for w in load_toc(args.toc.resolve()) if w.id == args.walk), None)
     except TocError as error:
         raise SystemExit(f"timewalk-notes: {error}") from None
+    if walk is not None and walk.notes is None and walk.folder is not None:
+        walk = dataclasses.replace(walk, notes=walk.folder / "notes.md")   # a walk's folder without notes yet: start them
     if walk is None or walk.kind != "tutorial" or walk.notes is None:
-        raise SystemExit(f"timewalk-notes: {args.walk} is not a tutorial walk with a notes file in {args.toc}")
+        raise SystemExit(f"timewalk-notes: {args.walk} is not a tutorial walk with a notes file or a folder in {args.toc}")
     text, added, drafts = add_move_sections(walk, main_repo)
     if not added:
-        print(f"timewalk-notes: every move has a section in {walk.notes.name}")
+        print(f"timewalk-notes: every step and move has a section in {walk.notes.name}")
         return
     if args.write:
-        walk.notes.write_text(text, encoding="utf-8")
+        crlf = walk.notes.is_file() and b"\r\n" in walk.notes.read_bytes()   # keep a file's Windows line endings
+        walk.notes.write_text(text, encoding="utf-8", newline="\r\n" if crlf else None)
         print(f"timewalk-notes: added {len(added)} sections to {walk.notes}: {', '.join(added)}")
     else:
         print("\n".join(drafts))

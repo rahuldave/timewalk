@@ -55,7 +55,7 @@ The notice gives two commands. Run them in a terminal at the step:
 
 ```
 git show timewalk/saved/step-02                        # see the work
-git checkout timewalk/saved/step-02 -- src/greet.py    # bring one file back
+git restore --source timewalk/saved/step-02 -- src/greet.py   # bring one file back
 ```
 
 The saved branch holds these things, oldest first:
@@ -77,8 +77,9 @@ and the outputs of a run stay on the disk through every move.
 
 The save does not change your files, the index or the stash. The index is the list of changes that the
 next commit holds, which `git add` fills. After the save, the move puts the step in place of your work.
-If a rebase, a cherry-pick or a revert is half done, timewalk ends it, because the work is now on the
-branch.
+If a rebase, `git am`, a cherry-pick or a revert is half done, timewalk ends it, because the work is now on the
+branch. [What timewalk does with git](git.md#how-a-move-keeps-the-learners-work) gives each part of the
+move, in order.
 
 A git repository of its own inside the replay copy cannot go on a branch. If such a folder is in the way,
 timewalk stops the move and names the folder. Move the folder out of the replay copy, and move again.
@@ -95,7 +96,7 @@ So a move with edits asks first.
   the label of the step, for example `timewalk: edits made at step-02`. To bring the edits back, run
   `git stash list` and `git stash pop` in a terminal.
 
-With `--in-place`, an untracked file where the step has a file of the same name stops the move. The
+With `--in-place`, an untracked file in the way stops the move, ignored or not. The
 message names the file. A replay copy that an older version made as a worktree works in the same way. See
 [The replay copy](replay.md#a-replay-copy-from-an-older-version).
 

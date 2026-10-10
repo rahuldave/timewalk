@@ -86,8 +86,8 @@ then happen, in this order:
 
 | Control | What happens | Git, in which folder |
 |---|---|---|
-| A step button, **Left**, **Right**, the step arrows | Finds the untracked files in the way. Keeps the commits, the staged changes, the edits and the files in the way of a learner on a saved branch. Then moves, and tells every window. Every window except the Room window names the branch | `git ls-tree -r`, `git ls-files --others`, `git write-tree` and `git commit-tree` for the staged changes. Then, with a copy of the index, `git add --update`, `git add --force --pathspec-from-file` for the files in the way, `git write-tree` and `git commit-tree`. Then `git branch timewalk/saved/<step>`, and `git reset --hard` and `git checkout -B timewalk/replay <step>`, or `git checkout --force -B timewalk/replay <step>` when files are in the way. All in the replay copy |
-| A move, with `--in-place` | Looks for edits, refuses if an untracked file is in the way, and asks about edits. Then moves | `git status`, `git ls-files --others`, `git ls-tree`, then `git checkout --detach <step>`, in your repository |
+| A step button, **Left**, **Right**, the step arrows | Finds the untracked files in the way. Keeps the commits, the staged changes, the edits and the files in the way of a learner on a saved branch. Then moves, and tells every window. Every window except the Room window names the branch | `git ls-tree -r`, `git ls-files --others`, `git write-tree` and `git commit-tree` for the staged changes. Then, with a copy of the index, `git add --update`, `git update-index --add` for the files in the way, `git write-tree` and `git commit-tree`. Then `git branch timewalk/saved/<step>`. timewalk deletes the files in the way that it kept, and runs `git reset --hard` and `git checkout -B timewalk/replay <step>`, never with `--force`. All in the replay copy. See [What timewalk does with git](git.md#how-a-move-keeps-the-learners-work) |
+| A move, with `--in-place` | Looks for edits, refuses if an untracked file is in the way, and asks about edits. Then moves | `git status`, `git ls-files --others`, `git ls-tree`, then `git checkout --detach <step>`, in your repository. See [With `--in-place`](git.md#with---in-place) |
 | **Set the edits aside and move**, with `--in-place` | Stashes the edits with the name of the step, then moves | `git stash push -m "timewalk: edits made at step-NN"`, in your repository |
 | In a tutorial, **Show ▶**, **⇥ Catch me up**, or a move button in watch mode | Moves to the commit of a move, as a step button does | The same, with the commit of the move |
 | In a tutorial, **Done ✓**, or the button of the next move in do mode | Changes the shared count of moves done. The code does not move | None |
@@ -160,14 +160,15 @@ If a terminal checks out another commit, the replay copy is no longer at a step.
 3. If something is staged, the server makes a commit of the index with `git write-tree` and
    `git commit-tree`. The index is the list of changes that the next commit holds.
 4. The server copies the index to a temporary file. In the copy, it adds the edits with `git add --update`,
-   and the files in the way with `git add --force`. It makes a commit of the copy on top. Your files, your
+   and the files in the way with `git update-index --add`, ignored or not. It makes a commit of the copy on top. Your files, your
    index and your stash do not change.
 5. If a learner has work since the last move, the server puts a saved branch on it,
    `git branch timewalk/saved/<step>`. Work is a commit, a staged change, an edit or a file in the way. If a
-   rebase, a cherry-pick or a revert is half done, the server ends it with `--quit`.
-6. With no files in the way, the server runs `git reset --hard`, and then `git checkout -B timewalk/replay`
-   to the commit of the step. With files in the way, it runs `git checkout --force -B timewalk/replay`,
-   which replaces them.
+   rebase, `git am`, a cherry-pick or a revert is half done, the server ends it with `--quit`.
+6. The server deletes the files in the way, which the saved branch now holds. It runs `git reset --hard`,
+   and then `git checkout -B timewalk/replay` to the commit of the step. It never uses `--force`, so git
+   refuses to overwrite a file that the server did not keep. If the checkout fails, the server puts the
+   kept work back into the files.
 7. The server sets the slide to the one where you left this step. A step that you have not visited starts
    at its first slide. The server then tells every window. Each window then scrolls the slide, the notes and the open
    file to where you left them. It presses Enter in each
@@ -179,7 +180,7 @@ If a terminal checks out another commit, the replay copy is no longer at a step.
 
 With `--in-place`, steps 2 to 6 are different:
 
-1. If an untracked file has the name of a file of the step, the server refuses and names the file.
+1. If an untracked file is in the way of the step, the server refuses and names the file.
 2. The server asks git for edits. If there are edits, and the page did not ask to set them aside, the
    server refuses and names them. The window then asks you.
 3. If the window asked to set the edits aside, the server runs `git stash push` with the name of the step.

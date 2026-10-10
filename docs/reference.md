@@ -86,12 +86,15 @@ timewalk-notes REPO --toc toc.toml --walk ID [--write]
 |---|---|
 | `REPO` | The repository that the class walks through |
 | `--toc` | The table of contents |
-| `--walk` | The `id` of a tutorial walk with a notes file |
+| `--walk` | The `id` of a tutorial walk with a notes file, or with a folder |
 | `--write` | Write the drafts into the notes file. Without it, print only the drafts |
 
 Drafts a `### step-NN.k` section for each move that the notes do not have yet, at the end of its step. A
 draft has the subject of the commit as its title, and a list "What changed:" from the diff. It ends with a
 comment that asks for a command. Sections already in the notes stay as they are.
+
+A step without a section gets a heading `## step-NN Title`, with the first line of its tag's message as
+the title, steps without moves too. A walk whose folder has no `notes.md` yet gets one.
 
 The draft also has a line `files:`, with one item for each file of the commit. A new file gets a `file`
 item, and a changed file a `diff` item. You write the words of each item. The draft has no `show:` lines. See
@@ -136,6 +139,7 @@ In the timewalk folder, `just` lists these:
 | `steps`, `tags` | Some of the steps by name, or a glob for tags of its own |
 | `moves` | In a tutorial: the mode it starts in, `"do"` or `"watch"`. Default: `"do"` |
 | `sync` | In a tutorial: whether the slides and the moves follow each other. Default: `true` |
+| `setup` | `"manual"`: you run `just setup` yourself at each step. The only value for now |
 
 [Several walks](walks.md#the-table-of-contents) lists every key.
 
