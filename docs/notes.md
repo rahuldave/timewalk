@@ -93,7 +93,8 @@ if the notes say that it fails. See [Anchor commands](walks.md#anchor-commands).
 
 ## The notes column
 
-The top of the column shows the name of the step in bold, and the title from the notes. The first line
+The top of the column shows the name of the step in bold, and the title from the notes, on one line. If
+the column is too narrow, the title ends in "...", and a hover over it shows the whole title. The first line
 of the notes says what to do now, in the font of the code, as the status band does. See
 [The status band](page.md#the-status-band).
 
@@ -138,8 +139,8 @@ In a tutorial, the notes column draws a step with moves in sections:
   move already made keeps a grey button that does nothing, **Shown ✓** or **Made ✓**.
 - **↺ Restart step.** Once a move is made, each section of a move made ends with this button, and so does
   the section of the move on show. It goes back to the step's **Start** in every window, with the code of
-  the step before. If the replay copy has edits, the page asks first. With `--discard-edits`, the move drops
-  them. The notes then go to the top, where `just setup` is.
+  the step before. If the replay copy has edits, the move keeps them on a saved branch first. The notes
+  then go to the top, where `just setup` is.
 - **Next step.** When every move is made, the green **Next step** button ends the notes.
 
 See [Moves on the page](walks.md#moves-on-the-page).
@@ -188,8 +189,8 @@ Start timewalk without `--clock`, so that the page has no clock band.
 
 - **Write what to read and what to do.** The slide shows the idea. The notes give the steps.
 - **Put the commands in the order of use.** Also put in commands that undo changes. For example, after a
-  command that changes files, add `git restore .`. Then the next move does not need to ask about edits.
-  With `--discard-edits`, the move discards the edits, and you need no undo command.
+  command that changes files, add `git restore .`. Then the next move has no edits to keep on a saved
+  branch, and the notice about the branch does not show.
 - **Give every step a time** when the plan for the session is clear. Then, with `--clock`, the clock band
   tells you at every step if you are early or late.
 - **Try every command at its step before the class.** A command that worked at the last step can fail at

@@ -48,7 +48,8 @@ Make the history for a class on purpose. These rules give a history that a class
 - **Steps that you leave unfinished on purpose.** Two tests that fail at one step and their fix at the next step
   make a lesson. Say so in the note of the tag.
 - **No tracked run outputs.** Put `.venv`, databases, checkpoints and run folders in the `.gitignore` of
-  the first step. Untracked files, which git does not record, stay the same through every move.
+  the first step. Untracked files, which git does not record, stay the same through every move. A
+  tracked file where an untracked file sits moves the untracked file onto a saved branch.
 
 ## How to change an earlier step
 

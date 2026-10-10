@@ -114,8 +114,8 @@ If the bar has no room for the menu, its buttons move to a second row.
 
 A change of walk moves the replay copy, by the same rules as a move between steps:
 
-- **If the replay copy has edits,** the page asks first. Then it stashes the edits, with the name of the
-  step on show. With `--discard-edits`, the move drops them. See [Live edits](edits.md#moving-with-edits).
+- **If the replay copy has edits,** the move keeps them on a saved branch, named after the step on show,
+  and does not ask. See [Live edits](edits.md#moving-with-edits).
 - **timewalk remembers each walk.** It keeps the step, the move, the slide and the scrolls of each walk.
   When you come back to a walk, the page shows the place where you left it.
 
@@ -254,7 +254,7 @@ In do mode, each move section has these buttons:
 | Button | Does |
 |---|---|
 | **Done ✓** | On the move that the learner works on: marks it done, and goes on to the next move. The code does not move |
-| **⇥ Catch me up** | On the move that the learner works on: checks out the commit at the end of that move, in every window. If the replay copy has edits, the page asks first, and then stashes them. It never discards them |
+| **⇥ Catch me up** | On the move that the learner works on: checks out the commit at the end of that move, in every window. If the replay copy has edits, the move keeps the work of the learner on a saved branch first. It never discards them |
 | **Made ✓** | On a move already made, in place of **Done ✓**. It is grey, and does nothing |
 
 The moves go in order, in both modes. A step starts with `just setup`, so any step is a safe place to
@@ -269,8 +269,8 @@ mode, the reader then shows the change in the tab **Next change**, with an **App
 ![A tutorial in watch mode after Show on the first move: the commit of step-02.1 checked out, the move with a grey Shown button, and the slide of the move](images/tutorial-watch.png)
 
 In watch mode, the next move has a **Show ▶** button. It checks out the commit of that move, in every
-window. If the replay copy has edits, the page asks first, and then stashes them. With `--discard-edits`, the
-move drops the edits. A move already shown has a grey **Shown ✓** button in its place, which does nothing.
+window. If the replay copy has edits, the move keeps them on a saved branch first. A move already shown
+has a grey **Shown ✓** button in its place, which does nothing.
 
 ### Moves on the page
 
@@ -309,8 +309,8 @@ with a bar on its left:
 
 Once a move is made, each section of a move made ends with **↺ Restart step**, and so does the section of
 the move on show. The button goes back to the step's **Start**, in every window, as **Start** does. The
-code goes back to the step before. If the replay copy has edits, the page asks first. With
-`--discard-edits`, the move drops them. Then run `just setup` again.
+code goes back to the step before. If the replay copy has edits, the move keeps them on a saved branch
+first. Then run `just setup` again.
 
 When every move of the step is made, a green **Next step** button ends the notes, with the name of the
 next step. The same button shows in the head of the slides, at the last slide. The Room window does not

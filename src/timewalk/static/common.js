@@ -69,6 +69,7 @@ export function renderMarkdown(text, base = "") {
   for (const img of box.querySelectorAll("img")) {
     const src = img.getAttribute("src") || "";
     if (!/^(https?:|data:|\/)/.test(src)) img.setAttribute("src", base + src);
+    if (/\.svg([?#]|$)/i.test(src)) img.classList.add("svg");   // a drawing: the dark theme inverts it
   }
   for (const link of box.querySelectorAll("a[href]")) { link.target = "_blank"; link.rel = "noopener"; }
   if (window.hljs) for (const code of box.querySelectorAll("pre code")) {
@@ -191,6 +192,7 @@ export async function drawSlide(container, entry, { command = null } = {}) {
     const img = document.createElement("img");
     img.src = url;
     img.alt = path;
+    if (ext === "svg") img.classList.add("svg");   // a drawing: the dark theme inverts it
     container.append(img);
     await img.decode().catch(() => {});
   } else {

@@ -207,7 +207,7 @@ function drawMoves() {
   const edited = (ui.tree?.edits || ui.state.edits || []).length;
   subject.textContent = reached >= moves.length ? "Every move is made"
     : `Next: ${moves[reached].name}, ${moves[reached].subject.replace(/^[^:]*:\s*/, "")}`
-      + (watch && edited ? ". Your edits will be set aside at the next Show" : "");
+      + (watch && edited ? ". Your edits will be kept on a branch at the next Show" : "");
   row.replaceChildren(label, back, ...buttons, forward, subject);
 }
 
@@ -279,7 +279,7 @@ function nextMove() {
   return ui.state.mode === "watch" ? goMove(reached + 1) : markDone(reached + 1);
 }
 
-/** Back to the step's Start: the code goes back to the step before, edits are asked about, and just setup is the next thing. */
+/** Back to the step's Start: the code goes back to the step before, edits are kept on a branch, and just setup is the next thing. */
 function toStart() {
   return goMove(0);   // the notes' hint at the Start says to run just setup
 }
@@ -353,6 +353,26 @@ function showNotice(message, isError = false) {
 }
 
 function hideNotice() { $("notice").hidden = true; }
+
+/** After a move that kept the learner's work on a branch: say where, and how to get it back. Not in the Room window. */
+function showKept(branches) {
+  if (ROOM) return;
+  const name = branches[0];   // the server names the branch with the edits first
+  const notice = $("notice");
+  notice.className = "notice";
+  // A command keeps one line: it is in the font of the code, and does not break at its spaces.
+  const code = (text) => Object.assign(document.createElement("code"), { textContent: text, className: "nowrap" });
+  const text = document.createElement("span");   // one item of the notice's row, so that it wraps as a sentence
+  text.append(`Your work is kept on ${branches.length > 1 ? "the branches" : "the branch"} `, ...branches.flatMap(
+    (branch, i) => [...(i ? [", "] : []), code(branch)]), ". To see it: ", code(`git show ${name}`), ". To bring a file back: ",
+  code(`git checkout ${name} -- <file>`), ".");
+  notice.replaceChildren(text);
+  notice.hidden = false;
+  const close = document.createElement("button");
+  close.textContent = "\u2715 Close";
+  close.onclick = hideNotice;
+  notice.append(close);
+}
 
 // ---------- slides ----------
 
@@ -1251,6 +1271,7 @@ function drawNotes() {
     const name = document.createElement("strong");
     name.textContent = here.name;
     title.append(name, " " + (mine?.title || here.subject));
+    title.title = `${here.name} ${mine?.title || here.subject}`;   // the whole title, when the column cuts it
   } else title.textContent = "between steps";
   $("notes-edit").hidden = !!ui.editing || !here;
   // The prose and the commands, in the order of the notes file: each command is a button where it is written.
@@ -1344,7 +1365,7 @@ function drawNotes() {
         if (!watch && number <= reached) action("Made \u2713", `${part.name} is made. To go back, press Restart step`, null);
         if (watch && number === reached + 1) action("Show \u25B6", `Check out ${part.name}'s commit, in every window`, () => goMove(number), true);
         if (!watch && state === "here") action("Done \u2713", "I made this move: go to the next", () => markDone(number), true);
-        if (!watch && state === "here") action("\u21E5 Catch me up", `Set the code to the end of ${part.name}. Your edits are asked about first, and kept`, () => goMove(number));
+        if (!watch && state === "here") action("\u21E5 Catch me up", `Set the code to the end of ${part.name}. Your own try is kept on a branch, timewalk/saved/<place>`, () => goMove(number));
         if (state === "later") {
           const after = document.createElement("span");
           after.className = "p-after";
@@ -1640,7 +1661,7 @@ window.timewalkPicture = (id) => {
 };
 const events = onEvents(async (event) => {
   if (event.type === "walk") ui.excerpts.clear();   // another walk may have steps of the same names
-  if (event.type === "moved" || event.type === "walk") { hideNotice(); await refresh(); }
+  if (event.type === "moved" || event.type === "walk") { hideNotice(); await refresh(); if (event.kept?.length) showKept(event.kept); }
   if (event.type === "refused") { showNotice("timewalk refused this window. If it restarted, open the new address that it printed.", true); return; }
   if (event.type === "reconnected") {
     // The server came back, or the network did: look again, and open the terminals whose sockets closed.

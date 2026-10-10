@@ -74,7 +74,7 @@ present *args: setup
     set -euo pipefail
     slides=()
     if [ -f slides/slides.toml ]; then slides=(--slides slides/slides.toml); fi
-    uvx --from "{{ timewalk }}" timewalk repo --replay worktree --notes walk.md ${slides[@]+"${slides[@]}"} --discard-edits {{ args }}
+    uvx --from "{{ timewalk }}" timewalk repo --replay worktree --notes walk.md ${slides[@]+"${slides[@]}"} {{ args }}
 
 # Clone the project into repo/: your own fork if you have one, or else the upstream. Then fetch the tags of the steps
 setup url="":
@@ -155,10 +155,10 @@ A student saves two kinds of work, in two places.
 - **Code.** The **Main** tab is a terminal in `repo/`, on the `main` branch of the project. A move never
   touches `repo/`. The student commits there, and pushes to their own fork of the project.
 
-The terminals **At this step** and **Runs** work in `worktree/`, the replay copy. The kit starts timewalk
-with `--discard-edits`, so a move throws away the edits there. Use those terminals to run the step, and not to
-keep work. A commit made there stays in the replay copy, on a saved branch. See
-[The replay copy](replay.md#commits-that-a-learner-makes).
+The terminals **At this step** and **Runs** work in `worktree/`, the replay copy. A move keeps the edits
+and the commits made there on a saved branch in the replay copy. The window of the student then says how
+to get them back. Use those terminals to run the step, and not to keep work. See
+[The replay copy](replay.md#saved-branches).
 
 ## Keep the kit up to date
 

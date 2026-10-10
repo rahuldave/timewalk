@@ -65,10 +65,11 @@ Keep the notes file outside the repository. timewalk refuses a notes file inside
 - **It never moves it, and never writes to it.** timewalk moves a second working copy, `<repo>-replay`, which
   is a git clone on the branch `timewalk/replay`. What a learner commits there stays there, and a move keeps it
   on a saved branch.
-- **It never deletes an untracked file**, so the outputs of a run stay through every move.
-- **It never discards an edit.** A move with edits asks, and then stashes them. The one exception is the
-  flag `--discard-edits`, for a replay copy where you keep nothing that you type. With it, a move throws
-  edits away and does not ask. It replaces a new file only where the step has a file of the same name.
+- **It never loses an untracked file**, so the outputs of a run stay through every move. If a step has a
+  file where an untracked file sits, the move keeps the untracked file on a saved branch first.
+- **It never loses an edit, and a move never asks.** Before a move, timewalk keeps the edits on a branch
+  `timewalk/saved/<step>` in the replay copy, and the page says how to get them back. With `--in-place`,
+  a move with edits asks, and then stashes them.
 - **The file view cannot write.** The page writes only the notes file, which lives outside the
   repository.
 

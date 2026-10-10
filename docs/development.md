@@ -25,8 +25,8 @@ just lint            # ruff
 The tests build small repositories of their own. They check that timewalk never does these things:
 
 - move the repository that you give it
-- delete an untracked file
-- discard an edit, if `--discard-edits` does not ask for it
+- lose an untracked file, an edit or a commit of a learner
+- ask about edits in a replay copy, or move with `--in-place` without asking
 - write through the file view
 - answer a request without the token
 

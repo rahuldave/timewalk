@@ -194,30 +194,30 @@ def shoot(browser, base: str, repo: timewalk.Repo) -> None:
     save("edits-tree", ".tree-pane")
     open_file("greet.py", "edits")
     save("edits")
-    # Moving with edits asks first.
+    # With --in-place, a move with edits asks first. The repository here is a replay clone, so for this one picture it
+    # stands in for one in place: with no branch of its own, the move refuses and the page asks. Stay here moves nothing.
+    branch, repo.branch = repo.branch, None
     page.locator("#file-body").click()
     page.keyboard.press("ArrowRight")
     page.wait_for_selector("#notice:not([hidden])")
     page.wait_for_timeout(300)
     save("move-with-edits", "#notice")
     page.locator("#notice button", has_text="Stay here").click()
-    page.locator("#terms .term:not([hidden])").click()
-    typed("git restore .", 1500)
+    repo.branch = branch
 
-    # From here on, as `just demo` runs: --discard-edits. The step bar warns, and a move drops the edits without asking.
-    repo.discard = True
-    page.reload()
-    page.wait_for_selector("#step-list button")
-    page.wait_for_timeout(1500)
-    page.locator("#terms .term:not([hidden])").click()
-    typed("clear; uvx ruff format", 4000)
-    page.wait_for_selector("#mode.warn")
-    save("discard-warning", ".bar")
+    # In the replay clone, a move with edits does not ask. It keeps the edits on a saved branch, and the window says where.
     page.locator("#file-body").click()
     page.keyboard.press("ArrowRight")
     page.wait_for_function(f"document.getElementById('step-name').textContent === {repo.steps[3].name!r}")
-    page.wait_for_timeout(1200)
-    save("discard-moved", ".bar")
+    page.wait_for_selector("#notice:not([hidden]) button")
+    page.wait_for_timeout(800)
+    page.evaluate("document.activeElement && document.activeElement.blur()")
+    page.mouse.move(2, 2)
+    top = page.locator("header.bar").bounding_box()
+    notice = page.locator("#notice").bounding_box()
+    page.screenshot(path=str(OUT / "kept-work.png"), clip={"x": 0, "y": top["y"], "width": max(top["x"] + top["width"], notice["x"] + notice["width"]),
+                                                         "height": notice["y"] + notice["height"] - top["y"]})
+    page.locator("#notice button", has_text="Close").click()
 
     # A document instead of slides.
     at(3)

@@ -49,7 +49,7 @@ have `just`, run the commands of the recipe yourself:
 
 ```
 git submodule update --init demo/timewalk-demo
-uv run timewalk demo/timewalk-demo --notes demo/notes.md --slides demo/slides/slides.toml --discard-edits --clock
+uv run timewalk demo/timewalk-demo --notes demo/notes.md --slides demo/slides/slides.toml --clock
 ```
 
 timewalk prints the address of the page:

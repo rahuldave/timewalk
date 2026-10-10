@@ -31,7 +31,7 @@ timewalk [repo] [options]
 | `--in-place` | Move your repository itself instead of the replay copy |
 | `--host ADDRESS` | The address to listen on. Default: `127.0.0.1`, this machine only. `0.0.0.0` listens on every network, for a cloud machine; timewalk then prints a warning, and accepts every host name. See [Safety](safety.md#run-timewalk-on-a-cloud-machine) |
 | `--clock` | Show the clock band on the page, in every window. The band shows the clock, the planned times and the next step. Off by default |
-| `--discard-edits` | A move drops edits to tracked files, and does not ask or stash them first. Use it for a replay copy that you throw away. timewalk refuses it with `--in-place`. See [Live edits](edits.md#with---discard-edits) |
+| `--discard-edits` | No longer needed. A move keeps edits on a saved branch, `timewalk/saved/<step>`, and does not ask. With a replay copy that is a clone, timewalk prints a line that says so. Only on a replay copy that an older version made as a worktree does a move still drop edits with it. timewalk refuses it with `--in-place`. See [Live edits](edits.md#with---discard-edits) |
 | `--assistant CMD` | The command the Claude tab starts. Default: `claude`. `''` for a plain shell |
 | `--port N` | The port to listen on. Default: 8765. If another program listens on the port, timewalk stops and says so. Then give another port. A timewalk that you just stopped does not block the port |
 | `--no-open` | Do not open the browser |
@@ -103,7 +103,7 @@ In the timewalk folder, `just` lists these:
 
 | Recipe | Does |
 |---|---|
-| `just demo` | Fetch the demo submodule if needed. Then open it with its notes and slides, with `--discard-edits` and `--clock` |
+| `just demo` | Fetch the demo submodule if needed. Then open it with its notes and slides, with `--clock` |
 | `just demo-walks` | The same, with the two walks of `demo/toc.toml` |
 | `just walk REPO ...` | Run timewalk on a repository. More arguments go to timewalk |
 | `just pdf MANIFEST ...` | Make a PDF of every slide in a manifest |

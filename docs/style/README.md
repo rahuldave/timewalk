@@ -21,6 +21,10 @@ Keep the text of these headings. A link from another page uses each one as an an
 |---|---|
 | edits.md | Moving with edits |
 | edits.md | With `--discard-edits` |
+| edits.md | With `--in-place` |
+| replay.md | Saved branches |
+| replay.md | A replay copy from an older version |
+| slides.md | Pictures in the dark theme |
 | slides.md | A document instead of slides |
 | slides.md | The manifest |
 | terminals.md | A long command and a move |
@@ -66,7 +70,9 @@ only that page could not know it.
 | a window | One browser window on the page, for example a window on the projector or on your own screen. The windows share the step |
 | the presenter | The person who presents. Use "you" when the page speaks to the reader |
 | the replay copy | The second working copy, `<repo>-replay`, a clone of your repository on the branch `timewalk/replay` |
-| saved branch | A branch `timewalk/saved/<step or move>` in the replay copy, where a move keeps the commits of a learner |
+| saved branch | A branch `timewalk/saved/<step or move>` in the replay copy, where a move keeps the work of a learner: commits, staged changes, edits and untracked files in the way |
+| in the way | An untracked file that a move would replace or delete: the step has a file of its name, a folder of its name, or a file where its path has a folder |
+| index | What `git add` stages: the list of changes that the next commit holds |
 | your repository | The repository that you give to timewalk |
 | the class folder | The folder with the notes and the slides |
 | the step bar | The row of step buttons at the top of the page |

@@ -233,8 +233,9 @@ def test_read_skips_binary_and_large_files(repo: timewalk.Repo) -> None:
 # ---------- edits and run outputs are never lost ----------
 
 
-def test_edits_block_a_move(repo: timewalk.Repo) -> None:
-    "Uncommitted edits to tracked files stop a move, and the working copy stays where it was."
+def test_edits_block_a_move_in_place(sample: Path) -> None:
+    "In place, uncommitted edits to tracked files stop a move, and the working copy stays where it was."
+    repo = timewalk.Repo(sample, in_place=True)
     repo.move(1)
     (repo.work / "src" / "greet.py").write_text("edited\n")
     assert repo.edits() == ["src/greet.py"]
@@ -244,8 +245,9 @@ def test_edits_block_a_move(repo: timewalk.Repo) -> None:
     assert (repo.work / "src" / "greet.py").read_text() == "edited\n"
 
 
-def test_edits_are_set_aside_not_discarded(repo: timewalk.Repo) -> None:
-    "Asked to, a move stashes the edits under a name that says where they were made."
+def test_edits_are_set_aside_in_place_not_discarded(sample: Path) -> None:
+    "In place, asked to, a move stashes the edits under a name that says where they were made."
+    repo = timewalk.Repo(sample, in_place=True)
     repo.move(1)
     (repo.work / "src" / "greet.py").write_text("edited\n")
     repo.move(2, set_aside=True)
@@ -255,20 +257,317 @@ def test_edits_are_set_aside_not_discarded(repo: timewalk.Repo) -> None:
     assert "edited" in run_git(repo.work, "stash", "show", "--patch", "stash@{0}")
 
 
-def test_discard_throws_edits_away_and_replaces_only_the_files_the_step_has(sample: Path) -> None:
-    "With --discard-edits a move never asks: edits go, a new file the step has is replaced, any other new file stays."
-    repo = timewalk.Repo(sample, discard=True)
+def test_a_move_keeps_edits_and_a_file_in_the_way_on_a_saved_branch(repo: timewalk.Repo) -> None:
+    "A replay clone never asks: the edits and a new file the step has go on timewalk/saved/<place>, then the move goes on."
     repo.move(1)
     (repo.work / "src" / "greet.py").write_text("edited\n")
     (repo.work / "tests").mkdir()
     (repo.work / "tests" / "test_greet.py").write_text("mine\n")  # step-02 has this file
     (repo.work / "scratch.txt").write_text("keep\n")  # no step has this one
     repo.move(2)
-    assert repo.current() == 2
-    assert repo.edits() == []
-    assert "edited" not in (repo.work / "src" / "greet.py").read_text()
+    assert repo.current() == 2 and repo.edits() == []
     assert (repo.work / "tests" / "test_greet.py").read_text() == "def test_it():\n    assert True\n"
-    assert (repo.work / "scratch.txt").read_text() == "keep\n"
+    assert (repo.work / "scratch.txt").read_text() == "keep\n", "an untracked file that nothing replaces stays"
+    assert repo.kept == ["timewalk/saved/step-01"]
+    assert run_git(repo.work, "show", "timewalk/saved/step-01:src/greet.py") == "edited"
+    assert run_git(repo.work, "show", "timewalk/saved/step-01:tests/test_greet.py") == "mine"
+    assert "scratch.txt" not in run_git(repo.work, "ls-tree", "-r", "--name-only", "timewalk/saved/step-01"), "a file nothing replaces stays on disk"
+    assert run_git(repo.work, "rev-parse", "timewalk/saved/step-01^") == repo.steps[1].sha, "on top of the step it was made at"
+    assert "your edits, kept by timewalk before the move to step-02" in run_git(repo.work, "log", "-1", "--format=%s", "timewalk/saved/step-01")
+    assert run_git(repo.work, "stash", "list") == ""
+
+
+def two_steps(
+    tmp_path: Path,  # pytest's temporary directory
+    before: dict[str, str],  # The files of step-00, by path
+    after: dict[str, str],  # The files of step-01, by path; a path missing here is deleted
+) -> timewalk.Repo:  # The repository, opened in a replay clone at step-00
+    "Build a repository of two tagged steps with the given files, for the cases of a file in the way."
+    main = tmp_path / "two"
+    main.mkdir()
+    run_git(main, "init", "--quiet", "--initial-branch", "main")
+    run_git(main, "config", "user.name", "test")
+    run_git(main, "config", "user.email", "test@example.invalid")
+    for tag, files in (("step-00", before), ("step-01", after)):
+        for old in run_git(main, "ls-files").splitlines():
+            if old not in files:
+                run_git(main, "rm", "--quiet", old)
+        for path, text in files.items():
+            (main / path).parent.mkdir(parents=True, exist_ok=True)
+            (main / path).write_text(text)
+        run_git(main, "add", "--all")
+        run_git(main, "add", "--force", "--", *files)   # a step may track a file that .gitignore names
+        run_git(main, "commit", "--quiet", "-m", f"{tag}: files")
+        run_git(main, "tag", "-a", tag, "-m", tag)
+    repo = timewalk.Repo(main)
+    repo.move(0)
+    return repo
+
+
+def kept_file(repo: timewalk.Repo, path: str) -> str:
+    "The text of a file on the branch that the last move kept the work on."
+    return run_git(repo.work, "show", f"{repo.kept[0]}:{path}")
+
+
+def test_a_folder_where_the_step_has_a_file_is_kept(tmp_path: Path) -> None:
+    "The learner's untracked tests/x.py, where step-01 has a file named tests: kept on the branch, then replaced."
+    repo = two_steps(tmp_path, {"a.txt": "a\n"}, {"a.txt": "a\n", "tests": "a file\n"})
+    (repo.work / "tests").mkdir()
+    (repo.work / "tests" / "x.py").write_text("mine\n")
+    repo.move(1)
+    assert (repo.work / "tests").read_text() == "a file\n" and kept_file(repo, "tests/x.py") == "mine"
+
+
+def test_a_file_where_the_step_has_a_folder_is_kept(tmp_path: Path) -> None:
+    "The learner's untracked file data, where step-01 has data/x.csv: kept, then replaced by the folder."
+    repo = two_steps(tmp_path, {"a.txt": "a\n"}, {"a.txt": "a\n", "data/x.csv": "1,2\n"})
+    (repo.work / "data").write_text("mine\n")
+    repo.move(1)
+    assert (repo.work / "data" / "x.csv").read_text() == "1,2\n" and kept_file(repo, "data") == "mine"
+
+
+def test_an_ignored_folder_where_the_step_has_a_file_is_kept(tmp_path: Path) -> None:
+    "An ignored runs/ folder, where step-01 has a file runs: git would delete it without a word; it is kept first."
+    repo = two_steps(tmp_path, {".gitignore": "runs\n"}, {".gitignore": "runs\n", "runs": "a file\n"})
+    (repo.work / "runs").mkdir()
+    (repo.work / "runs" / "out.bin").write_text("weights\n")
+    repo.move(1)
+    assert kept_file(repo, "runs/out.bin") == "weights"
+
+
+def test_a_name_that_differs_only_in_case_is_kept_where_git_ignores_case(tmp_path: Path) -> None:
+    "On a Mac, README.MD and readme.md are one file: the learner's untracked README.MD is kept before step-01's readme.md lands."
+    repo = two_steps(tmp_path, {"a.txt": "a\n"}, {"a.txt": "a\n", "readme.md": "the step's\n"})
+    run_git(repo.work, "config", "core.ignorecase", "true")
+    (repo.work / "README.MD").write_text("mine\n")
+    repo.move(1)
+    assert repo.kept and "mine" in kept_file(repo, "README.MD")
+
+
+def test_a_repository_of_its_own_in_the_way_stops_the_move(tmp_path: Path) -> None:
+    "A git repository the learner made inside the copy cannot be kept on a branch: where the step has files, the move refuses."
+    repo = two_steps(tmp_path, {"a.txt": "a\n"}, {"a.txt": "a\n", "lib/x.py": "the step's\n"})
+    (repo.work / "lib").mkdir()
+    run_git(repo.work / "lib", "init", "--quiet")
+    (repo.work / "lib" / "x.py").write_text("mine\n")
+    with pytest.raises(timewalk.GitError, match="lib is a git repository of its own"):
+        repo.move(1)
+    assert (repo.work / "lib" / "x.py").read_text() == "mine\n" and repo.current() == 0
+
+
+def test_what_was_staged_is_kept_under_the_edits(tmp_path: Path) -> None:
+    "A file staged, then edited again: the staged text is one commit, the edited text another on top of it."
+    repo = two_steps(tmp_path, {"a.txt": "a\n"}, {"a.txt": "b\n"})
+    (repo.work / "a.txt").write_text("staged\n")
+    run_git(repo.work, "add", "a.txt")
+    (repo.work / "a.txt").write_text("edited\n")
+    repo.move(1)
+    assert kept_file(repo, "a.txt") == "edited"
+    assert run_git(repo.work, "show", f"{repo.kept[0]}~1:a.txt") == "staged"
+
+
+def test_a_name_with_brackets_is_a_name_not_a_pattern(tmp_path: Path) -> None:
+    "An ignored file x[1].out in the way is kept; the unrelated ignored x1.out is not, though x[1] would match it as a pattern."
+    repo = two_steps(tmp_path, {".gitignore": "*.out\n"}, {".gitignore": "*.out\n", "x[1].out": "the step's\n"})
+    (repo.work / "x[1].out").write_text("mine\n")
+    (repo.work / "x1.out").write_text("other\n")
+    repo.move(1)
+    names = run_git(repo.work, "ls-tree", "-r", "--name-only", repo.kept[0]).splitlines()
+    assert "x[1].out" in names and "x1.out" not in names
+
+
+def test_an_unreadable_file_that_nothing_replaces_does_not_stop_a_move(tmp_path: Path) -> None:
+    "A file no one can read, which no step has, is not kept and does not stop a move with edits."
+    repo = two_steps(tmp_path, {"a.txt": "a\n"}, {"a.txt": "b\n"})
+    secret = repo.work / "secret.txt"
+    secret.write_text("x\n")
+    secret.chmod(0)
+    (repo.work / "a.txt").write_text("edited\n")
+    try:
+        repo.move(1)
+        assert kept_file(repo, "a.txt") == "edited"
+    finally:
+        secret.chmod(0o644)
+
+
+def test_a_rebase_left_half_done_is_ended_once_the_work_is_kept(tmp_path: Path) -> None:
+    "A learner's rebase stopped on a conflict: the move keeps the work, and git no longer thinks the rebase goes on."
+    repo = two_steps(tmp_path, {"a.txt": "a\n"}, {"a.txt": "b\n"})
+    run_git(repo.work, "-c", "user.name=t", "-c", "user.email=t@e", "switch", "--quiet", "-c", "side")
+    (repo.work / "a.txt").write_text("side\n")
+    run_git(repo.work, "-c", "user.name=t", "-c", "user.email=t@e", "commit", "--quiet", "-am", "side")
+    subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@e", "rebase", "--quiet", "step-01"], cwd=repo.work, capture_output=True)
+    git_dir = Path(run_git(repo.work, "rev-parse", "--absolute-git-dir"))
+    assert (git_dir / "rebase-merge").exists() or (git_dir / "rebase-apply").exists()
+    repo.move(1)
+    assert not (git_dir / "rebase-merge").exists() and not (git_dir / "rebase-apply").exists()
+    assert repo.current() == 1 and repo.edits() == []
+
+
+def test_a_file_untracked_by_the_learner_is_kept_when_the_move_goes_back(tmp_path: Path) -> None:
+    "git rm --cached notes.txt, an edit, then back to a step without it: reset --hard would have deleted it; it is kept."
+    repo = two_steps(tmp_path, {"a.txt": "a\n"}, {"a.txt": "a\n", "notes.txt": "the step's\n"})
+    repo.move(1)
+    run_git(repo.work, "rm", "--cached", "--quiet", "notes.txt")
+    (repo.work / "notes.txt").write_text("mine\n")
+    repo.move(0)
+    assert repo.current() == 0 and kept_file(repo, "notes.txt") == "mine"
+
+
+def test_a_folder_of_the_step_left_replaced_by_a_file_is_kept(tmp_path: Path) -> None:
+    "The step left has a folder data/; the learner deleted it and made a file data. The file is kept, whatever the step entered."
+    repo = two_steps(tmp_path, {"a.txt": "a\n"}, {"a.txt": "a\n", "data/x.csv": "1\n"})
+    repo.move(1)
+    run_git(repo.work, "rm", "-r", "--quiet", "data")
+    (repo.work / "data").write_text("mine\n")
+    repo.move(0)
+    assert repo.current() == 0 and kept_file(repo, "data") == "mine"
+
+
+def test_an_edit_hidden_by_assume_unchanged_is_kept(tmp_path: Path) -> None:
+    "An edit to a file marked assume-unchanged, which git status does not show, is kept all the same."
+    repo = two_steps(tmp_path, {"a.txt": "a\n", "b.txt": "b\n"}, {"a.txt": "a\n", "b.txt": "two\n"})
+    run_git(repo.work, "update-index", "--assume-unchanged", "a.txt")
+    (repo.work / "a.txt").write_text("hidden edit\n")
+    repo.move(1)
+    assert repo.current() == 1 and kept_file(repo, "a.txt") == "hidden edit"
+
+
+def test_staged_work_in_a_merge_stopped_on_a_conflict_is_kept(tmp_path: Path) -> None:
+    "In a merge stopped on a conflict, a file staged and then edited again: both its texts are kept, and the conflicted file too."
+    repo = two_steps(tmp_path, {"a.txt": "a\n", "b.txt": "b\n"}, {"a.txt": "theirs\n", "b.txt": "b\n"})
+    who = ["-c", "user.name=t", "-c", "user.email=t@e"]
+    run_git(repo.work, *who, "switch", "--quiet", "-c", "side")
+    (repo.work / "a.txt").write_text("ours\n")
+    run_git(repo.work, *who, "commit", "--quiet", "-am", "ours")
+    subprocess.run(["git", *who, "merge", "--quiet", "step-01"], cwd=repo.work, capture_output=True)
+    (repo.work / "b.txt").write_text("staged\n")
+    run_git(repo.work, "add", "b.txt")
+    (repo.work / "b.txt").write_text("edited\n")
+    repo.move(1)
+    assert kept_file(repo, "b.txt") == "edited" and "<<<<<<<" in kept_file(repo, "a.txt")
+    assert run_git(repo.work, "show", f"{repo.kept[0]}~1:b.txt") == "staged"
+
+
+def test_a_file_the_check_misses_stops_the_move_and_the_work_comes_back(tmp_path: Path, monkeypatch) -> None:
+    "The checkout is never forced: if the check of what is in the way missed a file, git refuses, the file stays, the edits come back."
+    repo = two_steps(tmp_path, {"a.txt": "a\n"}, {"a.txt": "b\n", "new.txt": "the step's\n"})
+    (repo.work / "new.txt").write_text("mine\n")
+    (repo.work / "a.txt").write_text("edited\n")
+    monkeypatch.setattr(repo, "in_the_way", lambda *commits: ([], []))   # as if the check had missed new.txt
+    with pytest.raises(timewalk.GitError, match="The move stopped; your work is kept on timewalk/saved/step-00, and is back in your files"):
+        repo.move(1)
+    assert (repo.work / "new.txt").read_text() == "mine\n" and (repo.work / "a.txt").read_text() == "edited\n"
+
+
+def test_a_locked_index_stops_the_move_before_anything_is_saved(tmp_path: Path) -> None:
+    "An index.lock that stays: the move refuses at once, saves nothing, and touches nothing."
+    repo = two_steps(tmp_path, {"a.txt": "a\n"}, {"a.txt": "b\n"})
+    (repo.work / "a.txt").write_text("edited\n")
+    lock = Path(run_git(repo.work, "rev-parse", "--absolute-git-dir")) / "index.lock"
+    lock.write_text("")
+    with pytest.raises(timewalk.GitError, match="another git is using the replay copy"):
+        repo.move(1)
+    lock.unlink()
+    assert run_git(repo.work, "branch", "--list", "timewalk/saved/*") == "" and (repo.work / "a.txt").read_text() == "edited\n"
+
+
+def test_an_edit_hidden_by_skip_worktree_is_kept(tmp_path: Path) -> None:
+    "An edit to a file marked skip-worktree is kept, and the move goes on instead of failing on it."
+    repo = two_steps(tmp_path, {"a.txt": "a\n", "b.txt": "b\n"}, {"a.txt": "a\n", "b.txt": "two\n"})
+    run_git(repo.work, "update-index", "--skip-worktree", "a.txt")
+    (repo.work / "a.txt").write_text("hidden edit\n")
+    repo.move(1)
+    assert repo.current() == 1 and kept_file(repo, "a.txt") == "hidden edit"
+
+
+def test_a_repository_made_where_a_tracked_file_was_stops_the_move(tmp_path: Path) -> None:
+    "The learner deletes the tracked file tool and makes a git repository there: git lists nothing in it, yet the move refuses."
+    repo = two_steps(tmp_path, {"a.txt": "a\n", "tool": "a file\n"}, {"a.txt": "b\n", "tool": "a file\n"})
+    (repo.work / "tool").unlink()
+    (repo.work / "tool").mkdir()
+    run_git(repo.work / "tool", "init", "--quiet")
+    (repo.work / "tool" / "work.py").write_text("mine\n")
+    with pytest.raises(timewalk.GitError, match="tool is a git repository of its own"):
+        repo.move(1)
+    assert (repo.work / "tool" / "work.py").read_text() == "mine\n"
+
+
+def test_in_place_a_folder_where_the_step_left_has_a_file_stops_the_move(sample: Path) -> None:
+    "In place, a stash would put the step's file back and delete the learner's folder in its place: the move refuses."
+    repo = timewalk.Repo(sample, in_place=True)
+    repo.move(1)
+    (repo.work / "justfile").unlink()
+    (repo.work / "justfile").mkdir()
+    (repo.work / "justfile" / "mine.txt").write_text("mine\n")
+    with pytest.raises(timewalk.GitError, match="will not be overwritten: justfile"):
+        repo.move(0, set_aside=True)
+    assert (repo.work / "justfile" / "mine.txt").read_text() == "mine\n"
+
+
+def test_a_file_that_cannot_be_removed_stops_the_move_with_a_message(tmp_path: Path) -> None:
+    "An ignored folder in the way with a read-only folder inside: the move stops with a message that names the kept branch."
+    repo = two_steps(tmp_path, {".gitignore": "out\n"}, {".gitignore": "out\n", "out": "a file\n"})
+    (repo.work / "out" / "locked").mkdir(parents=True)
+    (repo.work / "out" / "locked" / "z").write_text("z\n")
+    (repo.work / "out" / "locked").chmod(0o555)
+    try:
+        with pytest.raises(timewalk.GitError, match="The move stopped; your work is kept on timewalk/saved/step-00"):
+            repo.move(1)
+        assert (repo.work / "out" / "locked" / "z").read_text() == "z\n"
+    finally:
+        (repo.work / "out" / "locked").chmod(0o755)
+
+
+def test_a_move_with_nothing_to_keep_makes_no_branch(repo: timewalk.Repo) -> None:
+    "No edits, and no file in the way: nothing is saved, even with an untracked file that stays."
+    repo.move(1)
+    (repo.work / "scratch.txt").write_text("keep\n")
+    repo.move(2)
+    assert repo.kept == [] and run_git(repo.work, "branch", "--list", "timewalk/saved/*") == ""
+
+
+def test_an_ignored_file_is_saved_only_when_the_move_replaces_it(repo: timewalk.Repo) -> None:
+    "An ignored file in the way of the step's file is kept on the branch; other ignored files are neither saved nor touched."
+    repo.move(1)
+    exclude = Path(run_git(repo.work, "rev-parse", "--git-path", "info/exclude"))
+    exclude = exclude if exclude.is_absolute() else repo.work / exclude
+    exclude.parent.mkdir(parents=True, exist_ok=True)
+    exclude.write_text("tests/\n*.db\n")
+    (repo.work / "tests").mkdir()
+    (repo.work / "tests" / "test_greet.py").write_text("mine, ignored\n")  # step-02 has this file
+    (repo.work / "runs.db").write_text("a store")
+    repo.move(2)
+    assert run_git(repo.work, "show", "timewalk/saved/step-01:tests/test_greet.py") == "mine, ignored"
+    assert "runs.db" not in run_git(repo.work, "ls-tree", "-r", "--name-only", "timewalk/saved/step-01")
+    assert (repo.work / "runs.db").read_text() == "a store"
+
+
+def test_a_learners_commits_and_edits_go_on_one_branch(repo: timewalk.Repo) -> None:
+    "A commit the learner made, then an edit: one saved branch holds both, the edit on top."
+    repo.move(1)
+    (repo.work / "README.md").write_text("committed\n")
+    run_git(repo.work, "commit", "-qam", "mine")
+    (repo.work / "src" / "greet.py").write_text("edited\n")
+    repo.move(3)
+    assert repo.kept == ["timewalk/saved/step-01"]
+    assert run_git(repo.work, "log", "--format=%s", "-2", "timewalk/saved/step-01").splitlines()[1] == "mine"
+    repo.move(1)
+    (repo.work / "src" / "greet.py").write_text("again\n")
+    repo.move(2)
+    assert repo.kept == ["timewalk/saved/step-01-2"], "a second save at the same place gets a name of its own"
+
+
+def test_discard_throws_edits_away_in_a_worktree_of_an_older_version(sample: Path, tmp_path: Path) -> None:
+    "Only a replay worktree made by an older version still throws edits away with --discard-edits."
+    worktree = tmp_path / "sample-replay"
+    run_git(sample, "worktree", "add", "--detach", "--quiet", str(worktree), "step-00")
+    repo = timewalk.Repo(sample, discard=True)
+    assert repo.branch is None
+    repo.move(1)
+    (repo.work / "src" / "greet.py").write_text("edited\n")
+    repo.move(2)
+    assert repo.edits() == [] and repo.kept == []
     assert run_git(repo.work, "stash", "list") == ""
 
 
@@ -340,8 +639,10 @@ def test_the_watcher_announces_edits(repo: timewalk.Repo) -> None:
     assert asyncio.run(asyncio.wait_for(scenario(), timeout=10)) == [{"type": "edits"}]
 
 
-def test_an_untracked_file_is_never_overwritten(repo: timewalk.Repo) -> None:
-    "If a later step has a file where an untracked one sits, the move is refused and the file kept."
+def test_an_untracked_file_is_never_overwritten_in_place(sample: Path) -> None:
+    "In place, if a later step has a file where an untracked one sits, the move is refused and the file kept."
+    repo = timewalk.Repo(sample, in_place=True)
+    repo.move(0)
     (repo.work / "justfile").write_text("mine\n")
     with pytest.raises(timewalk.GitError, match="will not be overwritten: justfile"):
         repo.move(1)
@@ -350,8 +651,9 @@ def test_an_untracked_file_is_never_overwritten(repo: timewalk.Repo) -> None:
 
 
 
-def test_a_move_refused_for_an_untracked_file_leaves_the_edits_in_place(repo: timewalk.Repo) -> None:
-    "The untracked file in the way is found before the edits are stashed, so a refused move does not hide the edits."
+def test_a_move_refused_for_an_untracked_file_leaves_the_edits_in_place(sample: Path) -> None:
+    "In place, the untracked file in the way is found before the edits are stashed, so a refused move does not hide the edits."
+    repo = timewalk.Repo(sample, in_place=True)
     (repo.work / "justfile").write_text("mine\n")
     (repo.work / "README.md").write_text("an edit\n")
     with pytest.raises(timewalk.GitError, match="will not be overwritten"):
@@ -598,15 +900,16 @@ def test_state_move_and_slides(served: TestClient) -> None:
     assert state["slides"] == [] and state["slide"] == 0
 
 
-def test_api_reports_edits_instead_of_moving(served: TestClient, repo: timewalk.Repo) -> None:
-    "A move over uncommitted edits answers 409 with the files, and succeeds when asked to set them aside."
+def test_api_moves_over_edits_and_tells_every_window_where_they_are_kept(served: TestClient, repo: timewalk.Repo) -> None:
+    "A move over uncommitted edits does not ask: it keeps them on a saved branch, and the moved event names it."
     auth = {"t": TOKEN}
     served.post("/api/move", params=auth, json={"to": 1})
     (repo.work / "justfile").write_text("edited\n")
-    refused = served.post("/api/move", params=auth, json={"to": 2})
-    assert refused.status_code == 409
-    assert refused.json() == {"error": "uncommitted edits", "edits": ["justfile"]}
-    assert served.post("/api/move", params=auth, json={"to": 2, "set_aside": True}).json()["current"] == 2
+    with served.websocket_connect(f"/ws/events?t={TOKEN}") as window:
+        assert next_event(window) == {"type": "hello"}
+        assert served.post("/api/move", params=auth, json={"to": 2}).json()["current"] == 2
+        assert next_event(window) == {"type": "moved", "kept": ["timewalk/saved/step-01"]}
+    assert run_git(repo.work, "show", "timewalk/saved/step-01:justfile") == "edited"
 
 
 def test_scripts_are_revalidated_on_every_load(served: TestClient) -> None:
@@ -1160,16 +1463,14 @@ def test_a_change_of_walk_changes_the_steps_notes_and_slides(walked: TestClient,
     assert walked.post("/api/walk", params=auth, json={"id": "nowhere"}).status_code == 409
 
 
-def test_a_change_of_walk_with_edits_asks_first_and_keeps_the_walk(walked: TestClient, repo: timewalk.Repo) -> None:
-    "An edit stops the change of walk, as it stops a move; the walk and its steps stay. With set_aside, the edit is stashed."
+def test_a_change_of_walk_with_edits_keeps_them_on_a_branch(walked: TestClient, repo: timewalk.Repo) -> None:
+    "A change of walk over an edit does not ask, as a move does not: the edit goes on a saved branch named for the step."
     auth = {"t": TOKEN}
     walked.post("/api/move", params=auth, json={"to": 1})
     (repo.work / "src" / "greet.py").write_text("# an edit\n")
-    refused = walked.post("/api/walk", params=auth, json={"id": "part"})
-    assert refused.status_code == 409 and refused.json()["edits"] == ["src/greet.py"]
-    assert walked.get("/api/state", params=auth).json()["walk"]["id"] == "narrative" and len(repo.steps) == 4
-    assert walked.post("/api/walk", params=auth, json={"id": "part", "set_aside": True}).status_code == 200
-    assert "timewalk: edits made at step-01" in run_git(repo.work, "stash", "list")
+    assert walked.post("/api/walk", params=auth, json={"id": "part"}).status_code == 200
+    assert walked.get("/api/state", params=auth).json()["walk"]["id"] == "part"
+    assert run_git(repo.work, "show", "timewalk/saved/step-01:src/greet.py") == "# an edit"
 
 
 TUTORIAL = [
@@ -1412,7 +1713,7 @@ def test_a_tutorial_keeps_its_place_across_a_restart(tutorial: timewalk.Repo) ->
 
 
 def test_a_failed_change_of_walk_keeps_the_place_in_a_tutorial(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
-    "An edit refuses the change of walk; the tutorial stays at the same move."
+    "A change of walk that fails (here, git's index is locked) leaves the tutorial at the same move."
     from timewalk.walks import load_toc
 
     (tutorial_class / "toc.toml").write_text((tutorial_class / "toc.toml").read_text() + '\n[[walk]]\nid = "plain"\n')
@@ -1421,8 +1722,10 @@ def test_a_failed_change_of_walk_keeps_the_place_in_a_tutorial(tutorial: timewal
     auth = {"t": TOKEN}
     client.post("/api/move", params=auth, json={"to": 1})
     tutorial.place_file().unlink()   # so that only the restore of the place in memory can keep it
-    (tutorial.work / "README.md").write_text("an edit\n")
+    lock = Path(run_git(tutorial.work, "rev-parse", "--absolute-git-dir")) / "index.lock"
+    lock.write_text("")   # another git holds the index, and does not let go: the checkout fails
     assert client.post("/api/walk", params=auth, json={"id": "plain"}).status_code == 409
+    lock.unlink()
     state = client.get("/api/state", params=auth).json()
     assert (state["current"], state["move"]) == (1, 0)
 
@@ -1519,7 +1822,7 @@ def test_a_step_without_moves_forgets_the_place_written_before(tutorial: timewal
 
 
 def test_a_return_to_a_tutorial_comes_back_to_its_move(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
-    "Leave a tutorial at a move, visit another walk, come back: the same move, and the stash names the move."
+    "Leave a tutorial at a move, visit another walk, come back: the same move, and the saved branch names the move."
     from timewalk.walks import load_toc
 
     (tutorial_class / "toc.toml").write_text((tutorial_class / "toc.toml").read_text() + '\n[[walk]]\nid = "plain"\n')
@@ -1530,8 +1833,8 @@ def test_a_return_to_a_tutorial_comes_back_to_its_move(tutorial: timewalk.Repo, 
     client.post("/api/move", params=auth, json={"to": 1, "move": 1})
     client.post("/api/move", params=auth, json={"to": 1, "move": 2})
     (tutorial.work / "a.txt").write_text("an edit\n")
-    assert client.post("/api/walk", params=auth, json={"id": "plain", "set_aside": True}).status_code == 200
-    assert "timewalk: edits made at step-01.2" in run_git(tutorial.work, "stash", "list")
+    assert client.post("/api/walk", params=auth, json={"id": "plain"}).status_code == 200
+    assert run_git(tutorial.work, "show", "timewalk/saved/step-01.2:a.txt") == "an edit"
     client.post("/api/walk", params=auth, json={"id": "tut"})
     state = client.get("/api/state", params=auth).json()
     assert (state["current"], state["move"]) == (1, 2)
@@ -1583,16 +1886,14 @@ def test_do_mode_marks_moves_done_without_moving_the_code(tutored: TestClient, t
 
 
 def test_catch_me_up_sets_the_code_to_the_end_of_a_move(tutored: TestClient, tutorial: timewalk.Repo) -> None:
-    "Catch me up is a move to a move: the code is that move's commit, and that many moves are done. Edits are asked about first."
+    "Catch me up is a move to a move: the code is that move's commit, and that many moves are done. The learner's try is kept."
     auth = {"t": TOKEN}
     tutored.post("/api/move", params=auth, json={"to": 1})
     (tutorial.work / "README.md").write_text("my own try\n")
-    refused = tutored.post("/api/move", params=auth, json={"to": 1, "name": "step-01", "move": 1})
-    assert refused.status_code == 409 and refused.json()["edits"]
-    assert tutored.post("/api/move", params=auth, json={"to": 1, "name": "step-01", "move": 1, "set_aside": True}).status_code == 200
+    assert tutored.post("/api/move", params=auth, json={"to": 1, "name": "step-01", "move": 1}).status_code == 200
     state = tutored.get("/api/state", params=auth).json()
     assert (state["move"], state["done"]) == (1, 1)
-    assert "timewalk: edits made at step-01" in run_git(tutorial.work, "stash", "list")
+    assert run_git(tutorial.work, "show", "timewalk/saved/step-01:README.md") == "my own try"
 
 
 def test_the_reader_shows_one_moves_change_whatever_the_code(tutored: TestClient) -> None:
@@ -1672,17 +1973,17 @@ def test_the_replay_copy_is_a_clone_on_a_branch_of_its_own(repo: timewalk.Repo, 
 
 
 def test_your_repository_is_never_written_to(repo: timewalk.Repo, sample: Path) -> None:
-    "Moves, stashes, a commit and a change to git's config in the replay copy leave your repository's config, refs and stash alone."
+    "Moves, kept edits, a commit and a change to git's config in the replay copy leave your repository's config, refs and stash alone."
     before = ((sample / ".git" / "config").read_text(), run_git(sample, "for-each-ref"), run_git(sample, "stash", "list"))
     repo.move(1)
     (repo.work / "src" / "greet.py").write_text("# an edit\n")
-    repo.move(2, set_aside=True)
+    repo.move(2)
     run_git(repo.work, "config", "core.hooksPath", "hooks")
     run_git(repo.work, "-c", "user.name=t", "-c", "user.email=t@e", "commit", "--quiet", "--allow-empty", "-m", "a learner's commit")
     repo.move(3)
     after = ((sample / ".git" / "config").read_text(), run_git(sample, "for-each-ref"), run_git(sample, "stash", "list"))
     assert after == before
-    assert "timewalk: edits made at step-01" in run_git(repo.work, "stash", "list"), "the stash is in the replay copy"
+    assert run_git(repo.work, "show", "timewalk/saved/step-01:src/greet.py") == "# an edit", "the kept edits are in the replay copy"
 
 
 def test_a_learners_commits_are_kept_when_a_move_resets_the_branch(repo: timewalk.Repo) -> None:

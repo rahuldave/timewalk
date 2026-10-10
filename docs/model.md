@@ -40,7 +40,8 @@ from where it stopped. See [The replay copy](replay.md).
 - **Your repository** is the main working copy. The server reads its tags and its commits. It writes
   no config, hook, branch, tag or stash there.
 - **With `--in-place`**, timewalk makes no replay copy. Moves check out steps in your repository, and
-  every tab, Main too, is in it. The server refuses `--discard-edits` with `--in-place`, so a move cannot
+  every tab, Main too, is in it. A move with edits asks, and then stashes them, because timewalk writes
+  no branch in your repository. The server refuses `--discard-edits` with `--in-place`, so a move cannot
   drop your real work.
 - **Your class folder** is never a working copy of anything.
 - **The PDF export**, `timewalk-pdf` or the **PDF** button, uses no git. It reads the manifest, the slide
@@ -79,15 +80,15 @@ then happen, in this order:
 |---|---|---|
 | The top of the kit | The notes, `walk.md`, the slides and the `justfile`. Tracked in the fork of the student | **Save** in the notes column writes `walk.md` |
 | `repo/` | A clone of the project. Git ignores the folder | The **Main** tab. The student commits here, and pushes to their fork of the project |
-| `worktree/` | The replay copy of `repo/`. Git ignores the folder | **At this step**, **Runs**, **Claude** and **+**. A move throws away edits here |
+| `worktree/` | The replay copy of `repo/`. Git ignores the folder | **At this step**, **Runs**, **Claude** and **+**. A move keeps the edits here on a saved branch |
 
 ## What each control does
 
 | Control | What happens | Git, in which folder |
 |---|---|---|
-| A step button, **Left**, **Right**, the step arrows | Looks for edits, refuses if an untracked file is in the way, keeps the commits of a learner, moves, and tells every window | `git status`, `git ls-files --others`, `git ls-tree`, `git branch timewalk/saved/<step>` if a learner committed, then `git checkout -B timewalk/replay <step>`, in the replay copy |
-| **Set the edits aside and move** | Stashes the edits with the name of the step, then moves | `git stash push -m "timewalk: edits made at step-NN"`, in the replay copy |
-| A move, with `--discard-edits` | Moves and does not ask. Edits to tracked files are lost. Commits of a learner are kept | `git checkout --force -B timewalk/replay <step>`, in the replay copy |
+| A step button, **Left**, **Right**, the step arrows | Finds the untracked files in the way. Keeps the commits, the staged changes, the edits and the files in the way of a learner on a saved branch. Then moves, and tells every window. Every window except the Room window names the branch | `git ls-tree -r`, `git ls-files --others`, `git write-tree` and `git commit-tree` for the staged changes. Then, with a copy of the index, `git add --update`, `git add --force --pathspec-from-file` for the files in the way, `git write-tree` and `git commit-tree`. Then `git branch timewalk/saved/<step>`, and `git reset --hard` and `git checkout -B timewalk/replay <step>`, or `git checkout --force -B timewalk/replay <step>` when files are in the way. All in the replay copy |
+| A move, with `--in-place` | Looks for edits, refuses if an untracked file is in the way, and asks about edits. Then moves | `git status`, `git ls-files --others`, `git ls-tree`, then `git checkout --detach <step>`, in your repository |
+| **Set the edits aside and move**, with `--in-place` | Stashes the edits with the name of the step, then moves | `git stash push -m "timewalk: edits made at step-NN"`, in your repository |
 | In a tutorial, **Show ▶**, **⇥ Catch me up**, or a move button in watch mode | Moves to the commit of a move, as a step button does | The same, with the commit of the move |
 | In a tutorial, **Done ✓**, or the button of the next move in do mode | Changes the shared count of moves done. The code does not move | None |
 | In a tutorial, **Do** or **Watch** | Changes the shared mode, in every window | None |
@@ -133,13 +134,13 @@ and the reader stay on the replay copy.
 | The current step | Git, as the HEAD of the replay copy. timewalk asks git again each time | Never. A restart finds the replay copy where it was |
 | In a tutorial, the move on show | A file in the git folder of the replay copy, `timewalk-place.json` | Never. A restart comes back at the same move |
 | Slide, layout, open file, view, tab in front, clock, and in a tutorial the mode and the count of moves done | The memory of the server, shared by every window | timewalk stops |
-| Commits that a learner made | Saved branches in the replay copy, `timewalk/saved/<step>` | You delete them, or you remove the replay copy |
+| Commits, staged changes and edits that a learner made before a move | Saved branches in the replay copy, `timewalk/saved/<step>` | You delete them, or you remove the replay copy |
 | Where each step was left: its slide, and the scroll of its slide, notes and open file | The memory of the server. A move back to a step brings them back | timewalk stops |
 | Each shell, and the last 256 KB of its output | The server, with one process for each tab, on a pseudo-terminal | timewalk stops. The shells end, and their commands end too, unless you started a command with `nohup` and `&` |
 | Theme, text size, terminal height, run on click | The local storage of the browser | You clear it |
 | If the notes column shows | The session storage of the window | You close the window |
-| Edits to tracked files | On disk in the replay copy, or in a stash of the replay copy | You discard them, or the next move discards them, with `--discard-edits` |
-| Untracked files, for example `.venv`, outputs and databases | On disk in the replay copy | You delete them, or you remove the replay copy |
+| Edits to tracked files | On disk in the replay copy until the next move. Then on a saved branch | Never by a move. You discard them with `git restore`, or you remove the replay copy |
+| Untracked files, for example `.venv`, outputs and databases | On disk in the replay copy. A file in the way of a move goes on a saved branch | You delete them, or you remove the replay copy |
 | Slides | Your class folder, which timewalk reads again each time | Never. timewalk does not write them |
 | Notes | The notes file in your class folder, which timewalk reads again each time. **Save** writes one section of it | Never. **Save** changes only the section of the current step |
 
@@ -151,22 +152,38 @@ If a terminal checks out another commit, the replay copy is no longer at a step.
 
 ## One move, in order
 
-1. A window asks the server to move to a step. With `--discard-edits`, the server keeps the commits of a
-   learner, runs `git checkout --force -B timewalk/replay` to the commit of the step, and goes to step 6.
-2. The server asks git for edits to tracked files in the replay copy. If there are edits, and the page did
-   not ask to set them aside, the server refuses and names them. The window then asks you.
-3. If the window asked to set the edits aside, the server runs `git stash push` with the name of the step.
-4. The server lists the untracked files, and the files that the new step tracks. If a path is in both
-   lists, the server refuses and names it. A checkout would write over your file.
-5. If a learner committed since the last move, the server keeps the commits on a saved branch. Then it
-   runs `git checkout -B timewalk/replay` to the commit of the step.
-6. The server sets the slide to the one where you left this step. A step that you have not visited starts
+1. A window asks the server to move to a step, or to a move of a tutorial.
+2. The server lists the untracked files with `git ls-files --others`, and the files of the new step with
+   `git ls-tree`. An untracked file is in the way when the step has a file or a folder of its name. It is
+   also in the way when the step has a file where its path has a folder. If a git repository of its own is in the way, the server
+   refuses and names it.
+3. If something is staged, the server makes a commit of the index with `git write-tree` and
+   `git commit-tree`. The index is the list of changes that the next commit holds.
+4. The server copies the index to a temporary file. In the copy, it adds the edits with `git add --update`,
+   and the files in the way with `git add --force`. It makes a commit of the copy on top. Your files, your
+   index and your stash do not change.
+5. If a learner has work since the last move, the server puts a saved branch on it,
+   `git branch timewalk/saved/<step>`. Work is a commit, a staged change, an edit or a file in the way. If a
+   rebase, a cherry-pick or a revert is half done, the server ends it with `--quit`.
+6. With no files in the way, the server runs `git reset --hard`, and then `git checkout -B timewalk/replay`
+   to the commit of the step. With files in the way, it runs `git checkout --force -B timewalk/replay`,
+   which replaces them.
+7. The server sets the slide to the one where you left this step. A step that you have not visited starts
    at its first slide. The server then tells every window. Each window then scrolls the slide, the notes and the open
    file to where you left them. It presses Enter in each
    idle shell at the step, so that the shell draws its prompt again. See
    [The terminals](terminals.md#the-prompt-after-a-move).
-7. Each window reads the new state, the file list, the recipes, and the notes. An open file stays open,
-   and the window reads it again at the new step.
+8. Each window reads the new state, the file list, the recipes, and the notes. An open file stays open,
+   and the window reads it again at the new step. If the move made a saved branch, each window except the
+   Room window names the branch in a notice.
+
+With `--in-place`, steps 2 to 6 are different:
+
+1. If an untracked file has the name of a file of the step, the server refuses and names the file.
+2. The server asks git for edits. If there are edits, and the page did not ask to set them aside, the
+   server refuses and names them. The window then asks you.
+3. If the window asked to set the edits aside, the server runs `git stash push` with the name of the step.
+4. The server runs `git checkout --detach` to the commit of the step.
 
 A move does not touch the shells. A command that runs in **Runs** continues, and the files change under
 it. See [The terminals](terminals.md#a-long-command-and-a-move).

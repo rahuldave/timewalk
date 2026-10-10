@@ -55,9 +55,10 @@ To go to a step, do one of these:
 Sometimes the replay copy is on a commit that is not a step, for example after someone runs `git checkout`
 in a terminal. Then the bar says "between steps". To go back, choose a step.
 
-If you start timewalk with `--discard-edits`, the bar also says "Moves discard edits". When files have
-edits, this label becomes a red warning with a count of the edited files. The next move throws those
-edits away. See [Live edits](edits.md#with---discard-edits).
+A move never asks about edits in the replay copy. It keeps them on a saved branch, and a notice under the
+bar names the branch, in every window except the Room window. See
+[Live edits](edits.md#moving-with-edits). On a replay copy that an older version made as a worktree, with
+`--discard-edits`, the bar says "Moves discard edits". See [Live edits](edits.md#with---discard-edits).
 
 If you start timewalk with `--toc`, a menu at the left of the bar lists the walks of the class. A walk is
 one path through the history, with its own notes and slides. Choose a walk, and every window changes to
@@ -126,6 +127,10 @@ The page uses the theme of GitHub, Primer, in a light mode and a dark mode. The 
 - **The colours of the code,** in the reader, the notes and the slides. highlight.js colours the code with
   its GitHub stylesheets, `github` and `github-dark`.
 - **The colours of the terminals,** GitHub Light Default and GitHub Dark Default.
+
+In the dark theme, the page also inverts the colours of each SVG picture, on a slide or in the notes. Black
+lines become white, and the hues stay near their own. A photo, for example a PNG or a JPEG, keeps its
+colours. See [Slides and documents](slides.md#pictures-in-the-dark-theme).
 
 **Dark** and **Light** change the mode. The browser remembers the mode, so it applies to every window of
 that browser.

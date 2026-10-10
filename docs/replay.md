@@ -25,8 +25,7 @@ git checkout -B timewalk/replay <the commit of the step>
   includes commits, branches, tags, stashes and changes to git's config.
 - **It costs little disk.** timewalk makes it with `git clone` from the folder of your repository, so git
   links the files of its objects where it can. On another disk, git copies them.
-- **It has its own untracked files.** Its `.venv`, outputs and stashes belong to it. A stash is a set of
-  edits that git keeps aside, to bring back later.
+- **It has its own untracked files.** Its `.venv`, outputs and saved branches belong to it.
 - **It gets only commits.** Edits, untracked files and a `uv lock` that you did not commit in your
   repository never reach it.
 - **timewalk makes it once and uses it again.** The next start finds it, and stands where it stopped.
@@ -63,12 +62,12 @@ So a step that you tagged again is there at the next start. A step that you tag 
 fetched when a move needs it. Restart timewalk after you tag again, because timewalk reads the list of
 steps when it starts.
 
-## Commits that a learner makes
+## Saved branches
 
-A learner can commit in the replay copy, for example at the end of a step. The next move resets the
-branch `timewalk/replay`. Before it does, timewalk keeps the commits of the learner on a saved branch.
-A saved branch is a branch in the replay copy, named after the step or the move where the learner made
-the commits:
+A learner can edit files and commit in the replay copy, for example at the end of a step. The next move
+resets the branch `timewalk/replay`. Before it does, timewalk keeps the work of the learner on a saved
+branch. The move never asks. A saved branch is a branch in the replay copy, named after the step or the
+move where the learner did the work:
 
 ```
 timewalk/saved/step-03
@@ -76,18 +75,39 @@ timewalk/saved/step-03-2        the second time, at the same step
 timewalk/saved/step-02.1        in a tutorial, a move
 ```
 
-These names are branches inside the replay copy, and not folders. A commit of the learner is a commit
-made since timewalk last put the branch somewhere. timewalk keeps the commits on `timewalk/replay` and
-on a detached HEAD. A branch that the learner made keeps its own commits, so timewalk does not copy them.
+These names are branches inside the replay copy, and not folders. A saved branch holds these things, in
+this order:
 
-The page does not say that it saved a branch. To list the saved branches, run this command in a
-terminal at the step:
+- **The commits of the learner.** A commit of the learner is a commit made since timewalk last put the
+  branch somewhere. timewalk keeps the commits on `timewalk/replay` and on a detached HEAD. A branch that
+  the learner made keeps its own commits, so timewalk does not copy them.
+- **What the learner staged** with `git add`, as one commit, if it differs from the last commit.
+- **The edits to tracked files, and each untracked file that the move would replace or delete,** as one
+  commit on top. See [Live edits](edits.md#moving-with-edits).
 
-```
-git branch --list 'timewalk/saved/*'
-```
+timewalk makes these commits with a copy of the index. So the files, the index and the stash of the
+learner stay as they are until the move. The index is the list of changes that the next commit holds. If
+git has no name or email set up in the replay copy, timewalk is the author of the commits. Other untracked
+files are not on the branch, and the move leaves them on the disk.
+
+If a learner made a commit and also has edits, one saved branch holds both, with the edits on top. If the
+learner committed on a detached HEAD and also on `timewalk/replay`, each line gets a branch of its own.
 
 ## Get the work of a learner back
+
+After a move that kept work, every window except the Room window shows a notice. The notice names the
+saved branch, and gives two commands. **✕ Close** hides it in its window.
+
+![The step bar after a move with an edit, and the notice that names the saved branch](images/kept-work.png)
+
+In a terminal at the step, use these commands:
+
+```
+git branch --list 'timewalk/saved/*'                   # list the saved branches
+git show timewalk/saved/step-02                        # see the last commit of one
+git log --stat timewalk/saved/step-02                  # see all of its commits
+git checkout timewalk/saved/step-02 -- src/greet.py    # bring one file back, as an edit at this step
+```
 
 git carries only commits between repositories. It never carries config or hooks.
 
@@ -99,18 +119,6 @@ git carries only commits between repositories. It never carries config or hooks.
   ```
 - **A student** pushes the branch to a fork of their own, from a terminal in the replay copy.
 
-## Stashes in the replay copy
-
-A move with edits asks first, and then stashes the edits. The stash is in the replay copy, and not in your
-repository. To see the stashes, run this command:
-
-```
-git -C ~/code/project-replay stash list
-```
-
-In a terminal at the step, `git stash list` and `git stash pop` work as usual. See
-[Live edits](edits.md#moving-with-edits).
-
 ## A replay copy from an older version
 
 Older versions of timewalk made the replay copy as a git worktree. A worktree is a second working
@@ -118,8 +126,14 @@ folder attached to the same git repository. It shares the config, the branches a
 repository.
 
 timewalk still uses such a replay copy, on a detached HEAD, as before. A detached HEAD stands on a
-commit directly, and not on a branch. At each start, timewalk prints a message about the worktree. To
-change to a clone, do these steps:
+commit directly, and not on a branch. At each start, timewalk prints a message about the worktree.
+
+timewalk writes no saved branch in such a copy, because its branches belong to your repository. So a move
+with edits asks first, and then stashes them, as with `--in-place`. A stash is a set of edits that git
+keeps aside, to bring back later. `--discard-edits` still throws the edits away there. See
+[Live edits](edits.md#with---in-place).
+
+To change to a clone, do these steps:
 
 1. Move the folder of the old replay copy aside.
 2. Keep what you need from it, for example the outputs of runs.
@@ -142,24 +156,21 @@ The command keeps all that a learner did in the replay copy.
 
 - **It never moves the repository that you give it, and never writes to it.** It writes no config, hook,
   branch, tag or stash there. The exception is when you pass `--in-place`.
-- **It never deletes an untracked file.** A command at one step can write an environment, a database or
-  the output of a run. That file is still there at the next step. A later step can have a tracked file
-  where an untracked file is. Then timewalk refuses the move and names the file.
-- **It never discards an edit.** The page shows edits to tracked files as they happen. A move with edits
-  asks first. Then it keeps the edits aside with `git stash`, with a label that names their step. See
-  [Live edits](edits.md).
-- **It never discards a commit.** A move keeps the commits of a learner on a saved branch.
-- **The `--discard-edits` flag is the one exception for edits, and you must ask for it by name.** Use it
-  for a replay copy where all that you type is for one use only. With the flag, a move runs
-  `git checkout --force`. It drops edits without a question. It replaces an untracked file only where the
-  step has a file of the same name.
+- **It never loses an untracked file.** A command at one step can write an environment, a database or
+  the output of a run. That file is still there at the next step. A later step can have a file where an
+  untracked file is. Then the move keeps the untracked file on a saved branch, and then replaces it.
+- **It never loses an edit, and a move never asks.** The page shows edits to tracked files as they
+  happen. A move keeps them on a saved branch first. See [Live edits](edits.md#moving-with-edits).
+- **It never loses a commit.** A move keeps the commits of a learner on a saved branch.
+- **With `--in-place`, a move asks.** A move with edits asks first, and then stashes them. An untracked
+  file in the way stops the move.
 - **The file view cannot write.** No route of the server changes a file in your repository or the replay
   copy. The one route that writes is **Save** in the notes column, and it writes only the notes file. The
   notes file must be outside both copies. The terminals can change files, as any terminal can.
 
 ## Files that stay in the replay copy
 
-Untracked files stay through moves. So the replay copy keeps what the commands of the class make, for
+Untracked files stay through moves, unless one is in the way of a move. So the replay copy keeps what the commands of the class make, for
 example a `.venv`, caches, databases and the outputs of runs. You usually want these files. For example,
 the results of a training run are still there two steps later. To start clean, delete the folder of the
 replay copy. Then timewalk makes a new one.

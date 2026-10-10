@@ -9,9 +9,9 @@ demo are in `demo/notes.md`, and its slides are in `demo/slides/`.
 just demo
 ```
 
-`just demo` starts timewalk with `--discard-edits` and `--clock`. With `--discard-edits`, you do not need
-to undo anything that you type in the tour. Open the address in a window on the projector, and in a second
-window on your own screen. Each step below says what to look at and what to try.
+`just demo` starts timewalk with `--clock`. A move never asks about what you type in the tour. It keeps
+your edits on a saved branch in the replay copy. Open the address in a window on the projector, and in a
+second window on your own screen. Each step below says what to look at and what to try.
 
 ## step-00: an empty project
 
@@ -43,13 +43,11 @@ untidy.
 - Click `uvx ruff format`, and press Enter. Within one second, the file list marks `src/greet.py` **edited**.
 - Look at the reader. It now offers **Your edits**, which shows exactly what ruff changed. See
   [Live edits](edits.md).
-- Look at the step bar. It warns that the next move discards the edited file.
-- Press **Right**. The move drops the edit and does not ask. See
+- Press **Right**. The move does not ask. It keeps the edit on a saved branch, for example
+  `timewalk/saved/step-02`, and each window says so. A Room window does not. See
   [Live edits](edits.md#moving-with-edits).
-
-The demo runs with `--discard-edits` because nobody needs the edits in its replay copy. Without the flag,
-timewalk asks first, and then stashes the edit. To stash is to keep edits aside in git and bring them
-back later.
+- In the terminal at step-03, run `git show` with the name of the branch from the notice. It shows the edit
+  again.
 
 ![What ruff changed at step-02, shown live in the reader](images/edits.png)
 

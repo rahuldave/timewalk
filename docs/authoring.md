@@ -269,7 +269,7 @@ from timewalk.walks import load_toc
 
 repo_path, toc, walk_id, replay = Path(sys.argv[1]), Path(sys.argv[2]).resolve(), sys.argv[3], Path(sys.argv[4])
 walk = next(w for w in load_toc(toc) if w.id == walk_id)
-repo = timewalk.Repo(repo_path, replay=replay, discard=True)     # a replay copy to throw away
+repo = timewalk.Repo(repo_path, replay=replay)     # a replay copy to throw away; a move keeps edits on a saved branch
 repo.select(walk.tags, walk.steps, tutorial=walk.kind == "tutorial")
 notes = timewalk.parse_notes(walk.notes.read_text())
 for step in repo.steps:

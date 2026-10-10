@@ -11,15 +11,15 @@ walk repo *args:
     uv run timewalk "$@"
 
 # Browse the sample repository, the submodule demo/timewalk-demo, with its notes and slides. Fetches it the first time.
-# Its replay copy is throwaway, so a move discards edits instead of asking
+# A move never asks: edits made in the replay copy are kept on a branch timewalk/saved/<place>
 demo:
     git submodule update --init demo/timewalk-demo
-    uv run timewalk demo/timewalk-demo --notes demo/notes.md --slides demo/slides/slides.toml --discard-edits --clock
+    uv run timewalk demo/timewalk-demo --notes demo/notes.md --slides demo/slides/slides.toml --clock
 
 # Browse the sample repository with its two walks, from demo/toc.toml. The dropdown in the step bar changes the walk
 demo-walks:
     git submodule update --init demo/timewalk-demo
-    uv run timewalk demo/timewalk-demo --toc demo/toc.toml --discard-edits --clock
+    uv run timewalk demo/timewalk-demo --toc demo/toc.toml --clock
 
 # Make a PDF of the slides, the notes, or both: just pdf slides/slides.toml --notes notes.md --with-notes
 [positional-arguments]

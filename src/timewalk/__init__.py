@@ -7,7 +7,6 @@
     timewalk /path/to/repo --commits              steps are the commits on the current branch
     timewalk /path/to/repo --in-place             step the repository itself, not a second copy
     timewalk repo --replay worktree               put the replay copy in ./worktree instead of beside the repository
-    timewalk /path/to/repo --discard-edits        a move throws edits away instead of asking; for a replay copy
     timewalk /path/to/repo --clock                show the clock band, for a class with planned times
     timewalk /path/to/repo --port 8800            listen on another port
     timewalk /path/to/repo --host 0.0.0.0         listen beyond this machine, for a cloud machine; see the warning
@@ -45,6 +44,7 @@ import socket
 import struct
 import subprocess
 import sys
+import tempfile
 import termios
 import time
 import tomllib
@@ -81,6 +81,7 @@ def git(
     cwd: Path,  # Directory to run git in
     *args: str,  # Arguments to git
     input_text: str | None = None,  # Text for git's standard input, if any
+    env: dict[str, str] | None = None,  # Variables to add to the environment, such as GIT_INDEX_FILE
 ) -> str:  # What git printed, without the trailing newline
     """Run git and return its output, raising `GitError` with git's own message when it fails.
 
@@ -89,7 +90,8 @@ def git(
     """
     # A stash is never run twice: it may have stored the edits before it met the lock.
     for wait in (0.1, 0.2, 0.4, None) if args[:1] != ("stash",) else (None,):
-        done = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace", input=input_text)
+        done = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace", input=input_text,
+                              env={**os.environ, **env} if env else None)
         if done.returncode == 0 or wait is None or "index.lock" not in done.stderr:
             break
         time.sleep(wait)
@@ -174,7 +176,7 @@ class Repo:
         tags: str = "step-*",  # Glob for the tags that mark steps
         commits: bool = False,  # Step through commits instead of tags
         in_place: bool = False,  # Move `main` itself instead of a second working copy
-        discard: bool = False,  # A move throws uncommitted edits away instead of asking and stashing
+        discard: bool = False,  # In a replay worktree of an older version: a move throws edits away. A replay clone always keeps them
         replay: Path | None = None,  # Where the replay copy goes, instead of `<repo>-replay` beside the repository
     ):
         if discard and in_place:
@@ -193,6 +195,7 @@ class Repo:
         self.work = self.main if in_place else self._replay_copy()
         self.moves: list[list[Move]] = [[] for _ in self.steps]  # For a tutorial, the moves of each step
         self.at: tuple[int, int] | None = None  # In a tutorial, the step and move the last move went to
+        self.kept: list[str] = []  # The branches that the last move kept a learner's work on
         self.files_of: dict[str, list[dict]] = {}  # The files each move's commit added or changed, by commit
 
     def select(
@@ -333,6 +336,7 @@ class Repo:
     def keep_learner_commits(
         self,
         label: str,  # The step or move the copy was at, for the name of the branch that keeps them
+        snapshot: str | None = None,  # A commit of the learner's edits on top of HEAD, from `save_work`, kept in place of HEAD
     ) -> list[str]:  # The branches that keep them; empty when there was nothing to keep
         """Before a move resets the branch, keep the commits that a learner made, on a branch named for the place.
 
@@ -342,14 +346,15 @@ class Repo:
         if self.branch is None:
             return []
         placed = subprocess.run(["git", "rev-parse", "--verify", "--quiet", PLACED], cwd=self.work, capture_output=True, text=True).stdout.strip()
-        tips = {git(self.work, "rev-parse", "HEAD")}
+        head = git(self.work, "rev-parse", "HEAD")
+        tips = {snapshot or head}
         branch = subprocess.run(["git", "rev-parse", "--verify", "--quiet", f"refs/heads/{self.branch}"], cwd=self.work, capture_output=True, text=True).stdout.strip()
-        if branch:
+        if branch and not (snapshot and branch == head):   # the snapshot sits on top of HEAD, and keeps its commits too
             tips.add(branch)
         # Never a learner's: what a tag or a branch of your repository reaches, and what came before timewalk last put the branch.
         before = ([placed] if placed else []) + [f"--glob={HOME_TAGS}*", f"--remotes={HOME}", f"--glob={HOME_HEAD}"]
         kept = []
-        for tip in sorted(tips):
+        for tip in sorted(tips, key=lambda tip: (tip != snapshot, tip)):   # the edits' branch first
             if not git(self.work, "rev-list", tip, "--not", *before, f"--exclude={self.branch}", "--branches"):
                 continue
             names = set(git(self.work, "for-each-ref", "--format=%(refname:short)", f"refs/heads/{SAVED}").splitlines())
@@ -376,6 +381,134 @@ class Repo:
                 if move.sha == placed:
                     return move.name
         return "between-steps"
+
+    def in_the_way(
+        self,
+        *commits: str,  # The commits whose files a move writes: HEAD, which `reset --hard` puts back, and the target
+    ) -> tuple[list[str], list[str]]:  # The untracked files the move would replace or delete, and the nested repositories in its way
+        """Find every untracked file, ignored or not, that the files of these commits would replace or delete.
+
+        A file is in the way when a commit has a file of its name, a folder of its name (files under it), or a file where
+        one of its folders is. Names are compared ignoring case when git does, as on a Mac. A git repository of its own
+        inside the copy shows as one folder; in the way, it cannot be kept, so the move refuses.
+        """
+        ignorecase = subprocess.run(["git", "config", "--bool", "core.ignorecase"], cwd=self.work, capture_output=True, text=True).stdout.strip()
+        fold = str.lower if ignorecase == "true" else str
+        files = {fold(path) for commit in commits for path in git(self.work, "ls-tree", "-r", "-z", "--name-only", commit).split("\x00") if path}
+        folders = {path.rsplit("/", i)[0] for path in files for i in range(1, path.count("/") + 1)}
+
+        def blocks(path: str) -> bool:
+            name = fold(path.rstrip("/"))
+            parents = [name.rsplit("/", i)[0] for i in range(1, name.count("/") + 1)]
+            return name in files or name in folders or any(parent in files for parent in parents)
+
+        others = [path for path in git(self.work, "ls-files", "--others", "-z").split("\x00") if path]
+        nested = [path for path in others if path.endswith("/") and blocks(path)]   # a repository of its own shows as a folder
+        # A repository of its own where a tracked file was: git lists nothing under it, and reset or stash deletes it whole.
+        raw = git(self.work, "diff-files", "--raw", "-z").split("\x00")
+        changed = [path for info, path in zip(raw[::2], raw[1::2], strict=False) if not info.startswith(":160000")]   # not a submodule's folder
+        nested += [path + "/" for path in changed
+                   if (self.work / path).is_dir() and not (self.work / path).is_symlink() and (self.work / path / ".git").exists()]
+        return [path for path in others if not path.endswith("/") and blocks(path)], nested
+
+    def hidden_edits(
+        self,
+        env: dict[str, str] | None = None,  # GIT_INDEX_FILE, for a copy of the index; None for the index itself
+    ) -> None:
+        "Clear the flags that hide a file's edits from git (assume-unchanged, and skip-worktree where the file is on disk)."
+        flagged = []
+        for entry in git(self.work, "ls-files", "-v", "-z", env=env).split("\x00"):
+            tag, path = entry[:1], entry[2:]
+            if path and (tag.islower() or (tag == "S" and (self.work / path).exists())):
+                flagged.append(path)
+        if flagged:
+            git(self.work, "update-index", "--no-assume-unchanged", "-z", "--stdin", input_text="\x00".join(flagged), env=env)
+            git(self.work, "update-index", "--no-skip-worktree", "-z", "--stdin", input_text="\x00".join(flagged), env=env)
+
+    def save_work(
+        self,
+        label: str,  # The step or move the copy was at, for the commit's message
+        going: str,  # The name of the place the move goes to, for the commit's message
+        in_the_way: list[str],  # The untracked files the move would replace or delete, from `in_the_way`
+    ) -> str | None:  # The commit of the learner's work, on top of HEAD; None when there is nothing to keep
+        """Make commits of the learner's uncommitted work, without touching their files, index or stash.
+
+        What was staged with `git add` is one commit, if it differs from HEAD; the edits to tracked files and the files in
+        the way are another, on top. Copies of the index build them, so git does not read every file again. Other
+        untracked files are not in the commits: the move leaves them where they are.
+        """
+        message = f"{label}: your %s, kept by timewalk before the move to {going}"
+        head = git(self.work, "rev-parse", "HEAD")
+        index = Path(git(self.work, "rev-parse", "--absolute-git-dir")) / "index"
+        with tempfile.TemporaryDirectory() as folder:
+            env = {"GIT_INDEX_FILE": str(Path(folder) / "index"), "GIT_LITERAL_PATHSPECS": "1"}   # a name like *.out is a name
+
+            def copy() -> None:
+                if index.exists():
+                    shutil.copyfile(index, env["GIT_INDEX_FILE"])
+                else:
+                    git(self.work, "read-tree", "HEAD", env=env)
+
+            # What was staged. In a merge stopped on a conflict, the conflicted files as they are on disk.
+            copy()
+            unmerged = {line.split("\t", 1)[1] for line in git(self.work, "ls-files", "--unmerged", "-z", env=env).split("\x00") if "\t" in line}
+            if unmerged:
+                git(self.work, "add", "--sparse", "--", *sorted(unmerged), env=env)
+            staged = git(self.work, "write-tree", env=env)
+            parent = head
+            if staged != git(self.work, "rev-parse", "HEAD^{tree}"):
+                parent = git(self.work, "commit-tree", staged, "-p", head, "-m", message % "staged changes", env=self.identity())
+            # The edits, hidden ones included, and the files in the way, ignored or not.
+            copy()
+            self.hidden_edits(env)
+            git(self.work, "add", "--update", "--sparse", env=env)   # edits and deletions of tracked files; an unresolved file as it is
+            if in_the_way:
+                git(self.work, "update-index", "--add", "-z", "--stdin", input_text="\x00".join(in_the_way), env=env)
+            tree = git(self.work, "write-tree", env=env)
+        if tree == git(self.work, "rev-parse", f"{parent}^{{tree}}"):
+            return parent if parent != head else None
+        return git(self.work, "commit-tree", tree, "-p", parent, "-m", message % "edits", env=self.identity())
+
+    def remove_kept(
+        self,
+        paths: list[str],  # The files in the way, relative to the copy, already kept on a saved branch
+    ) -> None:
+        "Delete the files that a move would replace, now that they are kept, then the folders they leave empty, deepest first."
+        folders = set()
+        for path in paths:
+            target = self.work / path
+            target.unlink(missing_ok=True)   # a symlink goes, not what it points to
+            folders.update(parent for parent in target.parents if parent != self.work and parent.is_relative_to(self.work))
+        for folder in sorted(folders, key=lambda folder: len(folder.parts), reverse=True):
+            with contextlib.suppress(OSError):
+                folder.rmdir()   # only an empty folder goes
+
+    def wait_for_index(self) -> None:
+        "Wait a moment for another git to let go of the index; refuse, before saving anything, if it does not."
+        lock = Path(git(self.work, "rev-parse", "--absolute-git-dir")) / "index.lock"
+        for wait in (0.1, 0.2, 0.4, 0.8):
+            if not lock.exists():
+                return
+            time.sleep(wait)
+        if lock.exists():
+            raise GitError(f"another git is using the replay copy ({lock} exists). If no git is running there, delete that file")
+
+    def identity(self) -> dict[str, str]:  # The author and committer for timewalk's commits, when git has none set up
+        "Name timewalk as the author of a commit it makes, when the copy has no user.name or user.email of its own."
+        names = {}
+        for key, variable, value in (("user.name", "NAME", "timewalk"), ("user.email", "EMAIL", "timewalk@localhost")):
+            if not subprocess.run(["git", "config", key], cwd=self.work, capture_output=True, text=True).stdout.strip():
+                names[f"GIT_AUTHOR_{variable}"] = names[f"GIT_COMMITTER_{variable}"] = value
+        return names
+
+    def end_unfinished(self) -> None:
+        "Leave a rebase, cherry-pick or revert that the learner left half done, once their work is kept: the move takes the branch."
+        folder = Path(git(self.work, "rev-parse", "--absolute-git-dir"))
+        if (folder / "rebase-apply" / "applying").exists():
+            subprocess.run(["git", "am", "--quit"], cwd=self.work, capture_output=True)   # git am uses rebase-apply too
+        for marks, command in ((("rebase-merge", "rebase-apply"), "rebase"), (("CHERRY_PICK_HEAD", "sequencer"), "cherry-pick"), (("REVERT_HEAD",), "revert")):
+            if any((folder / mark).exists() for mark in marks):
+                subprocess.run(["git", command, "--quit"], cwd=self.work, capture_output=True)
 
     def _checkout(
         self,
@@ -458,10 +591,11 @@ class Repo:
         move: int | None = None,  # In a tutorial, the move of the step to go to; default: 0, the start of the step
         anywhere: bool = False,  # Kept for callers; any move can be reached
     ) -> None:
-        """Move the working copy to a step, or to a move of a step. Edits are stashed, never discarded; untracked files are left alone.
+        """Move the working copy to a step, or to a move of a step, and never lose a learner's work.
 
-        With `discard`, the move is `git checkout -f`: edits to tracked files are thrown away, and an untracked
-        file is replaced only where the step has a file of that name. Every other untracked file still stays.
+        In a replay clone, the edits and any file in the way are kept on a branch `timewalk/saved/<place>`, then the move
+        replaces them; it never asks. In place, or in a replay worktree of an older version, edits are stashed after a
+        question, or with `discard` (a worktree only) thrown away, and an untracked file in the way stops the move.
 
         In a tutorial, any move of a step can be reached: each one is a commit, right for its own place.
         """
@@ -479,15 +613,43 @@ class Repo:
             self.place_name() if self.branch else "an unknown step")
         if here is None and move_now:
             label = self.moves[step_now][move_now - 1].name  # in a tutorial, the move made
+        self.kept = []
+        if self.branch:
+            # A replay clone never asks and never loses work: the edits, and a file in the way, go on a saved branch with
+            # the learner's commits, and then the move replaces them. Other untracked files stay, as always.
+            going = self.moves[index][place[1] - 1].name if moves and place[1] else self.steps[index].name
+            in_the_way, nested = self.in_the_way("HEAD", target)
+            if nested:
+                raise GitError(f"{nested[0].rstrip('/')} is a git repository of its own, where a step has files. "
+                               "Move it out of the copy, then move again")
+            self.wait_for_index()
+            snapshot = self.save_work(label, going, in_the_way)
+            self.kept = self.keep_learner_commits(label, snapshot)
+            self.end_unfinished()
+            # Every move is a plain checkout, never --force: timewalk removes only what it has kept, and if anything was
+            # missed, git refuses rather than overwrite it. A move that stops puts the kept work back in the files.
+            try:
+                self.hidden_edits()
+                self.remove_kept(in_the_way)
+                git(self.work, "reset", "--hard", "--quiet")
+                self._checkout(target)
+            except (GitError, OSError) as exc:
+                back = bool(snapshot) and subprocess.run(["git", "restore", "--source", snapshot, "--worktree", "--", "."],
+                                                         cwd=self.work, capture_output=True).returncode == 0
+                where = f"; your work is kept on {self.kept[0]}" if self.kept else ""
+                raise GitError(f"{exc}. The move stopped{where}" + (", and is back in your files" if back else "")) from None
+            self.at = place
+            self.keep_place()
+            return
         if self.discard:
-            self.keep_learner_commits(label)
             self._checkout(target, force=True)
             self.at = place
             self.keep_place()
             return
-        # First the untracked files in the way, so that a move that cannot happen does not stash the edits away.
-        untracked = set(git(self.work, "ls-files", "--others").splitlines())
-        in_the_way = sorted(untracked & set(git(self.work, "ls-tree", "-r", "--name-only", target).splitlines()))
+        # First the untracked files in the way, so that a move that cannot happen does not stash the edits away. In place,
+        # timewalk does not keep them on a branch of your repository: it refuses.
+        files, nested = self.in_the_way("HEAD", target)   # a stash puts HEAD's files back too
+        in_the_way = sorted(files + [path.rstrip("/") for path in nested])
         if in_the_way:
             raise GitError("these untracked files exist where the step has a file, and will not be overwritten: " + ", ".join(in_the_way[:5]))
         if self.edits():
@@ -646,7 +808,7 @@ class Repo:
         index, move = self.position()
         moves = self.moves[index] if index is not None else []
         return {"main": str(self.main), "work": str(self.work), "in_place": self.work == self.main,
-                "discard": self.discard, "steps": [asdict(s) for s in self.steps], "current": index,
+                "discard": self.discard and not self.branch, "steps": [asdict(s) for s in self.steps], "current": index,
                 "move": move, "moves": [{**asdict(m), "files": self.move_files(m)} for m in moves],
                 "edits": self.edits()}
 
@@ -1402,7 +1564,7 @@ def make_app(
             earlier = [i for i, owner in enumerate(owners) if owner < place]
             # The move's first slide; for a move without slides, the last slide before it, so that Down goes on, not back.
             showing["slide"] = owners.index(place) if place in owners else (earlier[-1] if earlier else 0)
-        await hub.tell({"type": "moved"})
+        await hub.tell({"type": "moved", **({"kept": repo.kept} if repo.kept else {})})
         # The shells at the step are now at another commit. An idle one draws its prompt again, to show the new HEAD.
         for term in terminals.values():
             if term.cwd == repo.work:
@@ -1441,7 +1603,7 @@ def make_app(
         showing["mode"], showing["done"] = walk.mode, number or 0
         showing["step"] = names[index]
         showing["slide"] = memory.get(showing["step"], {}).get("slide", 0)
-        await hub.tell({"type": "walk"})
+        await hub.tell({"type": "walk", **({"kept": repo.kept} if repo.kept else {})})
         for term in terminals.values():
             if term.cwd == repo.work:
                 term.refresh_prompt()
@@ -1506,7 +1668,7 @@ def make_app(
             repo.move(index, set_aside=bool(body.get("set_aside")), move=owner)   # refuses a move with edits, until set aside
             showing["slide"], showing["done"] = to, owner
             remember(showing["step"], slide=to)
-            await hub.tell({"type": "moved"})
+            await hub.tell({"type": "moved", **({"kept": repo.kept} if repo.kept else {})})
             for term in terminals.values():
                 if term.cwd == repo.work:
                     term.refresh_prompt()
@@ -1769,7 +1931,8 @@ def main() -> None:
     parser.add_argument("--commits", action="store_true", help="step through the commits of the current branch instead of tags")
     parser.add_argument("--replay", type=Path, help="where to put the replay copy (default: <repo>-replay, beside the repository)")
     parser.add_argument("--in-place", action="store_true", help="move the repository itself instead of a second working copy")
-    parser.add_argument("--discard-edits", action="store_true", help="a move throws uncommitted edits away instead of asking and stashing them; meant for a replay copy")
+    parser.add_argument("--discard-edits", action="store_true", help="no longer needed: a move keeps edits on a branch timewalk/saved/<place>, without asking. "
+                        "Only a replay worktree of an older version still throws them away")
     parser.add_argument("--clock", action="store_true", help="show the clock band: the clock, the planned times and the next step")
     parser.add_argument("--assistant", default="claude", help="command started in the assistant terminal tab (default: claude)")
     parser.add_argument("--port", type=int, default=8765, help="the port to listen on (default: 8765)")
@@ -1801,6 +1964,8 @@ def main() -> None:
             repo.select(start.tags, start.steps, tutorial=start.kind == "tutorial")
     except GitError as exc:
         raise SystemExit(f"timewalk: {exc}") from None
+    if args.discard_edits and repo.branch:
+        print("timewalk: --discard-edits is no longer needed: a move keeps edits on a branch timewalk/saved/<place>, without asking")
     notes_path = args.notes.resolve() if args.notes else None
     slides_path = args.slides.resolve() if args.slides else None
     for path in [notes_path, *(w.notes for w in walks)]:

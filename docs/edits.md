@@ -5,9 +5,8 @@ for example `ruff format`, `uv lock` or an editor. For the second kind, timewalk
 they happen, beside the changes of the step itself.
 
 An edit is a change to a tracked file that nobody has committed yet. A tracked file is a file that git
-records. timewalk never throws edits away, but `--discard-edits` changes this rule. The flag is for a
-replay copy where you do not need to keep anything from the session. With the flag, a move drops the edits
-and does not ask first.
+records. timewalk never throws edits away. In the replay copy, a move keeps them on a saved branch, and
+does not ask first.
 
 ## What you see
 
@@ -42,48 +41,80 @@ the same change that ruff made live in front of the class at step-02.
 
 ## Moving with edits
 
-Edits belong to the step where you made them. So a move to another step asks first.
+Edits belong to the step where you made them. So before a move, timewalk keeps your work on a saved branch
+in the replay copy, and then moves. The move does not ask. A saved branch is a branch with a name of the form
+`timewalk/saved/<place>`. The place is the step or the move where you made the work, for example
+`timewalk/saved/step-02`. A second save at the same place gets `-2`, then `-3`.
 
-![A move with edits that nobody has committed asks first](images/move-with-edits.png)
+The windows then say where your work is. The Room window does not, so the class sees only the move.
+**✕ Close** hides the notice in its window.
+
+![The step bar after a move from step-02 with an edit: the notice names the branch timewalk/saved/step-02, with a command to see the work and a command to bring a file back](images/kept-work.png)
+
+The notice gives two commands. Run them in a terminal at the step:
+
+```
+git show timewalk/saved/step-02                        # see the work
+git checkout timewalk/saved/step-02 -- src/greet.py    # bring one file back
+```
+
+The saved branch holds these things, oldest first:
+
+- **Your commits** since the last move. See [The replay copy](replay.md#saved-branches).
+- **What you staged** with `git add`, as a commit of its own, if there is any.
+- **Your edits** to tracked files, as a commit on top of it.
+- **Every untracked file in the way of the move,** in the same commit as the edits. An untracked file is
+  a file that git does not record. A file is in the way of a move in these cases:
+  - The new step has a file of the same name.
+  - The new step has a folder of that name.
+  - The new step has a file where the path of the untracked file has a folder.
+
+  timewalk keeps such a file whether git ignores it or not. Where git ignores the case of names, for
+  example on a Mac, `Notes.md` and `notes.md` are the same name.
+
+Every other untracked file stays where it is, and the saved branch does not hold it. For example, `.venv`
+and the outputs of a run stay on the disk through every move.
+
+The save does not change your files, the index or the stash. The index is the list of changes that the
+next commit holds, which `git add` fills. After the save, the move puts the step in place of your work.
+If a rebase, a cherry-pick or a revert is half done, timewalk ends it, because the work is now on the
+branch.
+
+A git repository of its own inside the replay copy cannot go on a branch. If such a folder is in the way,
+timewalk stops the move and names the folder. Move the folder out of the replay copy, and move again.
+
+### With `--in-place`
+
+With `--in-place`, the edits are your real work in your repository, and timewalk writes no branch there.
+So a move with edits asks first.
+
+![With --in-place, a move with edits that nobody has committed asks first](images/move-with-edits.png)
 
 - **Stay here** leaves everything as it is.
 - **Set the edits aside and move** runs `git stash` and then moves. The stash keeps the edits aside, with
-  the label of the step, for example `timewalk: edits made at step-02`. The stash is in the replay copy,
-  and not in your repository. To bring the edits back, run `git stash list` and `git stash pop` in a
-  terminal at the step.
+  the label of the step, for example `timewalk: edits made at step-02`. To bring the edits back, run
+  `git stash list` and `git stash pop` in a terminal.
 
-timewalk does not discard edits. Only you can discard them, for example with `git restore .` in a
-terminal.
+With `--in-place`, an untracked file where the step has a file of the same name stops the move. The
+message names the file. A replay copy that an older version made as a worktree works in the same way. See
+[The replay copy](replay.md#a-replay-copy-from-an-older-version).
 
 ### With `--discard-edits`
 
-If you start timewalk with `--discard-edits`, it never asks. A move runs `git checkout --force` to the step.
-The move throws away the edits to tracked files.
+The replay copy no longer needs `--discard-edits`, because a move keeps the edits and does not ask. With a
+replay copy that is a clone, timewalk prints a line that says so, and the flag changes nothing.
 
-An untracked file is a file that git does not record. A move replaces an untracked file only where the new
-step tracks a file with the same name. Every other untracked file stays.
-
-Use the flag when you do not need to keep anything that the class typed in the replay copy. `just demo`
-uses the flag.
-
-Every window shows the flag in the step bar. With no edits, the step bar shows a quiet label, "Moves discard edits":
-
-![The step bar with --discard-edits and no edits, which shows a quiet label](images/discard-moved.png)
-
-With edits, the label becomes a red warning with the number of edited files. If you hover over the **edited** badge or
-the **Your edits** view, they say the same:
-
-![The step bar with --discard-edits and an edit, which warns that the next move drops the edit](images/discard-warning.png)
-
-timewalk refuses to start with both `--discard-edits` and `--in-place`. In place, the edits are your real
-work that you have not committed, so the flag would throw that work away.
+The flag still works on a replay copy that an older version made as a worktree. There, a move runs
+`git checkout --force` and throws the edits away. The step bar then says "Moves discard edits". With edits,
+the label becomes a red warning with the number of edited files. timewalk refuses to start with both
+`--discard-edits` and `--in-place`.
 
 ## What counts as an edit
 
 An edit is a change to a **tracked** file, which is a file that the commit of the step has. A command can
 also write new files, for example a `.venv`, a database or the output of a run. Git does not track these
-new files. They are not edits, the page does not show them, and a move never touches them. See
-[The replay copy](replay.md).
+new files. They are not edits, and the page does not show them. A move leaves them where they are, but
+first keeps a file in the way on the saved branch. See [The replay copy](replay.md).
 
 timewalk does not watch for edits in the repository of the **Main** tab, because the page never shows that
 repository. See [The terminals](terminals.md).

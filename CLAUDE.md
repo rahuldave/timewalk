@@ -64,13 +64,16 @@ Rahul set these rules. Each rule has tests. Do not weaken them.
   clone on the branch `timewalk/replay`. It writes no config, hook, branch, tag or stash in your repository;
   what a learner does in the copy stays there, and a move keeps a learner's commits on `timewalk/saved/<place>`.
   A replay worktree made by an older version still works, on a detached HEAD. `--in-place` is the only exception.
-- **timewalk never deletes or overwrites an untracked file.** Run outputs, for example `.venv`,
-  `mlflow.db` and `runs/`, must stay through every move. If a later step has a tracked file where an
-  untracked file sits, refuse.
-- **timewalk never discards an edit.** A move with edits asks first, and then runs `git stash` with the
-  step name. The one exception is the flag `--discard-edits`, for a replay copy that you throw away. With
-  it, a move runs `git checkout --force`, and the step bar of every window warns. timewalk refuses it with
-  `--in-place`.
+- **timewalk never loses an untracked file.** Run outputs, for example `.venv`, `mlflow.db` and `runs/`, stay through
+  every move. When a step has a tracked file where an untracked file sits, a move in a replay clone first keeps the
+  untracked file on a branch `timewalk/saved/<place>`, then replaces it; ignored or not, it is never lost. `--in-place`,
+  and a replay worktree of an older version, refuse the move instead.
+- **timewalk never loses an edit, and a move in a replay clone never asks.** Before it checks out, a move commits the
+  learner's uncommitted work (edits, and new files that git does not ignore) with a temporary index, so the files, the
+  index and the stash stay as they are, and puts a branch `timewalk/saved/<place>` on it, with any commits the learner
+  made. Your window then says where the work is kept; the Room window does not. `--in-place` asks first and stashes,
+  as before. `--discard-edits` is no longer needed; only a replay worktree of an older version still throws edits away
+  with it.
 - **The file view cannot write.** No route changes a file in the repository or the replay copy. The one
   file that the page writes is the notes file. **Save** in the notes column sends one section to
   `POST /api/notes`. The server writes only that section, and refuses if the section changed in the file
@@ -108,7 +111,7 @@ Use the recipes, and not the commands behind them.
 ```
 just test            # all tests; extra arguments go to pytest: just test -k slides
 just lint            # ruff
-just demo            # fetch the sample submodule if needed, and open it with --discard-edits and --clock
+just demo            # fetch the sample submodule if needed, and open it with --clock
 just demo-walks      # the same, with the two walks of demo/toc.toml
 just walk <repo> ... # run timewalk on a repository
 just pdf <manifest> -o out.pdf --title "..."

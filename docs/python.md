@@ -19,7 +19,7 @@ that calls `uv run` does the same. If you move to a step that adds a package, ru
 - **Bare commands do not sync.** To sync is to make the environment match the lockfile. `python`, `pytest`
   and other commands that run straight from `.venv/bin` use the packages that were last installed.
 - **A plain `uv run` writes the lockfile again when it does not match `pyproject.toml`.** The new
-  lockfile is an edit to a tracked file, so the next move asks about it. `uv run --locked` stops with an
+  lockfile is an edit to a tracked file, so the next move keeps it on a saved branch. `uv run --locked` stops with an
   error instead.
 
 ## The exact environment at every step

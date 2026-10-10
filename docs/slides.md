@@ -61,6 +61,17 @@ The page reloads the slides by itself. When you save the manifest or a slide fil
 window draws the current slide again within about a second. The scroll position stays. You do not need
 to reload the page.
 
+### Pictures in the dark theme
+
+In the dark theme, the page inverts the colours of each SVG picture. The picture can be a slide, or a
+picture in a Markdown slide, a document or the notes. The page then turns the hues back, so that blue stays blue, and black lines become white. A picture in another
+format, for example a PNG photo, keeps its colours. The PDF is always light, and keeps the colours of every
+picture.
+
+Leave the background of an SVG transparent. Do not draw a white rectangle behind the picture. With no
+background of its own, the picture takes the colour of the page, in both themes. The demo's
+`demo/slides/shape.svg` is an example.
+
 ## Commands on a slide
 
 A Markdown slide, or a document, can hold commands that the reader runs from the page. Write each command
