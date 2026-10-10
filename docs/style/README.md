@@ -7,7 +7,7 @@ files again.
 Check the pages with the recipe, and fix each hard problem:
 
 ```
-just style                                    # every page
+just style                                    # every page, the README, CLAUDE.md and the demo's prose
 python3 docs/style/check.py -v docs/edits.md  # one page, with the soft notes
 ```
 

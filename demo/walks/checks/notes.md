@@ -1,6 +1,6 @@
 # Notes for the walk "Only the checks"
 
-A short walk through two steps of the demo: the tests, and the formatter.
+The walk covers two steps of the demo, the tests and the formatter.
 
 ## step-02 The tests
 time: 0:00

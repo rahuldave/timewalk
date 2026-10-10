@@ -162,7 +162,7 @@ git checkout -B timewalk/replay <commit>
 ### Do mode
 
 In do mode, the learner makes each move by hand from the notes. The code does not move until the
-learner presses **Catch me up**, **Start**, **↺ Restart step**, or a step button, or another walk is chosen. So the working copy
+learner presses **Catch me up**, **Start**, **↺ Restart step**, or a step button, or chooses another walk. So the working copy
 holds the commit of the step before, with the work of the learner on top as edits and untracked files.
 
 **Done** changes only a count that the server keeps. "Your files match" compares the files on the disk

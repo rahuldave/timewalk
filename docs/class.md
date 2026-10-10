@@ -83,7 +83,7 @@ so. Drag that window to the projector, and click **Full screen** in it.
 ## If a window stops answering
 
 In a long class, Chrome can stop answering in a window, and say that the page is unresponsive. It happens
-most in the window on the projector, in full screen. Two causes are known:
+most in the window on the projector, in full screen. The known causes are these:
 
 - **A zoomed window.** Before version 1.0.14, a terminal in a zoomed window, or on a scaled screen, made a
   new picture of itself on every frame. That kept the window and the graphics card busy. Version 1.0.14 fixes it. To make text larger, use **A+**, which never had the problem.
@@ -113,7 +113,7 @@ not in front. If the windows become slow, stop the run, or let it print less oft
 
 1. Run `just present`, and open the address on your laptop.
 2. Plug in the projector, or a second screen, set to extend.
-3. Click **Room**, and allow the browser to manage windows.
+3. Click **Room**, and let the browser manage windows.
 4. Move through three steps, and check that the window for the class follows and shows no cues.
 5. Click one command, run it, and check the output in both windows.
 6. Make the PDF once with **PDF**, if you hand it out.

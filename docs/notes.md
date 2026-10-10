@@ -64,7 +64,7 @@ say what the moves of the step do together.
 
 Make `tests/test_empty.py`, with one test that counts the words of an empty text.
 
-This is the file changed:
+The move changes one file:
 
 - `tests/test_empty.py`: a new file of 8 lines; adds `class Empty` and `test_empty`.
 
@@ -133,7 +133,7 @@ In a tutorial, the notes column draws a step with moves in sections:
   The text is about the whole step.
 - **A section for each move.** The sections have no boxes. Each one runs from edge to edge of the column,
   with a bar on its left. The bar is dark for the move on show and blue for the next move. A move made
-  has a grey bar and a check. The moves after the next one are faded.
+  has a grey bar and a check. The page fades the moves after the next one.
 - **The button of each move.** The next move has **Show ▶** in watch mode, or **Done ✓** in do mode. A
   move already made keeps a grey button that does nothing, **Shown ✓** or **Made ✓**.
 - **↺ Restart step.** Once a move is made, each section of a move made ends with this button, and so does

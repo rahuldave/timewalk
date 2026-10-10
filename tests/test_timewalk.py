@@ -2211,12 +2211,14 @@ def test_timewalk_notes_keeps_the_order_the_line_ends_and_the_titles(tutorial: t
 
 
 def test_timewalk_notes_drafts_items_for_each_file(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
-    "A drafted move lists its files as items: file for a new one, diff for a changed one, with the words left to write."
+    "A drafted move lists its files as items: file for a new one, diff for a changed one, with the words left to write, under a lead line that the guide allows."
     from timewalk.walks import add_move_sections, load_toc
 
     (tutorial_class / "notes.md").write_text("## step-00\n\n## step-01\n\n## step-02\n")
     _, _, drafts = add_move_sections(load_toc(tutorial_class / "toc.toml")[0], tutorial.main)
     assert "files:\n- diff `README.md`: \n- file `b.txt`: \n" in drafts[1]
+    assert "The move changes these files:\n\n- `README.md`: 1 line added, 1 removed\n- `b.txt`: a new file of 1 line\n" in drafts[1]
+    assert "The move changes one file:\n\n- `a.txt`: a new file of 1 line\n" in drafts[0]
 
 
 def test_the_two_tabs_and_a_file_as_a_move_leaves_it(tutored: TestClient) -> None:

@@ -196,7 +196,7 @@ the server for events. A socket is an open connection between the window and the
 messages both ways. The old address `/presenter` sends the browser on to the page.
 
 When a window changes the step, the slide, the layout, Shell mode, the open file or the tab in front, it tells the
-server. In a tutorial, the mode and the count of moves done are shared too. The server then tells every window. Each window keeps its own choice to show the notes and the cues.
+server. The server then tells every window. In a tutorial, the server also shares the mode and the count of moves done. Each window keeps its own choice to show the notes and the cues.
 
 A scroll of the slide, the file or the notes goes to every other window too, as a fraction of the whole. A scroll
 of a terminal goes as a number of lines. The browser keeps the theme, the text size, the terminal height and run on click. See [The page](page.md#several-windows).

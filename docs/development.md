@@ -51,11 +51,12 @@ change, take the pictures again.
 
 ## The writing guide
 
-Every page of the site follows the writing guide, `docs/style/GUIDE.md`. The glossary of terms is in
-`docs/style/README.md`, with the headings that other pages link to. Check the pages with the recipe:
+Every page of the site follows the writing guide, `docs/style/GUIDE.md`. So do the README, `CLAUDE.md`, and
+the notes and slides of the demo. The glossary of terms is in `docs/style/README.md`, with the headings that
+other pages link to. Check the pages with the recipe:
 
 ```
-just style                                    # every page
+just style                                    # every page, the README, CLAUDE.md and the demo's prose
 python3 docs/style/check.py -v docs/edits.md  # one page, with the soft notes
 ```
 

@@ -187,7 +187,7 @@ Give each move a `### step-NN.k Title` section, in the order of the commits. Her
 the step and `k` is the number of the move. A move section holds these parts:
 
 - **The instructions** to make the move by hand, with the code to type.
-- **The files changed,** a list that starts "These are the files changed:". Each item is one file, its
+- **The files changed,** a list that starts "The move changes these files:". Each item is one file, its
   path as it is, then what happened to it. `timewalk-notes` drafts it from the diff. See [Draft the notes of the moves](#draft-the-notes-of-the-moves).
 - **A line `files:`, with items.** Each item is one file to look at, with words that say why. A `show:`
   line under an item quotes the main line of the change. See [The items under files](#the-items-under-files).
@@ -208,7 +208,7 @@ Make `tests/test_count.py` with two tests:
 ...
 ```
 
-This is the file changed:
+The move changes one file:
 
 - `tests/test_count.py`: a new file of 11 lines; adds `class Count`, `test_words` and `test_case`.
 
@@ -325,8 +325,8 @@ each mode checks out, and when.
 ### The items under files
 
 A line `files:` in a move section starts a list of items. An item is one file to look at, with words
-that say why. The words are written by hand, but the change that an item opens comes from the commits,
-each time the page draws it. So no diff is copied into the notes.
+that say why. You write the words by hand, but the change that an item opens comes from the commits,
+each time the page draws it. So the notes hold no copy of a diff.
 
 ```markdown
 files:
@@ -348,7 +348,7 @@ a `diff` item, and **▤ See file** for a `file` item. The words of the item go 
 **± See diff** button opens the tab of the reader that holds the change:
 
 - **Next change** for the move that the learner works on.
-- **Last change** for the move just made.
+- **Last change** for the last move made.
 - **Changes in step-02.1** for any other move.
 
 A **▤ See file** button opens **Your file**. In do mode, the button of a move that is not made yet opens
@@ -359,7 +359,7 @@ of the real diff there. An excerpt is a small part of the diff, read only. It ho
 lines of context on each side, or the whole hunk when the hunk is about eight lines or fewer. A hunk is
 one run of changed lines in a diff. When the item opens the reader, the reader marks the same line.
 
-The excerpt is a band across the whole column, and the named line is shaded. A click on the excerpt opens
+The excerpt is a band across the whole column, and the page shades the named line. A click on the excerpt opens
 the change, as the button of its item does. In a move after the next one, the click does nothing.
 
 ![The notes of step-02.1 in do mode: an item with its words and its excerpt, and the reader on Next change with the quoted line marked, and the Apply bar](images/tutorial-items.png)
@@ -466,13 +466,13 @@ parts:
 - **A heading** `### step-NN.k`, with the subject of the commit after its name as the title. A step that
   has no section yet gets one too, `## step-NN Title`, with the first line of its tag's message, steps
   without moves too. A walk whose folder has no `notes.md` yet gets one.
-- **"These are the files changed:"**, a list with one item for each file of the commit ("This is the file
-  changed:" for one). An item says if the file is new
+- **"The move changes these files:"**, a list with one item for each file of the commit ("The move changes one
+  file:" for one). An item says if the file is new
   or removed, or how many lines the commit added and removed. For Python, it names the functions and
   classes that the commit added, removed or changed. For a `justfile`, it names the recipes that the
   commit added.
 - **A line `files:`, with items.** It drafts a `file` item for each new file, and a `diff` item for each
-  changed file. The words of each item are left for you to write. It writes no `show:` lines.
+  changed file. You write the words of each item. It writes no `show:` lines.
 - **A comment** that asks for a command, for you to replace with an anchor command.
 
 The list names only what the diff shows. Finish each draft by hand. Write the instructions and the words

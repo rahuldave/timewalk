@@ -1,6 +1,6 @@
 # Notes for the demo
 
-The script of each step: what to read and which commands to run. Lines that start with "> " are cues for
+The script of each step says what to read and which commands to run. Lines that start with "> " are cues for
 a presenter. timewalk shows them in their own shade.
 
 ## step-00 Where everything starts
@@ -26,9 +26,8 @@ $ python3 -c "import sys; sys.path.insert(0, 'src'); from greet import shout; pr
 ## step-02 Its tests
 time: 0:04
 
-Four tests arrive. Run them first. Then format the code with ruff. The file list marks `src/greet.py` as
-edited, and the reader's "Your edits" view shows what ruff changed. Run the tests again: they
-still pass.
+The step adds four tests. Run them first. Then format the code with ruff. The file list marks `src/greet.py`
+as edited, and the reader's "Your edits" view shows what ruff changed. Run the tests again. They still pass.
 
 > Ask: what would you test that is missing?
 
@@ -37,8 +36,8 @@ $ uvx ruff format
 $ uvx pytest -q
 runs$ for epoch in 1 2 3 4 5; do echo "epoch $epoch"; sleep 2; done
 
-> Note: the demo runs with `--discard-edits`, so the step bar warns about the edit, and the next move
-> throws it away without asking.
+> Note: the next move keeps this edit on a saved branch such as `timewalk/saved/step-02`, and your window says
+> where.
 
 ## step-03 Formatting, committed
 time: 0:07

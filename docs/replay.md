@@ -59,8 +59,8 @@ timewalk then copies each of your tags to the tags of the replay copy. It does s
 has no tag of that name, or has the copy that timewalk made before. A tag that you moved moves in the
 replay copy too. A tag that the learner made is never moved or deleted.
 
-So a step that you tagged again is there at the next start. A step that you tag while timewalk runs is
-fetched when a move needs it. timewalk reads the list of steps when it starts, and when you change the
+So a step that you tagged again is there at the next start. If you tag a step while timewalk runs,
+timewalk fetches it when a move needs it. timewalk reads the list of steps when it starts, and when you change the
 walk. So restart timewalk after you tag again. See [The refs in the replay copy](git.md#the-refs-in-the-replay-copy).
 
 ## Saved branches

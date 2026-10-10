@@ -43,6 +43,6 @@ screenshots:
 site:
     uv run docs/build.py --serve
 
-# Check the site's pages against the writing guide (docs/style/GUIDE.md). -v also shows the soft notes
+# Check the prose against the writing guide (docs/style/GUIDE.md): the site, README, CLAUDE.md, and the demo's notes and slides. -v also shows the soft notes
 style *args:
-    python3 docs/style/check.py docs/*.md {{ args }}
+    python3 docs/style/check.py docs/*.md README.md CLAUDE.md demo/notes.md demo/walks/*/notes.md demo/slides/*.md {{ args }}

@@ -403,7 +403,7 @@ def move_section(
     title = move.subject.split(":", 1)[1].strip() if prefixed else move.subject
     statuses = name_status(main, "diff-tree", "--no-commit-id", "--name-status", "-r", "--no-renames", move.sha)
     summary = move_summary(main, move.sha)
-    lead = "This is the file changed:" if len(summary) == 1 else "These are the files changed:"   # then one item for each file
+    lead = "The move changes one file:" if len(summary) == 1 else "The move changes these files:"   # then one item for each file
     items = [f"- {'file' if status == 'A' else 'diff'} `{path}`: " for path, status in statuses.items() if status != "D"]
     return "\n".join([f"### {move.name} {title}", "", lead, "", *summary, "", "files:", *items, "",
                       "<!-- Add a command that shows what this move did, for example: $ just test -->", ""])

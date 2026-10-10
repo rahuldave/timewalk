@@ -22,7 +22,7 @@ def greet( name,excited = False ):
     return 'Hello, '+name+( '!' if excited else '.' )
 ```
 
-- What is `name`? A string, a list, a user object?
+- Is `name` a string, a list, or a user object?
 - What happens with an empty name?
 - Who would notice if it changed?
 
@@ -49,4 +49,4 @@ $ uvx pytest -q
 - **A comment beside each parameter** says what it means
 - **One line of docstring** says what the function is for
 
-Nothing is written twice.
+Each fact appears once.

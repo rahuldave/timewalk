@@ -10,13 +10,17 @@ sends the browser on to `/`.
 
 The page can be open in several windows, for example one on the projector and one on the screen of the
 presenter. The server keeps the shared state, so every window shows the same step, slide, layout, open
-file, view and terminal tab. Scrolls of the slide, the file and the notes are relayed to every other window over
-the events socket, as a fraction. Each window keeps its keyboard focus and whether the notes and the cues show
-(sessionStorage); `?room=1` (the Room button) is the class's window: no cues, no clock band, no PDF or Edit; the browser keeps theme, text size, terminal height and run on click (localStorage). A shell has one size, and the window that the
-presenter last typed in sets it.
+file, view and terminal tab. The server relays scrolls of the slide, the file and the notes to every other
+window over the events socket, as a fraction. A shell has one size, and the window that the presenter last
+typed in sets it.
+
+Each window keeps its keyboard focus, and whether the notes and the cues show (sessionStorage). The window
+at `?room=1` (the Room button) is the class's window. It shows no cues and no clock band, and has no PDF or
+Edit button. The browser keeps the theme, text size, terminal height and run on click (localStorage).
 
 Write every site page by the nossaifd writing guide, `docs/style/GUIDE.md`. Use the glossary and the
-linked headings in `docs/style/README.md`. Check with `just style`. Define jargon where it first appears.
+linked headings in `docs/style/README.md`. Define jargon where it first appears. Check with `just style`.
+It checks the site, the README, this file, and the notes and slides of the demo.
 
 The user documentation is the site in `docs/`, published to rahuldave.com/timewalk. The README is a short
 front page that links into the site. Keep both true when the behaviour changes. When the page looks
@@ -61,27 +65,27 @@ outside it. To change the history of the sample, do these steps in order:
 Rahul set these rules. Each rule has tests. Do not weaken them.
 
 - **The repository you point at never moves, and is never written to.** timewalk steps in a `<repo>-replay`
-  clone on the branch `timewalk/replay`. It writes no config, hook, branch, tag or stash in your repository;
-  what a learner does in the copy stays there, and a move keeps a learner's commits on `timewalk/saved/<place>`.
+  clone on the branch `timewalk/replay`. It writes no config, hook, branch, tag or stash in your repository.
+  What a learner does in the copy stays there, and a move keeps a learner's commits on `timewalk/saved/<place>`.
   A replay worktree made by an older version still works, on a detached HEAD. `--in-place` is the only exception.
 - **timewalk never loses an untracked file.** Run outputs, for example `.venv`, `mlflow.db` and `runs/`, stay through
-  every move. When a step has a tracked file where an untracked file sits, a move in a replay clone first keeps the
-  untracked file on a branch `timewalk/saved/<place>`, then replaces it; ignored or not, it is never lost. `--in-place`,
-  and a replay worktree of an older version, refuse the move instead.
+  every move. A step can have a tracked file where an untracked file sits. Then a move in a replay clone first keeps
+  the untracked file on a branch `timewalk/saved/<place>`, and then replaces it. Ignored or not, the file is never lost.
+  `--in-place`, and a replay worktree of an older version, refuse the move instead.
 - **timewalk never loses an edit, and a move in a replay clone never asks.** Before it checks out, a move commits the
-  learner's uncommitted work (edits, and new files that git does not ignore) with a temporary index, so the files, the
-  index and the stash stay as they are, and puts a branch `timewalk/saved/<place>` on it, with any commits the learner
-  made. Your window then says where the work is kept; the Room window does not. `--in-place` asks first and stashes,
-  as before. `--discard-edits` is no longer needed; only a replay worktree of an older version still throws edits away
-  with it.
+  learner's uncommitted work with a temporary index. The work is the edits, and the new files that git does not ignore.
+  The temporary index keeps the files, the index and the stash as they are. The move puts a branch
+  `timewalk/saved/<place>` on that commit, with any commits the learner made. Your window then says where the work is
+  kept, but the Room window does not. `--in-place` asks first and stashes, as before. `--discard-edits` is no longer
+  needed. Only a replay worktree of an older version still throws edits away with it.
 - **The file view cannot write.** No route changes a file in the repository or the replay copy. The one
   file that the page writes is the notes file. **Save** in the notes column sends one section to
   `POST /api/notes`. The server writes only that section, and refuses if the section changed in the file
   since the page read it. The terminals write files as any terminal does.
 - **Localhost by default, a new token at each start, and other Host headers refused.** Every page, API
-  call, socket and static asset needs the token. `--host` (for a cloud machine) listens beyond this machine:
+  call, socket and static asset needs the token. `--host` (for a cloud machine) listens beyond this machine.
   timewalk then warns at start and accepts any Host header, so the token is the only guard. Keep the
-  default, and keep recommending an SSH tunnel over `--host 0.0.0.0` in the docs.
+  default. In the docs, keep the advice to use an SSH tunnel and not `--host 0.0.0.0`.
 
 ## Layout
 
@@ -98,11 +102,13 @@ Rahul set these rules. Each rule has tests. Do not weaken them.
 | `demo/notes.md`, `demo/slides/`, `demo/toc.toml`, `demo/walks/` | The notes and slides of the demo, and a second walk. They stay here, outside the sample, as in a class kit |
 
 timewalk is a package, `src/timewalk`, built with hatchling from `pyproject.toml`. It gives four commands,
-`timewalk`, `timewalk-pdf`, `timewalk-check` and `timewalk-notes`. Its dependencies are Starlette, uvicorn, websockets, Playwright and pypdf;
-the tests use the `dev` group. In a clone, run `uv run timewalk`. Users run it from GitHub with
-`uvx --from git+https://github.com/rahuldave/timewalk@v1.0.14 timewalk`, so it is not on PyPI, by Rahul's choice. When a change must reach users,
-raise the version in `pyproject.toml`, tag the commit `vX.Y.Z`, push the tag, and update the pin in the
-docs and in the kits.
+`timewalk`, `timewalk-pdf`, `timewalk-check` and `timewalk-notes`. Its dependencies are Starlette, uvicorn,
+websockets, Playwright and pypdf. The tests use the `dev` group. In a clone, run `uv run timewalk`.
+
+timewalk is not on PyPI, by Rahul's choice. Users run it from GitHub with
+`uvx --from git+https://github.com/rahuldave/timewalk@v1.0.14 timewalk`. To get a change to users, raise the
+version in `pyproject.toml` and tag the commit `vX.Y.Z`. Then push the tag, and update the pin in the docs and
+in the kits.
 
 ## Commands
 
@@ -117,6 +123,7 @@ just walk <repo> ... # run timewalk on a repository
 just pdf <manifest> -o out.pdf --title "..."
 just screenshots     # retake docs/images from a throwaway clone of the demo, and the tutorial from ../timewalk-test
 just site            # build docs/_site and serve it at http://127.0.0.1:8000
+just style           # check the prose against the writing guide; -v also shows the soft notes
 ```
 
 If port 8765 is in use, timewalk stops with a message. Give `--port` with another number.
@@ -140,31 +147,39 @@ socket.
   ```
 - Keep prose plain in the README, docstrings, commit messages and the text of the page. Write short
   sentences and concrete names, with no jargon. Match the voice of the README.
-- **Keep the page's elements consistent.** A button that does something has a bordered look, an icon and a verb
-  (the toggles of the bar, such as Notes, Shell, Dark and the layouts, are nouns and need no icon):
-  `↺ Restart step`, `Show ▶`, `± See diff <path>`, `▤ See file <path>`, `Next step: step-NN ▶`. A button keeps one shape:
-  do not split its label into a button and loose text, or turn a button into a band. The words of the page are in its
-  font, and paths, commands and code in the font of the code. Before a change to how something looks, find its kind
-  (button, band, label, bar) and match the others of that kind. The colours come from one theme, GitHub's, in
-  `app.css` and `TERM_THEMES`; do not add colours of your own.
+- **Keep the page's elements consistent.** A button that does something has a bordered look, an icon and a verb.
+  Examples are `↺ Restart step`, `Show ▶`, `± See diff <path>`, `▤ See file <path>` and `Next step: step-NN ▶`.
+  The toggles of the bar, such as Notes, Shell, Dark and the layouts, are nouns and need no icon. A button keeps one
+  shape. Do not split its label into a button and loose text, or turn a button into a band.
+- **Use the page's fonts and colours.** The words of the page are in its font, and paths, commands and code are in
+  the font of the code. Before a change to how something looks, find its kind (button, band, label, bar), and match
+  the others of that kind. The colours come from one theme, GitHub's, in `app.css` and `TERM_THEMES`. Do not add
+  colours of your own.
 - A new kind of notes line or slide entry needs four things. They are the parser, a test, the table in the
   site, and the code of the page that uses it.
 
 ## Checking a change
 
 1. Run `just test` and `just lint`.
-2. Run timewalk-test's suite against this copy: `cd ~/Projects/timewalk-test && TIMEWALK_LOCAL=~/Projects/timewalk just test`.
-   It drives every walk, step, move and slide in two windows. For anything in `src/timewalk/static/`, also drive the
+2. Run `cd ~/Projects/timewalk-test && TIMEWALK_LOCAL=~/Projects/timewalk just test`. It runs the suite of
+   timewalk-test against this copy, and drives every walk, step, move and slide in two windows. For anything in
+   `src/timewalk/static/`, also drive the
    page in headless Chrome, in two windows, through a throwaway clone
    of the demo. Run `git clone ~/Projects/timewalk-demo` into the scratchpad. Do not use
    `demo/timewalk-demo-replay`, which can hold edits of Rahul.
 3. Go through every step and slide, and type in a terminal. Playwright with `channel="chrome"` works.
    Nobody checks Safari or Firefox.
-4. **An adversarial review by an Opus subagent before every commit.** When the change is built and its checks
-   pass, and before you ask Rahul to commit, start a subagent with the model `opus`. Ask it to break the change: wrong state in a second
-   window, a restart, an edit or untracked file in the way, a tag that moved, a slow git, odd paths, the rules above.
-   Fix what it finds, with a test for each finding, and run the checks again. Before anything goes onto `main` (a
-   release, or a merge of a branch), run one more review over the whole change, and fix its findings first.
+4. **An adversarial review by an Opus subagent before every commit.** When you have built the change and its
+   checks pass, and before you ask Rahul to commit, start a subagent with the model `opus`. Ask it to break the
+   change with cases such as these:
+   - wrong state in a second window
+   - a restart
+   - an edit or untracked file in the way
+   - a tag that moved, a slow git, or odd paths
+   - the rules above
+
+   Fix what it finds, with a test for each finding, and run the checks again. Before anything goes onto `main`, as
+   a release or a merge of a branch, run one more review over the whole change. Fix its findings first.
 
 ## Commits
 
@@ -190,41 +205,45 @@ Rahul expects every change to the page to ship as a release, with its docs, in o
 
 ## Pitfalls met before
 
-- **The port probe in `main()` sets `SO_REUSEADDR`, as uvicorn does.** Without it, a timewalk just stopped
+- **The port probe in `main()` sets `SO_REUSEADDR`, as uvicorn does.** Without it, a timewalk that had stopped a moment before
   blocked a restart on the same port for a minute, through connections in TIME_WAIT.
 - **Run the checks so that a failure stops you.** `just lint | tail -1` and `just style > /dev/null && ...; next`
   let failures through, and two releases went out with a lint error or a doc that failed the guide. Run
   `just test`, `uvx ruff check .`, `just style` and the link check as separate commands, or under
-  `set -o pipefail`, and read each result before you commit.
+  `set -o pipefail`. Read each result before you commit.
 - **A Python script that edits files must fail loudly.** Assert that each old text is found once, and stop
   the release if it is not. One release shipped without its docs because an edit missed a table row.
 - **Quote heredocs** (`<<'EOF'`). Without quotes, the shell runs every `` `backtick` `` inside the text.
 - **In `app.js`, a `const` that `refresh()` uses must be declared near the top.** `refresh()` runs during the
   module's first top-level `await`, before later declarations exist.
-- **CSS rules of equal specificity: the later one wins.** A rule meant to override a general one must come
-  after it, or be more specific (the slide command buttons were once 24px for this reason).
-- **Per window or per browser:** `sessionStorage` is per tab (Notes and Cues toggles), `localStorage` is per
+- **Of two CSS rules of equal specificity, the later one wins.** A rule that overrides a general one must come
+  after it, or be more specific. The slide command buttons were once 24px for this reason.
+- **Per window or per browser.** `sessionStorage` is per tab (the Notes and Cues toggles). `localStorage` is per
   browser (theme, size, pane widths, run on click). The docs must say which.
 - **`app.js` uses internals of ghostty-web.** `startRenderLoop()` and `animationFrameId` stop a hidden terminal
-  from drawing; `setDrawing` checks that they exist, and does nothing if they do not. `term.renderer.devicePixelRatio`
-  is rounded up to a whole number: at a fractional ratio (a zoomed window, a scaled screen) the renderer made a new
-  canvas on every frame, in every terminal of every window. After an update of the vendored ghostty-web, run
+  from drawing. `setDrawing` checks that they exist, and does nothing if they do not. `app.js` rounds
+  `term.renderer.devicePixelRatio` up to a whole number. At a fractional ratio (a zoomed window, a scaled screen),
+  the renderer made a new canvas on every frame, in every terminal of every window. After an update of the vendored ghostty-web, run
   timewalk-test's `test_drawing.py`, which checks both.
 - **ghostty-web's `fit.fit()` skips a size equal to the last one it fitted**, though a Room size may have come
   between. `fitTerminal` compares `proposeDimensions()` with the terminal's real size instead.
-- **What the server shares:** walk, step and move, slide, layout, Shell, open file and view, `of` and `at` (the move
-  whose change, or whose version of the file, the reader shows), tab, clock, and in a
-  tutorial the mode (`do` or `watch`) and the count of moves marked done (`showing`); a per-step
-  memory of slide and scroll (`memory`); scrolls (as fractions, and a terminal's as lines) are relayed between windows over `/ws/events`. In Shell mode
-  each shell keeps the Room's size (`Terminal.room_size`), and a window that asks for another is told it again. A shell gets
-  an Enter after a move only when it is idle at an empty line (`Terminal.refresh_prompt`). The lines that an item of
-  the notes marks (`marks`) are relayed in the `show` event only, and not kept in `showing`, so a window opened later
-  shows the file without them.
+- **What the server shares.** The server keeps this state, one copy that every window shares:
+  - walk, step and move, slide, layout, Shell, open file and view
+  - `of` and `at`, the move whose change, or whose version of the file, the reader shows
+  - tab and clock
+  - in a tutorial, the mode (`do` or `watch`) and the count of moves marked done (`showing`)
+  - a memory of slide and scroll for each step (`memory`)
+
+  The server relays scrolls between windows over `/ws/events`, as fractions, and a terminal's scroll as lines. In
+  Shell mode each shell keeps the Room's size (`Terminal.room_size`). A window that asks for another size gets the
+  Room's size again. A shell gets an Enter after a move only when it is idle at an empty line
+  (`Terminal.refresh_prompt`). The server relays the lines that an item of the notes marks (`marks`) in the `show`
+  event only. It does not keep them in `showing`, so a window opened later shows the file without them.
 - **An events socket says `hello` once it is on the list of windows.** The test client returns from
   `websocket_connect` when the server accepts, a moment before the server adds the socket to `hub.pages`. A test that
-  then posts and waits for the event missed it, and `receive_json()` waited for ever: the unit tests hung, now and then,
-  for hours. Wait for `{"type": "hello"}` first. `pytest-timeout` (60 s here, 120 s in timewalk-test) turns any other
+  then posted and waited for the event missed it, and `receive_json()` waited for ever. The unit tests hung, now and
+  then, for hours. Wait for `{"type": "hello"}` first. `pytest-timeout` (60 s here, 120 s in timewalk-test) turns any other
   hang into a failure with a traceback.
 - **`/api/match` runs often.** Every window in do mode asks every two seconds. It runs `Repo.differ_from` off the event
   loop (`asyncio.to_thread`), so a slow git does not hold up the sockets. Read git paths with `-z` (`status --porcelain -z`,
-  `diff --name-only -z`, `ls-tree -z`): without it, git quotes a path with a space or an accent.
+  `diff --name-only -z`, `ls-tree -z`). Without it, git quotes a path with a space or an accent.
