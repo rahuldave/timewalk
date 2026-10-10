@@ -90,7 +90,7 @@ timewalk-notes REPO --toc toc.toml --walk ID [--write]
 | `--write` | Write the drafts into the notes file. Without it, print only the drafts |
 
 Drafts a `### step-NN.k` section for each move that the notes do not have yet, at the end of its step. A
-draft has the subject of the commit as its title, and a list "What changed:" from the diff. It ends with a
+draft has the subject of the commit as its title, and a list "These are the files changed:" from the diff. It ends with a
 comment that asks for a command. Sections already in the notes stay as they are.
 
 A step without a section gets a heading `## step-NN Title`, with the first line of its tag's message as

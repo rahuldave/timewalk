@@ -1942,7 +1942,7 @@ def test_timewalk_notes_drafts_the_missing_moves(tutorial: timewalk.Repo, tutori
     assert added == ["step-01.2", "step-01.3"]
     assert "### step-01.1 Mine\nmy words\n\n$ ls" in text
     assert "### step-01.2 b\n" in text and "### step-01.3 c\n" in text, "titles without the move's or the step's prefix"
-    assert move_summary(tutorial.main, tutorial.moves[1][1].sha) == ["- `README.md`: +1 -1", "- `b.txt`: new file, 1 lines"]
+    assert move_summary(tutorial.main, tutorial.moves[1][1].sha) == ["- `README.md`: 1 line added, 1 removed", "- `b.txt`: a new file of 1 line"]
     (tutorial_class / "notes.md").write_text(text)
     _, warnings = check(load_toc(tutorial_class / "toc.toml"), tutorial.main, tutorial_class)
     assert any("step-01.2 has no command" in w for w in warnings) and not any("step-01.1 has no command" in w for w in warnings)
@@ -1965,7 +1965,7 @@ def test_the_summary_names_python_functions_and_recipes(tmp_path: Path) -> None:
     from timewalk.walks import move_summary
 
     summary = move_summary(main, run_git(main, "rev-parse", "HEAD"))
-    assert summary == ["- `justfile`: +3 -0; adds `recipe check`", "- `m.py`: +6 -2; adds `class C`; changes `a`, `b`"]
+    assert summary == ["- `justfile`: 3 lines added; adds `recipe check`", "- `m.py`: 6 lines added, 2 removed; adds `class C`; changes `a`, `b`"]
 
 
 # ---------- the replay copy: a clone on a branch ----------
@@ -2189,7 +2189,7 @@ def test_the_summary_names_functions_in_files_with_odd_names(tmp_path: Path) -> 
     run_git(main, "add", "-A")
     run_git(main, "commit", "-qm", "two")
     summary = "\n".join(move_summary(main, "HEAD"))
-    assert "`sp ace.py`: new file, 2 lines; adds `b`" in summary and "`café.py`: new file, 2 lines; adds `b`" in summary
+    assert "`sp ace.py`: a new file of 2 lines; adds `b`" in summary and "`café.py`: a new file of 2 lines; adds `b`" in summary
 
 
 def test_timewalk_notes_keeps_the_order_the_line_ends_and_the_titles(tutorial: timewalk.Repo, tutorial_class: Path) -> None:

@@ -454,7 +454,7 @@ class Repo:
 
             def copy() -> None:
                 if index.exists():
-                    shutil.copyfile(index, env["GIT_INDEX_FILE"])
+                    shutil.copy2(index, env["GIT_INDEX_FILE"])   # with its time: git then checks an entry as new as the index ("racy git")
                 else:
                     git(self.work, "read-tree", "HEAD", env=env)
 

@@ -187,8 +187,8 @@ Give each move a `### step-NN.k Title` section, in the order of the commits. Her
 the step and `k` is the number of the move. A move section holds these parts:
 
 - **The instructions** to make the move by hand, with the code to type.
-- **What changed,** a short list of the files and the functions that the commit changed.
-  `timewalk-notes` drafts it from the diff. See [Draft the notes of the moves](#draft-the-notes-of-the-moves).
+- **The files changed,** a list that starts "These are the files changed:". Each item is one file, its
+  path as it is, then what happened to it. `timewalk-notes` drafts it from the diff. See [Draft the notes of the moves](#draft-the-notes-of-the-moves).
 - **A line `files:`, with items.** Each item is one file to look at, with words that say why. A `show:`
   line under an item quotes the main line of the change. See [The items under files](#the-items-under-files).
 - **One or more commands at the end,** with the result to expect. They are the anchor of the move.
@@ -208,9 +208,9 @@ Make `tests/test_count.py` with two tests:
 ...
 ```
 
-What changed:
+This is the file changed:
 
-- `tests/test_count.py`: new file, 11 lines; adds `class Count`, `test_words` and `test_case`.
+- `tests/test_count.py`: a new file of 11 lines; adds `class Count`, `test_words` and `test_case`.
 
 files:
 - diff `tests/test_count.py`: two tests. The second asks for something the code cannot do yet.
@@ -466,7 +466,8 @@ parts:
 - **A heading** `### step-NN.k`, with the subject of the commit after its name as the title. A step that
   has no section yet gets one too, `## step-NN Title`, with the first line of its tag's message, steps
   without moves too. A walk whose folder has no `notes.md` yet gets one.
-- **"What changed:"**, a list with one item for each file of the commit. An item says if the file is new
+- **"These are the files changed:"**, a list with one item for each file of the commit ("This is the file
+  changed:" for one). An item says if the file is new
   or removed, or how many lines the commit added and removed. For Python, it names the functions and
   classes that the commit added, removed or changed. For a `justfile`, it names the recipes that the
   commit added.

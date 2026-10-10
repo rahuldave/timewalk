@@ -202,7 +202,7 @@ timewalk-notes repo --toc toc.toml --walk tutorial            # print the drafts
 timewalk-notes repo --toc toc.toml --walk tutorial --write    # write them into the notes
 ```
 
-A draft has the title of the move, a list "What changed:" from the diff, a line `files:` and a comment.
+A draft has the title of the move, a list "These are the files changed:" from the diff, a line `files:` and a comment.
 Under `files:`, it drafts one item for each file of the move, with no words. Add the instructions to make
 the move by hand. Give each item its words, and quote the main line of the change with `show:`. End the
 section with its anchor commands.

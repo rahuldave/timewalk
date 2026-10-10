@@ -135,8 +135,11 @@ Give each move a `### step-NN.k Title` section, in the order of the commits. Eac
 parts:
 
 - **The instructions** to make the move by hand, with the code to type.
-- **"What changed:"**, a list of the changes. `timewalk-notes` drafts it from the diff. Edit the draft,
-  and say which change is the one to look at.
+- **The files changed, as a list.** Start it with "These are the files changed:", or "This is the file
+  changed:" for one. Give each file an item of its own. Write its path as it is, in code. Then say what
+  happened to it, for example "- `src/tally/__init__.py`: 7 lines added; adds `count`." Do not put the
+  files in a sentence of prose. Say which change matters in a sentence after the list. `timewalk-notes` drafts the
+  list from the diff.
 - **A line `files:`, with items.** Give every item words that say what to look for in the file.
 - **A `show:` line for the main line of the move.** Under its item, quote that line of the change. The
   notes draw it as an excerpt, and the reader marks it.

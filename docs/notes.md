@@ -64,9 +64,9 @@ say what the moves of the step do together.
 
 Make `tests/test_empty.py`, with one test that counts the words of an empty text.
 
-What changed:
+This is the file changed:
 
-- `tests/test_empty.py`: new file, 8 lines; adds `class Empty` and `test_empty`.
+- `tests/test_empty.py`: a new file of 8 lines; adds `class Empty` and `test_empty`.
 
 files:
 - diff `tests/test_empty.py`: an empty text counts nothing.

@@ -376,7 +376,15 @@ def move_summary(
         # A name on both sides changed its own line, for example a signature; a hunk inside a function changed its body.
         touched = {n.removeprefix("class ") for n in found["+"] & found["-"]} | found["~"]
         changes = sorted(touched - {a.removeprefix("class ") for a in adds} - {r.removeprefix("class ") for r in removes})
-        size = f"new file, {added} lines" if kind == "A" else f"+{added} -{removed}"
+        def lines(count: str) -> str:   # "1 line", "3 lines"; git counts a binary file as "-"
+            return f"{count} line" if count == "1" else f"{count} lines"
+
+        if kind == "A":
+            size = f"a new file of {lines(added)}"
+        elif added in ("0", "-"):
+            size = f"{lines(removed)} removed"
+        else:
+            size = f"{lines(added)} added" + (f", {removed} removed" if removed not in ("0", "-") else "")
         what = [part for part in (
             "adds " + ", ".join(f"`{n}`" for n in adds) if adds else "",
             "removes " + ", ".join(f"`{n}`" for n in removes) if removes else "",
@@ -394,8 +402,10 @@ def move_section(
     prefixed = move.subject.startswith((f"{move.name}:", f"{step}:"))   # a move's subject, or the step's own on its last move
     title = move.subject.split(":", 1)[1].strip() if prefixed else move.subject
     statuses = name_status(main, "diff-tree", "--no-commit-id", "--name-status", "-r", "--no-renames", move.sha)
+    summary = move_summary(main, move.sha)
+    lead = "This is the file changed:" if len(summary) == 1 else "These are the files changed:"   # then one item for each file
     items = [f"- {'file' if status == 'A' else 'diff'} `{path}`: " for path, status in statuses.items() if status != "D"]
-    return "\n".join([f"### {move.name} {title}", "", "What changed:", "", *move_summary(main, move.sha), "", "files:", *items, "",
+    return "\n".join([f"### {move.name} {title}", "", lead, "", *summary, "", "files:", *items, "",
                       "<!-- Add a command that shows what this move did, for example: $ just test -->", ""])
 
 
