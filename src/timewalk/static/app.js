@@ -134,7 +134,8 @@ function drawSteps() {
   // At Start, none of the step's moves is made: the code is still the step before's, so say that, not the step's subject.
   const atStart = here && ui.state.moves?.length && ui.state.move === 0;
   $("step-subject").textContent = !here ? "The working copy is not at one of the steps. Choose a step to return."
-    : made ? made.subject : atStart ? `before its first move, with the code of ${ui.state.steps[ui.state.current - 1]?.name ?? "the step before"}` : here.subject;
+    : made ? made.subject : atStart ? (here.start && here.section ? `before ${ui.state.moves[0]?.name}, with the code of the commit before it`
+      : `before its first move, with the code of ${here.start ? "the tag before it" : ui.state.steps[ui.state.current - 1]?.name ?? "the step before"}`) : here.subject;
   drawStatus();
   $("prev").disabled = current === null || current === 0;
   $("next").disabled = current !== null && current === steps.length - 1;
@@ -1273,7 +1274,7 @@ function drawNotes() {
     title.append(name, " " + (mine?.title || here.subject));
     title.title = `${here.name} ${mine?.title || here.subject}`;   // the whole title, when the column cuts it
   } else title.textContent = "between steps";
-  $("notes-edit").hidden = !!ui.editing || !here;
+  $("notes-edit").hidden = !!ui.editing || !here || !!mine?.derived;   // a small step's notes are edited in the step they come from
   // The prose and the commands, in the order of the notes file: each command is a button where it is written.
   const box = $("notes");
   box.replaceChildren();

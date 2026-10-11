@@ -12,8 +12,8 @@ To build a class with several walks, see [Build a class with several walks](buil
 [What a narrative and a tutorial need](authoring.md) lists what each kind of walk needs, as checklists.
 
 Try it on the demo. In a clone of timewalk, run `just demo-walks`. The demo has two walks. "The demo, step
-by step" has all five steps, and "Only the checks" has two of them. The class timewalk-test has five
-walks, two of them tutorials.
+by step" has all five steps, and "Only the checks" has two of them. The class timewalk-test has seven
+walks, three of them tutorials. Two of its walks are small walks, taken out of its big tutorial.
 
 ![The step bar of timewalk-test in a tutorial: the walk menu, the label Tutorial, the switch between Do and Watch, and the row of moves](images/walks.png)
 
@@ -49,7 +49,9 @@ steps = ["step-01", "step-02", "step-05"]
 | `notes` | The notes file of the walk |
 | `slides` | The slides manifest of the walk |
 | `folder` | A folder for the walk. Its notes are `notes.md`, and its manifest is `slides/slides.toml`, in this folder |
-| `steps` | Optional. Some of the steps, by name. Without it, the walk has every step. A tutorial cannot have `steps` |
+| `steps` | Optional. Some of the steps, by name. Without it, the walk has every step. A tutorial cannot have `steps`. It takes `select` |
+| `select` | Optional. The steps, the moves and the ranges of moves that the walk takes from a bigger walk, in the order of the history, for example `["step-04", "step-05.3..step-05.6"]`. Give `steps` or `select`, not both. See [Take a small walk out of a big one](#take-a-small-walk-out-of-a-big-one) |
+| `intro` | Optional. A Markdown file. The copies of the walk put it before the first step, in place of the text of the notes before the first step |
 | `tags` | Optional. A glob for tags of its own, for example `"parts-*"` on another branch. Give `steps` or `tags`, not both |
 | `setup` | `"manual"`: you run `just setup` yourself at each step. The only value for now |
 | `moves` | In a tutorial, the mode that it starts in. `"do"`: the learner makes each move by hand. `"watch"`: timewalk checks out the commit of each move. See [Do mode and watch mode](#do-mode-and-watch-mode). Default: `"do"` |
@@ -186,7 +188,8 @@ step-02: the tests pass               tag step-02, move step-02.3
 ```
 
 A tutorial takes every tag of its glob, so it cannot have `steps`. For a tutorial on one part of the
-history, give the part tags of its own on a branch, and name them with `tags`.
+history, name its steps and moves with `select`. See
+[Take a small walk out of a big one](#take-a-small-walk-out-of-a-big-one).
 
 ### The notes of a tutorial
 
@@ -548,7 +551,8 @@ the `watch` block. See [Blocks for one mode](#do-mode-and-watch-mode).
 
 `timewalk-tutorial` writes copies of a tutorial walk that a reader can read without timewalk. It writes
 a Markdown file for each mode, for GitHub. It also writes a website, with a page for each step in each
-mode.
+mode. For a narrative, it writes one Markdown file and one website. See
+[The copies of a small walk](#the-copies-of-a-small-walk).
 
 ```
 timewalk-tutorial ~/code/project --toc my-class/toc.toml --walk tutorial --markdown out
@@ -579,10 +583,12 @@ Each copy is for one mode. It changes the notes in these ways:
   "with **Apply this file** in timewalk, or from the move's commit on GitHub" becomes "from the move's
   commit", as a link. Any other **Apply this file** or **Apply the whole move** becomes a link to the
   move's commit. The rest of the sentence stays.
-- **A section of a step or a move that the walk does not have is left out,** and the command says so.
+- **A copy holds only the sections of the steps and moves of the walk.** If the notes have a section for
+  a name that is not a step of the history, the command says so.
 
 The text of the notes before the first step goes first, under the title. `--no-opening` leaves it out.
-`--intro` puts a Markdown file of your own before it.
+`--intro` puts a Markdown file of your own before it. The key `intro` of the walk in `toc.toml` takes the
+place of the text of the notes before the first step.
 
 ### The Markdown files
 
@@ -616,6 +622,191 @@ only the pages that `timewalk-tutorial` writes. A notes file in the folder never
 
 The `walk` skill refreshes the public walk repository of a class. Its own scan for private lines stays
 the check of what reaches students.
+
+## Take a small walk out of a big one
+
+A big tutorial can hold several smaller walks. A small walk names the steps and the moves that it takes
+with the key `select`. It reads the notes and the slides of the big tutorial, so you write each section
+once.
+
+For example, the tutorial of smallwikiapp has eleven steps and many moves. Three small walks take parts
+of it:
+
+| Walk | Kind | `select` |
+|---|---|---|
+| testing | Tutorial | `["step-02", "step-03", "step-05.5", "step-06", "step-08.4"]` |
+| linting | Tutorial, in watch mode | `["step-04.1..step-04.7", "step-04.9..step-04.10", "step-05.3..step-05.6", "step-10.3"]` |
+| docs | Narrative | `["step-08", "step-09.4", "step-09.5"]` |
+
+The walk `linting` in `toc.toml`:
+
+```toml
+[[walk]]
+id = "linting"
+title = "Lint the code, one move at a time"
+description = "The moves of smallwikiapp that add ruff, its rules, and the checks that run it."
+kind = "tutorial"
+moves = "watch"
+notes = "walks/tutorial/notes.md"              # the notes of the whole tutorial
+slides = "walks/tutorial/slides/slides.toml"   # its slides
+intro = "walks/linting/intro.md"               # what the copies say before the first step
+select = ["step-04.1..step-04.7", "step-04.9..step-04.10", "step-05.3..step-05.6", "step-10.3"]
+```
+
+The class timewalk-test has two small walks, `small` and `story`. Open them with `just present small`
+and `just present story`.
+
+### What select names
+
+| Entry | Example | The walk takes |
+|---|---|---|
+| A step | `"step-04"` | The whole step. In a tutorial, the step keeps all its moves |
+| A move | `"step-10.3"` | One move, as a small step of its own |
+| A range of moves | `"step-05.3..step-05.6"` | The moves from the first to the last, as one small step. Both moves are in one step |
+
+A small step is a step of a walk that holds only some of the moves of a step of the history. Name the
+entries in the order of the history. These rules apply:
+
+- **A narrative takes steps and single moves.** Each one is a stop, with no moves. A narrative cannot take
+  a range of moves.
+- **The whole step of a narrative is its tag.** The tag comes after the moves of the step, so a move goes
+  before its step. Write `["step-01.2", "step-01"]`, not `["step-01", "step-01.2"]`.
+- **The last move of a step is the commit of its tag.** In smallwikiapp, `step-04.10` is the commit of the
+  tag `step-04`.
+
+Each of these is an error, and timewalk does not start:
+
+- An entry out of the order of the history.
+- An entry that takes a part that an entry before it took.
+- A name that is not a step or a move of the history.
+- A range from a move of one step to a move of another step, or a range that goes back.
+- A range in a narrative.
+- A walk with both `steps` and `select`.
+
+### Why select, and not tags of its own
+
+Before `select`, tags of its own on a branch were the only way to take a part of a tutorial. The
+subject of each move must start with the name of its move. A move `step-05.3` of the big tutorial is a
+different move in a walk with tags of its own, for example `lint-02.1`. So tags of its own need a copy of
+each commit, with a new subject. A fix to the big tutorial must then go into the copy too.
+
+With `select`, a move keeps its name in every walk. The notes, the commits and the selection then agree.
+Tags of its own are still the way for a part with a history of its own, for example the walk `hooks` of
+timewalk-test.
+
+### The Start of a small step
+
+The **Start** of a step is the place before its first move, where the step starts. A step of a walk that
+selects starts at the commit before it:
+
+- **A whole step** starts at the tag before it, as in the big tutorial.
+- **A small step** starts at the commit before its first move. The small step `step-05.3 to step-05.6`
+  starts at the commit of `step-05.2`. A small step from the first move of a step starts at the tag
+  before the step.
+- **A stop of a narrative at a move** is the commit of the move. Its **Last change** is the change of
+  that move.
+
+At the **Start** of a small step, the step bar says "before step-05.3, with the code of the commit before
+it". **Last change** at the end of a small step compares its **Start** with its last move. So
+the change of a small step holds only the change of its moves.
+
+A walk that selects starts at its first stop. If timewalk starts on such a walk and the replay copy is
+at no stop of it, timewalk moves the replay copy there. The move keeps any edits on a saved branch, as
+every move does.
+
+### The names of small steps
+
+The page names a small step by its moves. A range is "step-05.3 to step-05.6", and a single move is the
+name of the move, for example "step-10.3". The moves of a small step keep their names, so a move is
+`step-05.4` in the notes, in the commit and in every walk. A saved branch at a small step is, for example,
+`timewalk/saved/step-05.3-to-step-05.6`.
+
+### One notes file for several walks
+
+A small walk names the notes of the whole tutorial, for example `notes = "walks/tutorial/notes.md"`. It
+reads the sections of its steps and moves from that file. The notes column shows these parts:
+
+| Stop | The notes column shows |
+|---|---|
+| A whole step of a tutorial | The whole section of the step |
+| A small step | The commands at the top of the section of its step, for example `$ just setup`, then the sections of its moves |
+| A whole step of a narrative that selects | The text of the step before its first move |
+| A stop of a narrative at a move | The commands at the top of the section of its step, then the section of the move |
+
+A small step leaves out the text of its step before the first move. That text is about the whole step.
+Every **Start** needs `$ just setup`, so the commands at the top of a step's section stay. See
+[Write a move to read alone](authoring.md#write-a-move-to-read-alone).
+
+A small step has no **✎ Edit** button, and neither has a stop at a move. Its notes come from several
+sections. Edit them in the whole tutorial, at the step of the history.
+
+### Slides of a small walk
+
+A small walk can name the manifest of the whole tutorial. The slides follow these rules:
+
+- **A whole step** shows its own slides, then the slides of its moves, as in the big tutorial.
+- **A small step** shows the slides of its moves. If its moves have no slides, it shows the slides of its
+  step.
+- **A stop of a narrative at a move** shows the slides of the move, or else the slides of its step.
+
+### The checks of a small walk
+
+`timewalk-check` checks each walk on the sections that it takes. A section that the walk takes and that
+the notes do not have is an error, for example:
+
+```
+walk linting: step-05.3 to step-05.6 takes the section ### step-05.4, and notes.md has none
+```
+
+The other sections of the notes are not part of the small walk. The walk of the whole tutorial checks
+them, if the table of contents lists it. A section for a name that is not a step of the history is an
+error. Each small step needs a slide, of its own moves or of its step. The `###` sections of a step must
+be in the order of the commits. The subject of each move's commit must start with its name.
+
+`timewalk-notes --write`, for a tutorial that selects, drafts only the sections that the walk takes. It
+writes them into the notes of the whole tutorial, in the order of the history. A new move section goes
+before the first move section that comes after it in the commits:
+
+```
+timewalk-notes ~/code/project --toc my-class/toc.toml --walk linting --write
+```
+
+### The copies of a small walk
+
+`timewalk-tutorial --walk ID` writes the copies of any walk with notes, small walks too:
+
+```
+timewalk-tutorial ~/code/project --toc my-class/toc.toml --walk linting --markdown out --site site
+```
+
+- **A tutorial** gets `TUTORIAL-do.md`, `TUTORIAL-watch.md`, and one website with **Watch** and **Do**.
+- **A narrative** gets one `TUTORIAL.md`, and one website with a page for each stop.
+
+The title of the copy of a walk that selects is the `title` of the walk. Each copy starts with the
+`intro` of the walk. Each page has the name of its stop, for example `watch/step-05.3-to-step-05.6.qmd`.
+The pages of a narrative are at the top of the folder, for example `step-09.4.qmd`.
+
+The links go to these places on GitHub:
+
+| Link | Goes to |
+|---|---|
+| A whole step | The code at its tag |
+| A small step | The code at its **Start**, under "The code at its Start", the commit before its first move |
+| A stop of a narrative at a move | The code at the move's commit, where the stop stands |
+| A move | The commit of the move |
+| A `diff` item of a step | The whole change of the step, from its **Start** |
+
+### The PDF of a small walk
+
+`timewalk-pdf --toc toc.toml --walk ID`, and the **PDF** button, print the stops of the walk. A whole step
+has its slides and the slides of its moves. A small step has the slides of its moves. A stop with no slides
+of its own, and none of its moves, has the slides of its step. With `--with-notes`, each stop has the notes
+that the page shows for it.
+
+### Topics
+
+A topic is a label on moves, for example `topic = "lint"`, that would make a walk of every move with
+that label. timewalk does not have topics. For now, write the list of moves in `select`.
 
 ## A PDF of one walk
 

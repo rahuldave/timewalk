@@ -4,11 +4,12 @@ This page builds a class kit with several walks, from the history of the project
 is one path through the history, with its own notes and slides. [Several walks](walks.md) describes each
 part in detail. Here the parts come together, in the order that you make them.
 
-The repository timewalk-test, at github.com/rahuldave/timewalk-test, is a complete example. It has five
-walks. Two are narratives on every step or on some steps, one is a narrative on tags of its own, and two
-are tutorials. Clone
-it and run `just present` to see each feature. Its README is a tour. [What a narrative and a tutorial
-need](authoring.md) gives the same demands as checklists.
+The repository timewalk-test, at github.com/rahuldave/timewalk-test, is a complete example. It has seven
+walks. Three are narratives, on every step, on some steps and on tags of its own. Two are tutorials, and
+two are small walks taken out of the big tutorial. Clone it and run `just present` to see each feature.
+
+Its README is a tour. [What a narrative and a tutorial need](authoring.md) gives the same demands as
+checklists.
 
 ![A tutorial walk in do mode: the first move of step-02 done, the notes at the second move, and the change of that move in the reader](images/tutorial.png)
 
@@ -81,6 +82,8 @@ Make the steps as for one walk, with one annotated tag for each step, on one bra
 - **A walk on some of the steps** needs nothing more. Name its steps in `toc.toml`.
 - **A walk on one part, with steps of its own,** needs a branch with tags of its own, for example
   `hooks-00` to `hooks-02`. Start the branch at the step where the part begins.
+- **A small walk out of a tutorial** needs nothing more. Name its steps and moves with `select`. See
+  [Take a small walk out of a big one](walks.md#take-a-small-walk-out-of-a-big-one).
 - **A tutorial** needs small commits between the tags. Each small commit is a move.
 
 ### Commits for a tutorial

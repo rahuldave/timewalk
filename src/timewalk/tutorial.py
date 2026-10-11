@@ -24,8 +24,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import quote
 
-from timewalk import GitError, Move, Step, git, note_blocks, pick_steps, step_moves, tag_steps
-from timewalk.walks import TocError, inside, load_toc
+from timewalk import GitError, Move, Step, git, note_blocks, pick_steps, select_steps, step_moves, tag_steps
+from timewalk.walks import TocError, Walk, inside, load_toc
 
 MADE = "Made by timewalk-tutorial from the notes of the walk. Do not edit it by hand: run timewalk-tutorial again."
 MODE_WORDS = {
@@ -60,12 +60,21 @@ WITH_APPLY = re.compile(r"\bwith\s+\*\*Apply (?:this file|the whole move)\*\*(\s
 
 @dataclass
 class Section:
-    "One step of the tutorial, in one mode."
+    "One stop of the walk, in one mode: a step, a small step of some moves, or a narrative's stop at a move."
 
-    name: str  # The step, such as `step-03`
+    name: str  # The stop, such as `step-03`, `step-10.3` or `step-05.3 to step-05.6`
     title: str  # Its title, from its heading in the notes
     body: str  # Its text, under its heading, as Markdown
-    moves: list[tuple[str, str]]  # Its moves: (the text of the move's heading, the move's name, its heading's id on the website)
+    moves: list[tuple[str, str]]  # Its moves: (the text of the move's heading, the move's name, which is its heading's id on the website)
+
+
+@dataclass
+class Source:
+    "One step's section of the notes, as written: the text before its first move, and each move's section."
+
+    title: str  # The title on its heading
+    before: list[str]  # The lines before its first move
+    moves: dict[str, tuple[str, list[str]]]  # Each move's section, by name: the title on its heading, and its lines
 
 
 def fenced(
@@ -169,24 +178,109 @@ def github_url(
     return f"https://github.com/{found.group(1)}"
 
 
-def sections(
+def read_sections(
     text: str,  # The notes of one mode, from for_mode
-    steps: dict[str, Step],  # The steps of the walk, by name, in order
-    moves: dict[str, Move],  # The moves of the walk, by name
-    url: str,  # The project on GitHub
-    level: int,  # The depth of a move's heading: 3 in the Markdown file, 2 on a page of the website, with the move as its id
-    warnings: set[str] | None = None,  # Where to put what is left out, each said once
-) -> tuple[str, str, list[Section]]:  # The title, the text before the first step, and the steps
-    """Read one mode's notes into steps, each with its links to the code: commands in code blocks, items as links. A
-    section of a step or a move that is not in the walk is left out, with a warning."""
+) -> tuple[str, str, dict[str, Source]]:  # The title, the text before the first step, and each step's section by name
+    "Read the notes into the sections of the steps, and of the moves in each. Fenced code holds no heading."
     lines = text.split("\n")
     code = fenced(lines)
-    names = list(steps)
-    title, opening, found = "", [], []
-    current: Section | None = None
-    body: list[tuple[str, str | None]] = []   # each line, with the commit of its move for an Apply in it; None: leave as it is
+    title, opening, found = "", [], {}
+    current: Source | None = None
+    name = ""   # the step whose section is being read
+    lines_now: list[str] = opening
+    for at, line in enumerate(lines):
+        step = re.match(r"^##\s+(\S+)\s*(.*)$", line) if at not in code else None
+        move = re.match(r"^###\s+(\S+)\s*(.*)$", line) if at not in code else None
+        if current is None and not title and at not in code and re.match(r"^#\s+\S", line):
+            title = line[1:].strip()
+        elif step and (current is not None or re.match(r"^[\w-]*\d", step.group(1))):
+            name = step.group(1)
+            current = found.setdefault(name, Source(step.group(2).strip(), [], {}))
+            lines_now = current.before
+        elif current is not None and move and re.match(rf"^{re.escape(name)}\.\d+$", move.group(1)):
+            current.moves[move.group(1)] = (move.group(2).strip(), [])
+            lines_now = current.moves[move.group(1)][1]
+        else:
+            lines_now.append(line)
+    return title, "\n".join(opening).strip(), found
+
+
+def build(
+    sources: dict[str, Source],  # The sections of the notes
+    steps: list[Step],  # The stops of the walk
+    moves: list[list[Move]],  # The moves of each stop
+    url: str,  # The project on GitHub
+    level: int,  # The depth of a move's heading: 3 in the Markdown file, 2 on a page of the website, with the move as its id
+    warnings: set[str],  # Where to put what is missing, each said once
+    history: dict[str, str] | None = None,  # The commit of every step and move of the whole history, which an item may name
+) -> list[Section]:  # The stops, each with its text and its links
+    """Make each stop of the walk from the sections of the notes: a whole step is its section; a small step is the
+    commands at the top of its step's section, such as `$ just setup`, and its moves; a narrative's stop is the text of a
+    step before its first move, or one move's section."""
+    starts = {step.name: step.start or (steps[i - 1].sha if i else "") for i, step in enumerate(steps)}
+    shas = {**(history or {}), **{step.name: step.sha for step in steps}, **{m.name: m.sha for found in moves for m in found}}
+    out = []
+    for step, found in zip(steps, moves, strict=True):
+        source = sources.get(step.section or step.name)
+        if source is None:
+            warnings.add(f"the notes have no section ## {step.section or step.name}, which {step.name} takes")
+            source = Source("", [], {})
+        names = [m.name for m in found] or ([step.name] if step.section else [])
+        if step.section and found:   # a small step of a tutorial stands first on its Start
+            link = f"[The code at its Start]({url}/tree/{starts[step.name]}), the commit before {names[0]}." if starts[step.name] else ""
+        else:   # a step at its tag; a narrative's stop at a move, at the move's commit
+            link = f"[The code at {step.name}]({url}/tree/{step.sha if step.section else quote(step.name)})"
+        body: list[tuple[str, str | None]] = [(link, None), ("", None)]
+        body += render(lead(source.before) if step.section else source.before, step.name, url, shas, starts)
+        section = Section(step.name, source.title, "", [])
+        for name in names:
+            if name not in source.moves:
+                warnings.add(f"the notes have no section ### {name}, which {step.name} takes")
+                continue
+            words, lines = source.moves[name]
+            if len(names) == 1 and step.section:
+                section.title = words
+            if found:   # a tutorial: each move is a section of its stop
+                heading = f"{name} {words}".strip()
+                section.moves.append((heading, name))
+                anchor = f" {{#{name}}}" if level == 2 else ""
+                body += [(line, None) for line in ["", f"{'#' * level} {heading}{anchor}", "",
+                                                   f"[The commit of this move]({url}/commit/{shas[name]}) shows what the move changes.", ""]]
+            else:   # a narrative's stop at a move: its commit, then its words
+                body += [(f"[The commit of {name}]({url}/commit/{shas[name]}) shows what it changes.", None), ("", None)]
+            body += render(lines, name, url, shas, starts)
+        if step.section and len(names) > 1:
+            section.title = ""
+        section.body = squeeze(apply_links(body, url).strip("\n")) + "\n"
+        out.append(section)
+    return out
+
+
+def lead(
+    lines: list[str],  # The text of a step before its first move
+) -> list[str]:  # Its commands at the top, before its first words
+    "Find the commands at the top of a step's section, such as `$ just setup`, which the Start of a small step needs too."
+    out = []
+    for line in lines:
+        if COMMAND.match(line):
+            out.append(line)
+        elif line.strip():
+            break
+    return out
+
+
+def render(
+    lines: list[str],  # Lines of the notes of one step or move
+    where: str,  # The step or move they belong to
+    url: str,  # The project on GitHub
+    shas: dict[str, str],  # The commit of each step and move of the walk
+    starts: dict[str, str],  # The commit before each step of the walk, or ""
+) -> list[tuple[str, str | None]]:  # Each line, with the link to its change for an Apply in it; None: leave it as it is
+    "Turn lines of the notes into Markdown to read: commands in code blocks, items as links to the code."
+    code = fenced(lines)
+    body: list[tuple[str, str | None]] = []
     commands: list[tuple[str, str]] = []   # a run of commands: (track, command)
-    items, skip = False, False   # whether the lines are a files: list; a section left out
+    items = False   # whether the lines are a files: list
 
     def flush() -> None:
         if not commands:
@@ -201,64 +295,15 @@ def sections(
         body.extend((line, None) for line in [*block, "```", ""])
         commands.clear()
 
-    def close() -> None:
-        flush()
-        if current:
-            current.body = squeeze(apply_links(body, url).strip("\n")) + "\n"
-            found.append(current)
-        body.clear()
-
     def change(name: str) -> str:   # the link to what a step or a move changed
-        if name in moves:
-            return f"{url}/commit/{moves[name].sha}"
-        before = names.index(name)
-        return f"{url}/compare/{steps[names[before - 1]].sha}...{steps[name].sha}" if before else f"{url}/commit/{steps[name].sha}"
+        if starts.get(name):
+            return f"{url}/compare/{starts[name]}...{shas[name]}"
+        return f"{url}/commit/{shas[name]}"
 
-    where = ""   # the step or move being read
     for at, line in enumerate(lines):
         if at in code:
-            if not skip:
-                flush()
-                (body.append((line, None)) if current else opening.append(line))
-            continue
-        step = re.match(r"^##\s+(\S+)\s*(.*)$", line)
-        move = re.match(r"^###\s+(\S+)\s*(.*)$", line)
-        if not current and not title and re.match(r"^#\s+\S", line):
-            title = line[1:].strip()
-            continue
-        if step:
-            if step.group(1) not in steps:
-                if current or step.group(1).startswith(tuple(n.split("-")[0] + "-" for n in names)):
-                    (warnings if warnings is not None else set()).add(f"the notes have ## {step.group(1)}, which is not a step of the walk; it is left out")
-                    flush()
-                    skip = True
-                    continue
-            else:
-                close()
-                skip = False
-                where = name = step.group(1)
-                current, items = Section(name, step.group(2).strip(), "", []), False
-                body.extend([(f"[The code at {name}]({url}/tree/{quote(name)})", None), ("", None)])
-                continue
-        if current is not None and move and re.match(rf"^{re.escape(current.name)}\.\d+$", move.group(1)):
             flush()
-            if move.group(1) not in moves:
-                (warnings if warnings is not None else set()).add(f"the notes have ### {move.group(1)}, which is not a move of the walk; it is left out")
-                skip = True
-                continue
-            skip = False
-            where = name = move.group(1)
-            heading = f"{name} {move.group(2).strip()}".strip()
-            items = False
-            current.moves.append((heading, name))
-            anchor = f" {{#{name}}}" if level == 2 else ""
-            body.extend((line, None) for line in ["", f"{'#' * level} {heading}{anchor}", "",
-                                                  f"[The commit of this move]({url}/commit/{moves[name].sha}) shows what the move changes.", ""])
-            continue
-        if skip:
-            continue
-        if current is None:
-            opening.append(line)
+            body.append((line, None))
             continue
         if command := COMMAND.match(line):
             commands.append((command.group(1) or "", command.group(2).strip()))
@@ -272,9 +317,8 @@ def sections(
             continue
         if items and (item := ITEM.match(line)):
             indent, kind, other, path, words = item.groups()
-            named = other if other in moves or other in steps else where
-            at_sha = moves[named].sha if named in moves else steps[named].sha
-            link = f"[`{path}`]({url}/blob/{at_sha}/{quote(path)})"
+            named = other if other in shas else where
+            link = f"[`{path}`]({url}/blob/{shas[named]}/{quote(path)})"
             if kind == "diff":
                 link += f", [its change]({change(named)}#diff-{hashlib.sha256(path.encode()).hexdigest()})"
             body.append((f"{indent}- {link}" + (f": {words}" if words else ""), None))
@@ -285,8 +329,8 @@ def sections(
         if line.strip() and not line.startswith(" "):
             items = False
         body.append((line, change(where)))
-    close()
-    return title, "\n".join(opening).strip(), found
+    flush()
+    return body
 
 
 def apply_links(
@@ -317,57 +361,77 @@ def apply_links(
     return "\n".join(out)
 
 
+def slug(
+    name: str,  # A stop of the walk, such as `step-05.3 to step-05.6`
+) -> str:  # A name for its page: `step-05.3-to-step-05.6`
+    "Make a file name for a stop's page."
+    return re.sub(r"[^A-Za-z0-9._-]+", "-", name).strip("-")
+
+
+def heading(
+    section: Section,  # A stop of the walk
+) -> str:  # Its name and title
+    "Name a stop as its heading and its page do."
+    return f"{section.name} {section.title}".strip()
+
+
 def markdown_file(
-    mode: str,  # "do" or "watch"
+    mode: str | None,  # "do" or "watch" in a tutorial; None in a narrative, which has one copy
     title: str,  # The title of the tutorial
-    intro: str,  # Markdown to put first, or ""
-    opening: str,  # The notes' text before the first step, or ""
-    steps: list[Section],  # The steps
-) -> str:  # TUTORIAL-<mode>.md
+    head: str,  # What goes before the first step: the intro, or the notes' text before the first step
+    steps: list[Section],  # The stops
+) -> str:  # TUTORIAL-<mode>.md, or TUTORIAL.md
     "Write the tutorial of one mode as one Markdown file, for GitHub."
-    other = "watch" if mode == "do" else "do"
-    head = [f"<!-- {MADE} -->", "", f"# {title}", "", f"{MODE_WORDS[mode]} [The same tutorial in {other} mode]({FILE_NAME[other]}).", ""]
-    parts = [*head, *([intro.strip(), ""] if intro.strip() else []), *([opening, ""] if opening else [])]
+    lines = [f"<!-- {MADE} -->", "", f"# {title}", ""]
+    if mode:
+        other = "watch" if mode == "do" else "do"
+        lines += [f"{MODE_WORDS[mode]} [The same tutorial in {other} mode]({FILE_NAME[other]}).", ""]
+    lines += [head.strip(), ""] if head.strip() else []
     for section in steps:
-        parts += [f"## {section.name} {section.title}".rstrip(), "", section.body]
-    return squeeze("\n".join(parts)).rstrip() + "\n"
+        lines += [f"## {heading(section)}", "", section.body]
+    return squeeze("\n".join(lines)).rstrip() + "\n"
 
 
 def site_files(
     title: str,  # The title of the tutorial
-    intro: str,  # Markdown to put first, or ""
-    opening: str,  # The notes' text before the first step, or ""
-    by_mode: dict[str, list[Section]],  # The steps of each mode, with their moves at the depth of a page
+    head: str,  # What goes before the first step, on the front page
+    by_mode: dict[str | None, list[Section]],  # The stops of each mode, with their moves at the depth of a page; one key, None, in a narrative
     quarto: bool,  # Write _quarto.yml, not _smalldocs.yml
 ) -> dict[str, str]:  # Each file of the website, by its path in the site's folder
-    """Write the website: a front page, and in each of two sections, Watch and Do, a page for each step. One site lets a
-    reader change modes at any step, from a link at the top of each page, as the switch Do / Watch does in timewalk."""
+    """Write the website: a front page, and a page for each stop. A tutorial has two sections, Watch and Do, in one site,
+    so that a reader can change modes at any step, from a link at the top of each page, as the switch Do / Watch does in
+    timewalk. A narrative has one."""
     files: dict[str, str] = {}
     sidebar: list[str] = ["      - index.qmd"]
-    front = [f"<!-- {MADE} -->", "", *([intro.strip(), ""] if intro.strip() else []), *([opening, ""] if opening else []),
-             "The tutorial has two ways through it. Both have the same steps and moves.", ""]
-    for mode in ("watch", "do"):
-        other = "watch" if mode == "do" else "do"
-        label = mode.capitalize()
-        front += [f"## {label}", "", MODE_WORDS[mode], ""]
-        sidebar += [f"      - section: {json.dumps(label)}", "        contents:"]
+    front = [f"<!-- {MADE} -->", "", *([head.strip(), ""] if head.strip() else [])]
+    if None not in by_mode:
+        front += ["The tutorial has two ways through it. Both have the same steps and moves.", ""]
+    for mode in [m for m in ("watch", "do", None) if m in by_mode]:
+        folder, indent = (f"{mode}/", "    ") if mode else ("", "")
+        if mode:
+            label = mode.capitalize()
+            front += [f"## {label}", "", MODE_WORDS[mode], ""]
+            sidebar += [f"      - section: {json.dumps(label)}", "        contents:"]
         for section in by_mode[mode]:
-            page = f"{mode}/{section.name}.qmd"
-            heading = f"{section.name}: {section.title}".rstrip(": ")
-            switch = f"{label} mode. [The same step in {other} mode](../{other}/{section.name}.qmd)."
-            files[page] = f"---\ntitle: {json.dumps(heading)}\n---\n\n<!-- {MADE} -->\n\n{switch}\n\n{section.body.rstrip()}\n"
-            front.append(f"- [{heading}]({page})")
+            page, name = f"{folder}{slug(section.name)}.qmd", f"{section.name}: {section.title}" if section.title else section.name
+            switch = ""
+            if mode:
+                other = "watch" if mode == "do" else "do"
+                switch = f"{mode.capitalize()} mode. [The same step in {other} mode](../{other}/{slug(section.name)}.qmd).\n\n"
+            files[page] = f"---\ntitle: {json.dumps(name)}\n---\n\n<!-- {MADE} -->\n\n{switch}{section.body.rstrip()}\n"
+            front.append(f"- [{name}]({page})")
             if section.moves:
-                sidebar += [f"          - section: {json.dumps(heading)}", f"            href: {page}", "            contents:"]
-                sidebar += [f"              - text: {json.dumps(move)}\n                href: {page}#{name}" for move, name in section.moves]
+                sidebar += [f"{indent}      - section: {json.dumps(name)}", f"{indent}        href: {page}", f"{indent}        contents:"]
+                sidebar += [f"{indent}          - text: {json.dumps(move)}\n{indent}            href: {page}#{ident}" for move, ident in section.moves]
             else:
-                sidebar += [f"          - text: {json.dumps(heading)}\n            href: {page}"]
+                sidebar += [f"{indent}      - text: {json.dumps(name)}\n{indent}        href: {page}"]
         front.append("")
     files["index.qmd"] = f"---\ntitle: {json.dumps(title)}\n---\n\n" + "\n".join(front).rstrip() + "\n"
     options = ["theme: cosmo", "css: styles.css", "toc: true", "toc-depth: 3", "code-copy: true",
                "from: markdown-tex_math_dollars-smart  # a $ is a dollar, not mathematics; -- stays two hyphens"]
+    pages = ", ".join(json.dumps(p) for p in ["index.qmd", *(f"{m}/*.qmd" for m in by_mode if m), *(p for p in files if None in by_mode and p != "index.qmd")])
     config = [f"# {MADE}", "project:", "  type: website", "  output-dir: _site",
-              '  render: ["index.qmd", "watch/*.qmd", "do/*.qmd"]   # only these pages: never the notes', "",
+              f"  render: [{pages}]   # only these pages: never the notes", "",
               "website:", f"  title: {json.dumps(title)}", "  page-navigation: true", "  search: true", "  sidebar:",
               "    style: docked", "    contents:", *sidebar, ""]
     config += ["format:", "  html:", *(f"    {line}" for line in options)] if quarto else options
@@ -425,18 +489,18 @@ def forbidden_folders(
 
 def main() -> None:
     "Write the tutorial of a walk for reading without timewalk: Markdown for GitHub, and a website."
-    parser = argparse.ArgumentParser(description="Write a tutorial for reading without timewalk: a Markdown file for each mode, "
-                                                 "and a website with a page for each step in each mode.")
+    parser = argparse.ArgumentParser(description="Write a walk for reading without timewalk: a Markdown file for each mode of a tutorial, "
+                                                 "and a website with a page for each step in each mode. A narrative has one of each.")
     parser.add_argument("repo", type=Path, help="the project, with its step tags: its commits give the links")
     parser.add_argument("--toc", type=Path, help="the table of contents, toc.toml")
-    parser.add_argument("--walk", help="the id of a tutorial walk in toc.toml (default: the first tutorial)")
-    parser.add_argument("--notes", type=Path, help="the notes file, instead of --toc")
+    parser.add_argument("--walk", help="the id of a walk in toc.toml (default: the first tutorial)")
+    parser.add_argument("--notes", type=Path, help="the notes file of a tutorial, instead of --toc")
     parser.add_argument("--tags", default="step-*", help="with --notes, the glob of the step tags (default: step-*)")
     parser.add_argument("--github", help="the project's address for the links, https://github.com/OWNER/NAME (default: its origin)")
     parser.add_argument("--title", help="the title (default: the notes' # heading, else the walk's title)")
     parser.add_argument("--intro", type=Path, help="a Markdown file to put first, under the title")
     parser.add_argument("--no-opening", action="store_true", help="leave out the notes' text before the first step")
-    parser.add_argument("--markdown", type=Path, help="the folder for TUTORIAL-do.md and TUTORIAL-watch.md")
+    parser.add_argument("--markdown", type=Path, help="the folder for TUTORIAL-do.md and TUTORIAL-watch.md, or a narrative's TUTORIAL.md")
     parser.add_argument("--site", type=Path, help="the folder for the website")
     parser.add_argument("--quarto", action="store_true", help="write _quarto.yml for the website, not _smalldocs.yml")
     args = parser.parse_args()
@@ -448,40 +512,53 @@ def main() -> None:
         main_repo = Path(git(args.repo.resolve(), "rev-parse", "--show-toplevel"))
     except GitError as error:
         raise SystemExit(f"timewalk-tutorial: {args.repo}: {error}") from None
-    title, tags, notes, steps_named = None, args.tags, args.notes, None
+    walk = Walk("notes", "", "tutorial", args.notes.resolve() if args.notes else None, None, args.tags, None, "manual")
     if args.toc:
         try:
             walks = load_toc(args.toc.resolve())
         except TocError as error:
             raise SystemExit(f"timewalk-tutorial: {error}") from None
         walk = next((w for w in walks if w.id == args.walk), None) if args.walk else next((w for w in walks if w.kind == "tutorial"), None)
-        if walk is None or walk.kind != "tutorial" or walk.notes is None:
-            raise SystemExit(f"timewalk-tutorial: {args.walk or 'no walk'} is not a tutorial walk with notes in {args.toc}")
-        title, tags, notes, steps_named = walk.title, walk.tags, walk.notes, walk.steps
-    text = notes.read_text(encoding="utf-8")
-    picked = pick_steps(tag_steps(main_repo, tags), steps_named)
-    if not picked:
-        raise SystemExit(f"timewalk-tutorial: no tags match {tags!r} in {main_repo}")
-    steps = {step.name: step for step in picked}
-    moves = {move.name: move for found in step_moves(main_repo, picked) for move in found}
+        if walk is None or walk.notes is None:
+            raise SystemExit(f"timewalk-tutorial: {args.walk or 'no tutorial'} is not a walk with notes in {args.toc}")
+    tutorial = walk.kind == "tutorial"
+    try:
+        if walk.select:
+            steps, moves = select_steps(main_repo, walk.tags, walk.select, tutorial)
+        else:
+            steps = pick_steps(tag_steps(main_repo, walk.tags), walk.steps)
+            moves = step_moves(main_repo, steps) if tutorial else [[] for _ in steps]
+    except GitError as error:
+        raise SystemExit(f"timewalk-tutorial: {error}") from None
+    if not steps:
+        raise SystemExit(f"timewalk-tutorial: no tags match {walk.tags!r} in {main_repo}")
+    every = tag_steps(main_repo, walk.tags)
+    history = {**{s.name: s.sha for s in every}, **{m.name: m.sha for found in step_moves(main_repo, every) for m in found}}
+    text = walk.notes.read_text(encoding="utf-8")
     url = github_url(main_repo, args.github)
-    intro = args.intro.read_text(encoding="utf-8") if args.intro else ""
     warned: set[str] = set()
-    named, opening, _ = sections(for_mode(text, None), steps, moves, url, 3, warned)   # the text outside the blocks, for the front page
-    title = args.title or named or title or "Tutorial"
-    opening = "" if args.no_opening else opening
+    named, opening, sources = read_sections(for_mode(text, None))
+    for name in sources:
+        if name not in history:
+            warned.add(f"the notes have ## {name}, which is not a step of the history; it is left out")
+    title = args.title or (walk.title if walk.select or not named else named) or "Tutorial"
+    head = "\n\n".join(part.strip() for part in [args.intro.read_text(encoding="utf-8") if args.intro else "",
+                                                     walk.intro.read_text(encoding="utf-8") if walk.intro else "" if args.no_opening else opening]
+                         if part.strip())
+    modes: list[str | None] = ["do", "watch"] if tutorial else [None]
     plan: list[tuple[Path, dict[str, str], list[str]]] = []
     if args.markdown:
         files = {}
-        for mode in ("do", "watch"):
-            _, own, found = sections(for_mode(text, mode), steps, moves, url, 3, warned)
-            files[FILE_NAME[mode]] = markdown_file(mode, title, intro, "" if args.no_opening else own, found)
-        plan.append((args.markdown, files, []))
+        for mode in modes:
+            found = build(read_sections(for_mode(text, mode or "watch"))[2], steps, moves, url, 3, warned, history)
+            files[FILE_NAME[mode] if mode else "TUTORIAL.md"] = markdown_file(mode, title, head, found)
+        plan.append((args.markdown, files, ["TUTORIAL-do.md", "TUTORIAL-watch.md", "TUTORIAL.md"]))
     if args.site:
-        by_page = {mode: sections(for_mode(text, mode), steps, moves, url, 2, warned)[2] for mode in ("do", "watch")}
-        plan.append((args.site, site_files(title, intro, opening, by_page, args.quarto), ["watch/*.qmd", "do/*.qmd"]))
+        by_mode = {mode: build(read_sections(for_mode(text, mode or "watch"))[2], steps, moves, url, 2, warned, history) for mode in modes}
+        plan.append((args.site, site_files(title, head, by_mode, args.quarto), ["watch/*.qmd", "do/*.qmd", "*.qmd"]))
     for warning in sorted(warned):
         print(f"timewalk-tutorial: {warning}", file=sys.stderr)
     written = write(plan, forbidden_folders(main_repo))
     print("\n".join(f"  {path}" for path in written) or "  nothing changed")
-    print(f"timewalk-tutorial: {len(steps)} steps and {len(moves)} moves, in do mode and in watch mode")
+    count = sum(len(found) for found in moves)
+    print(f"timewalk-tutorial: {len(steps)} steps and {count} moves" + (", in do mode and in watch mode" if tutorial else ", a narrative"))

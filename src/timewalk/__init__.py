@@ -118,6 +118,8 @@ class Step:
     sha: str  # The commit
     subject: str  # First line of the commit message
     note: str  # The annotated tag's message, or the rest of the commit message. Public: the audience sees it
+    start: str = ""  # In a walk that selects, the commit before the step: the tag before it, or the commit before a small step's first move
+    section: str = ""  # A small step's, or a narrative's stop at a move: the step whose section of the notes it reads its moves from
 
 
 @dataclass
@@ -176,6 +178,66 @@ def pick_steps(
     return [Step(i, s.name, s.sha, s.subject, s.note) for i, s in enumerate(kept)]
 
 
+def select_steps(
+    main: Path,  # The repository
+    tags: str,  # Glob for the tags that mark the steps of the whole history
+    select: list[str],  # Steps, moves and ranges of moves, in the order of the history: "step-04", "step-10.3", "step-05.3..step-05.6"
+    tutorial: bool,  # A tutorial's stops have moves; a narrative's do not
+) -> tuple[list[Step], list[list[Move]]]:  # The walk's steps, and the moves of each
+    """Take a smaller walk out of a big one.
+
+    A whole step keeps its moves, and its Start is the tag before it. A single move, or a range of moves of one step, is
+    a small step: its Start is the commit before its first move, and its moves keep their names, so the notes, the commits
+    and the selection agree. A small step's name is its move, or "step-05.3 to step-05.6". A narrative takes steps and
+    single moves, each as a stop with no moves. Raises GitError for a name that is not a step or a move, a range in a
+    narrative, and a selection out of order or that overlaps itself.
+    """
+    every = tag_steps(main, tags)
+    if not every:
+        raise GitError(f"no steps found: no tags match {tags!r}")
+    moves = step_moves(main, every)
+    where = {move.name: (i, k) for i, found in enumerate(moves) for k, move in enumerate(found, 1)}
+    index = {step.name: i for i, step in enumerate(every)}
+    steps: list[Step] = []
+    walk_moves: list[list[Move]] = []
+    last = (-1, 0)   # the end of the entry before: (step, its last move), with a whole step at its last move
+    for entry in select:
+        first, ranged, end = entry.partition("..")
+        if ranged and not (first and end):
+            raise GitError(f"select names {entry}: a range has a move at each end, for example step-05.3..step-05.6")
+        if end and not tutorial:
+            raise GitError(f"select names {entry}: a narrative takes steps and single moves, not a range of moves")
+        if not end and first in index:
+            i = index[first]
+            # a tutorial's whole step spans its moves; a narrative's stops at its tag, after the moves of the step
+            span = ((i, 0), (i, len(moves[i]))) if tutorial else ((i, len(moves[i])), (i, len(moves[i])))
+        elif first in where and (not end or end in where):
+            (i, a), (j, b) = where[first], where[end or first]
+            if j != i or b < a:
+                raise GitError(f"select names {entry}: a range of moves goes forward inside one step, for example step-05.3..step-05.6")
+            span = ((i, a), (i, b))
+        else:
+            wrong = next((name for name in (first, end) if name and name not in index and name not in where), None)
+            if wrong is None:
+                raise GitError(f"select names {entry}: a range goes from a move to a move of the same step, for example step-05.3..step-05.6")
+            raise GitError(f"select names {wrong}, which is not a step or a move of the history")
+        if span[0] <= last:
+            raise GitError(f"select names {entry} out of order, or over a part taken before it; name the steps and moves in the order of the history")
+        last = span[1]
+        (i, a), (_, b) = span
+        step, before = every[i], every[i - 1].sha if i else ""
+        if not end and first in index:
+            steps.append(Step(len(steps), step.name, step.sha, step.subject, step.note, before))
+            walk_moves.append(moves[i] if tutorial else [])
+            continue
+        taken = moves[i][a - 1:b]
+        start = moves[i][a - 2].sha if a > 1 else before
+        name = taken[0].name if a == b else f"{taken[0].name} to {taken[-1].name}"
+        steps.append(Step(len(steps), name, taken[-1].sha, taken[-1].subject, "", start, step.name))
+        walk_moves.append(taken if tutorial else [])
+    return steps, walk_moves
+
+
 class Repo:
     "The repository being browsed: its steps, and the working copy that moves between them."
 
@@ -203,6 +265,7 @@ class Repo:
             raise GitError(f"no steps found: no tags match {tags!r}. Use --commits to step through commits instead.")
         self.work = self.main if in_place else self._replay_copy()
         self.moves: list[list[Move]] = [[] for _ in self.steps]  # For a tutorial, the moves of each step
+        self.history: dict[str, Move] = {}  # In a walk that selects, every move of the whole history, which an item of the notes may name
         self.at: tuple[int, int] | None = None  # In a tutorial, the step and move the last move went to
         self.kept: list[str] = []  # The branches that the last move kept a learner's work on
         self.files_of: dict[str, list[dict]] = {}  # The files each move's commit added or changed, by commit
@@ -212,10 +275,18 @@ class Repo:
         tags: str,  # Glob for the tags that mark the walk's steps
         names: list[str] | None = None,  # The steps of the walk, or None for every tag that matches
         tutorial: bool = False,  # Find the moves between the steps, for a tutorial
+        select: list[str] | None = None,  # Steps, moves and ranges of moves to take, in place of names; see select_steps
     ) -> None:
         "Use the steps of another walk. The working copy does not move; `move` does that."
         if self.branch:
             self._fetch(self.work)   # a tag made since the start needs its commit in the clone
+        self.history = {}
+        if select:
+            self.steps, self.moves = select_steps(self.main, tags, select, tutorial)
+            every = tag_steps(self.main, tags)
+            self.history = {move.name: move for found in step_moves(self.main, every) for move in found}
+            self.at = None
+            return
         steps = pick_steps(tag_steps(self.main, tags), names)
         if not steps:
             raise GitError(f"no steps found: no tags match {tags!r}")
@@ -231,7 +302,14 @@ class Repo:
         "Find the commit of a place in a tutorial: a step, and how many of its moves are made."
         if not self.moves[index] or move is None:
             return self.steps[index].sha
-        return self.steps[index - 1].sha if move == 0 else self.moves[index][move - 1].sha
+        return self.before(index) if move == 0 else self.moves[index][move - 1].sha
+
+    def before(
+        self,
+        index: int,  # A step of the walk
+    ) -> str | None:  # The commit before it: its own Start in a walk that selects, else the step before; None for the first step
+        "Find the commit that a step's change starts from."
+        return self.steps[index].start or (self.steps[index - 1].sha if index else None)
 
     def position(self) -> tuple[int | None, int | None]:  # The step, and the move within it (None for a step without moves)
         """Say where the working copy stands: on a step, and in a tutorial on one of its moves.
@@ -254,6 +332,9 @@ class Repo:
             for number, move in enumerate(moves, 1):
                 if move.sha == head:
                     return index, number
+        for index, moves in enumerate(self.moves):   # the Start of a step whose commit before it is not a stop of the walk
+            if moves and self.before(index) == head:
+                return index, 0
         return None, None
 
     def _commit_steps(self) -> list[Step]:  # Steps in history order, oldest first
@@ -367,7 +448,7 @@ class Repo:
             if not git(self.work, "rev-list", tip, "--not", *before, f"--exclude={self.branch}", "--branches"):
                 continue
             names = set(git(self.work, "for-each-ref", "--format=%(refname:short)", f"refs/heads/{SAVED}").splitlines())
-            base = SAVED + (re.sub(r"[^A-Za-z0-9._-]+", "-", label).strip("-.") or "step")   # a name git accepts, with no folders of its own
+            base = SAVED + (re.sub(r"\.\.+", "-", re.sub(r"[^A-Za-z0-9._-]+", "-", label)).strip("-.") or "step")   # a name git accepts, with no folders of its own
             name, n = base, 1
             while name in names:
                 n += 1
@@ -675,10 +756,10 @@ class Repo:
         index: int,  # Step whose changes to list
     ) -> dict[str, str]:  # Path to A, M or D, relative to the step before
         "List what a step added, modified or deleted. For the first step, everything is added."
-        step = self.steps[index]
-        if index == 0:
+        step, before = self.steps[index], self.before(index)
+        if before is None:
             return dict.fromkeys((path for path in git(self.work, "ls-tree", "-r", "-z", "--name-only", step.sha).split("\x00") if path), "A")
-        return name_status(self.work, "diff", "--name-status", "--no-renames", self.steps[index - 1].sha, step.sha)
+        return name_status(self.work, "diff", "--name-status", "--no-renames", before, step.sha)
 
     def span(self) -> tuple[str, str] | None:  # The commits before and after what the place on show changed; None at the first step
         """Say what "Changes in this step" compares: a step with the step before, or in a tutorial a move with the move before.
@@ -690,7 +771,8 @@ class Repo:
             return None
         if move is not None:
             return self.commit_at(index, max(move - 1, 0)), self.commit_at(index, move)
-        return (self.steps[index - 1].sha, self.steps[index].sha) if index else None
+        before = self.before(index)
+        return (before, self.steps[index].sha) if before else None
 
     def move_files(
         self,
@@ -706,8 +788,8 @@ class Repo:
         self,
         name: str,  # A move's name, such as step-02.1
     ) -> Move | None:  # That move of the walk on show, if there is one
-        "Find a move of the walk on show by its name."
-        return next((m for moves in self.moves for m in moves if m.name == name), None)
+        "Find a move of the walk on show by its name, or in a walk that selects, any move of the whole history."
+        return next((m for moves in self.moves for m in moves if m.name == name), None) or self.history.get(name)
 
     def move_diff(
         self,
@@ -1043,6 +1125,42 @@ def parse_notes(
         entry["parts"] = [p for p in ({**p, "text": p["text"].strip("\n")} if p["kind"] == "text" else p for p in entry["parts"])
                           if p["kind"] != "text" or p["text"].strip()]
     return notes
+
+
+def walk_notes(
+    notes: dict[str, dict],  # The notes file, as parse_notes reads it
+    steps: list[Step],  # The steps of the walk
+    moves: list[list[Move]],  # The moves of each step
+    tutorial: bool,  # Whether the walk is a tutorial
+    selects: bool = False,  # Whether the walk takes part of a bigger one, with select: a narrative then shows a step before its moves
+) -> dict[str, dict]:  # The notes by step, with an entry for each small step and each stop at a move
+    """Give each stop of a walk the notes it shows, from the sections of a bigger walk.
+
+    A small step shows the commands at the top of its step's section, such as `$ just setup`, which every Start needs,
+    then the sections of its moves; the text of the step before its first move is about the whole step, and is left out.
+    A narrative shows a step's text before its first move, and at a move, that move's section. An entry made this way
+    has "derived": True, and no `raw`: it is edited in the sections it comes from.
+    """
+    out = dict(notes)
+    for index, step in enumerate(steps):
+        source = notes.get(step.section or step.name)
+        if not source:
+            continue
+        parts = source["parts"]
+        cut = [at for at, part in enumerate(parts) if part["kind"] == "move"]
+        before = parts[:cut[0]] if cut else parts
+        if not step.section:
+            if not tutorial and cut and selects:
+                out[step.name] = {**source, "parts": before, "derived": True}
+            continue
+        lead = list(itertools.takewhile(lambda part: part["kind"] == "command", before))
+        by_move = {parts[at]["name"]: parts[at:end] for at, end in zip(cut, [*cut[1:], len(parts)], strict=True)} if cut else {}
+        names = [move.name for move in moves[index]] if tutorial else [step.name]
+        taken = [part for name in names for part in by_move.get(name, [])[0 if tutorial else 1:]]
+        title = next((p["title"] for p in by_move.get(names[0], []) if p["kind"] == "move"), "") if len(names) == 1 else source.get("title", "")
+        out[step.name] = {"time": None, "title": title, "commands": [p for p in lead + taken if p["kind"] == "command"],
+                          "text": "", "raw": "", "parts": lead + taken, "derived": True}
+    return out
 
 
 def replace_section(
@@ -1469,12 +1587,16 @@ def make_app(
         if index is None:
             return [], []
         listed = load_slides(active["slides"], active["root"])
-        deck = list(listed.get(repo.steps[index].name, []))
+        step = repo.steps[index]
+        deck = [] if step.section and repo.moves[index] else list(listed.get(step.name, []))   # a small step's slides are the slides of its moves
         owners = [0] * len(deck)
         for number, move in enumerate(repo.moves[index], 1):
             own = listed.get(move.name, [])
             deck += own
             owners += [number] * len(own)
+        if not deck and step.section:   # a small step, or a stop at a move, with no slides of its own: its step's
+            deck = list(listed.get(step.section, []))
+            owners = [0] * len(deck)
         return deck, owners
 
     def changes_now() -> dict:  # "last" and "next": each {label, name, before, after}, or None
@@ -1495,9 +1617,9 @@ def make_app(
             made = move if showing["mode"] == "watch" else showing["done"]
             return {"last": of_move(made) if made else None, "next": of_move(made + 1) if made < len(moves) else None}
         step = repo.steps[index]
-        last = {"name": step.name, "before": repo.steps[index - 1].sha, "after": step.sha} if index else None
+        last = {"name": step.name, "before": repo.before(index), "after": step.sha} if repo.before(index) else None
         later = repo.steps[index + 1] if index + 1 < len(repo.steps) else None
-        return {"last": last, "next": {"name": later.name, "before": step.sha, "after": later.sha} if later else None}
+        return {"last": last, "next": {"name": later.name, "before": later.start or step.sha, "after": later.sha} if later else None}
 
     def slides_now() -> list[str]:  # The slides of the step the working copy is at
         "The deck of the step on show."
@@ -1684,7 +1806,7 @@ def make_app(
         if move_now:
             here = repo.moves[step_now][move_now - 1].name  # in a tutorial, the move made
         before_moves, before_at = repo.moves, repo.at
-        repo.select(walk.tags, walk.steps, tutorial=walk.kind == "tutorial")
+        repo.select(walk.tags, walk.steps, tutorial=walk.kind == "tutorial", select=walk.select)
         names = [step.name for step in repo.steps]
         saved, step, number = left.get(walk.id, ({}, None, None))
         index = names.index(step) if step in names else 0
@@ -1786,7 +1908,10 @@ def make_app(
         "The notes, read afresh, so the file can be edited while the class runs."
         if active["notes"] is None or not active["notes"].is_file():
             return {"notes": {}, "path": str(active["notes"]) if active["notes"] else None}
-        return {"notes": parse_notes(active["notes"].read_text(encoding="utf-8")), "path": str(active["notes"])}
+        parsed = parse_notes(active["notes"].read_text(encoding="utf-8"))
+        tutorial = active["walk"] is not None and active["walk"].kind == "tutorial"
+        selects = bool(active["walk"] and active["walk"].select)
+        return {"notes": walk_notes(parsed, repo.steps, repo.moves, tutorial, selects), "path": str(active["notes"])}
 
     @guarded
     async def save_notes(request: Request) -> dict:
@@ -1817,7 +1942,9 @@ def make_app(
 
         try:
             title = active["walk"].title if active["walk"] else repo.main.name
-            data = await asyncio.to_thread(slides_pdf.make_pdf, active["slides"], active["notes"], title, False, None, active["root"])
+            walk = active["walk"]
+            data = await asyncio.to_thread(slides_pdf.make_pdf, active["slides"], active["notes"], title, False, None, active["root"],
+                                           walk.select if walk else None, not walk or walk.kind == "tutorial")
         except SystemExit as exc:
             return JSONResponse({"error": str(exc)}, status_code=500)
         except Exception as exc:  # a browser that fails to start, a page that fails to draw: say what happened
@@ -2058,8 +2185,8 @@ def main() -> None:
     try:
         repo = Repo(args.repo.resolve(), tags=start.tags if start else args.tags, commits=args.commits, in_place=args.in_place,
                     discard=args.discard_edits, replay=args.replay)
-        if start is not None and (start.steps is not None or start.kind == "tutorial"):
-            repo.select(start.tags, start.steps, tutorial=start.kind == "tutorial")
+        if start is not None and (start.steps is not None or start.select or start.kind == "tutorial"):
+            repo.select(start.tags, start.steps, tutorial=start.kind == "tutorial", select=start.select)
     except GitError as exc:
         raise SystemExit(f"timewalk: {exc}") from None
     if args.discard_edits and repo.branch:
@@ -2079,6 +2206,12 @@ def main() -> None:
         if errors:
             raise SystemExit("timewalk: the walks of " + str(args.toc) + " have errors; fix them, then start again:\n" +
                              "\n".join(f"  {line}" for line in errors))
+    if start is not None and start.select and repo.branch and repo.position()[0] is None:
+        # A replay clone at no stop of a walk that selects goes to its first stop; a move keeps any edits. In place, nothing moves.
+        try:
+            repo.move(0, move=0 if repo.moves[0] else None, anywhere=True)
+        except GitError as exc:
+            raise SystemExit(f"timewalk: {exc}") from None
     local = args.host in ("127.0.0.1", "localhost", "::1")
     with socket.socket(socket.AF_INET6 if ":" in args.host else socket.AF_INET) as probe:
         # As uvicorn binds: the connections of a timewalk just stopped linger a minute, and must not stop a restart.

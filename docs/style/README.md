@@ -63,6 +63,11 @@ Keep the text of these headings. A link from another page uses each one as an an
 | model.md | What each control does |
 | model.md | One move, in order |
 | authoring.md | The recipe `just setup` |
+| authoring.md | Write a move to read alone |
+| walks.md | Take a small walk out of a big one |
+| walks.md | One notes file for several walks |
+| walks.md | The checks of a small walk |
+| walks.md | The copies of a small walk |
 
 ## Glossary
 
@@ -114,6 +119,10 @@ only that page could not know it.
 | narrative | A walk of tagged steps, with nothing between them |
 | tutorial | A walk of tagged steps and the small commits between them |
 | move | One small commit of a step in a tutorial, named `step-NN.k`. Its notes are a `### step-NN.k` section |
+| Start | The place before the first move of a step, where the step starts. A whole step starts at the tag before it, and a small step at the commit before its first move |
+| small walk | A walk that names, with `select`, the steps and moves that it takes from a bigger walk |
+| small step | A step of a small walk that holds one move, or a range of moves, of a step of the history. The page names it by its moves, for example "step-05.3 to step-05.6" |
+| stop | One place of a walk in the step bar: a step, a small step, or in a narrative a move |
 | do mode | The mode of a tutorial where the learner makes each move by hand from the notes, and marks it done. The code does not move |
 | watch mode | The mode of a tutorial where timewalk checks out the commit of each move when asked |
 | block | In the notes of a tutorial, the lines between `::: do` or `::: watch` and a line `:::`. The page shows a block only in its mode. Write "block for one mode" where a reader could take it for a code block |

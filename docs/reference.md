@@ -79,6 +79,10 @@ warning:
 It reads the items and the commands once for each mode, as the reader of that mode sees them. A warning
 for one mode names it, for example "step-02.1 has no command in watch mode".
 
+A walk with `select` is checked on the sections that it takes. A section that it takes and the notes do
+not have is an error, for example "step-05.3 to step-05.6 takes the section ### step-05.4, and notes.md
+has none". See [The checks of a small walk](walks.md#the-checks-of-a-small-walk).
+
 The blocks for one mode give these problems:
 
 - **An error:** a block `::: do` or `::: watch` that is not closed, a heading in a block, or a block in a
@@ -105,7 +109,8 @@ draft has the subject of the commit as its title, and a list "The move changes t
 comment that asks for a command. Sections already in the notes stay as they are.
 
 A step without a section gets a heading `## step-NN Title`, with the first line of its tag's message as
-the title, steps without moves too. A walk whose folder has no `notes.md` yet gets one.
+the title, steps without moves too. A walk whose folder has no `notes.md` yet gets one. For a walk with
+`select`, it drafts only the sections that the walk takes, into the notes of the whole tutorial, in order.
 
 The draft also has a line `files:`, with one item for each file of the commit. A new file gets a `file`
 item, and a changed file a `diff` item. You write the words of each item. The draft has no `show:` lines. See
@@ -122,20 +127,21 @@ timewalk-tutorial REPO --notes notes.md [--tags GLOB] (--markdown DIR | --site D
 |---|---|
 | `REPO` | The project, with its step tags. Its commits give the links |
 | `--toc` | The table of contents. Give `--toc` or `--notes`, not both |
-| `--walk` | With `--toc`: the `id` of a tutorial walk. Default: the first tutorial of the table |
-| `--notes` | A notes file, in place of `--toc` |
+| `--walk` | With `--toc`: the `id` of a walk with notes, a tutorial or a narrative. Default: the first tutorial of the table |
+| `--notes` | The notes file of a tutorial, in place of `--toc` |
 | `--tags` | With `--notes`: the glob of the step tags. Default: `step-*` |
 | `--github` | The address of the project on GitHub, `https://github.com/OWNER/NAME`, for the links. Default: the remote `origin` of the project. If `origin` is not on GitHub, give it |
-| `--title` | The title. Default: the `#` heading of the notes, or else the title of the walk |
+| `--title` | The title. Default: the `#` heading of the notes, or else the title of the walk. For a walk with `select`: the title of the walk |
 | `--intro` | A Markdown file to put first, under the title |
-| `--no-opening` | Leave out the text of the notes before the first step |
-| `--markdown` | The folder for `TUTORIAL-do.md` and `TUTORIAL-watch.md` |
-| `--site` | The folder for the website: `index.qmd`, `watch/step-NN.qmd`, `do/step-NN.qmd`, `_smalldocs.yml` and `styles.css` |
+| `--no-opening` | Leave out the text of the notes before the first step. A walk with `intro` in `toc.toml` always puts its intro there in place of that text |
+| `--markdown` | The folder for `TUTORIAL-do.md` and `TUTORIAL-watch.md`. For a narrative: `TUTORIAL.md` |
+| `--site` | The folder for the website: `index.qmd`, `watch/step-NN.qmd`, `do/step-NN.qmd`, `_smalldocs.yml` and `styles.css`. For a narrative: `step-NN.qmd` at the top of the folder, in place of `watch/` and `do/`. A small step's page has its name, for example `watch/step-05.3-to-step-05.6.qmd` |
 | `--quarto` | With `--site`: write `_quarto.yml` in place of `_smalldocs.yml` |
 
-Give `--markdown`, `--site` or both. Each copy has the text outside the blocks and the blocks of one mode,
-without the private lines. Each step, move and item links to the code on GitHub. Build the website with
-`smalldocs render DIR`, or with `quarto render DIR` after `--quarto`.
+Give `--markdown`, `--site` or both. Each copy of a tutorial has the text outside the blocks and the blocks
+of one mode, without the private lines. A narrative has one copy, with the `watch` blocks. Each step, move
+and item links to the code on GitHub. A small step links to the code at its **Start**, the commit before its
+first move. Build the website with `smalldocs render DIR`, or with `quarto render DIR` after `--quarto`.
 
 The command writes over only the files that it made. It refuses a folder inside the project or inside its
 replay copy. See [Copies of a tutorial for GitHub and a website](walks.md#copies-of-a-tutorial-for-github-and-a-website).
@@ -177,6 +183,8 @@ In the timewalk folder, `just` lists these:
 | `description` | What the walk is about, in a sentence or two. The status band shows it at the first step of the walk |
 | `notes`, `slides`, `folder` | The notes file and the manifest, or a folder that holds `notes.md` and `slides/slides.toml` |
 | `steps`, `tags` | Some of the steps by name, or a glob for tags of its own |
+| `select` | The steps, moves and ranges of moves that the walk takes from a bigger walk, in the order of the history, for example `["step-04", "step-05.3..step-05.6", "step-10.3"]`. Not with `steps` |
+| `intro` | A Markdown file that the copies of `timewalk-tutorial` put before the first step, in place of the text of the notes before it |
 | `moves` | In a tutorial: the mode it starts in, `"do"` or `"watch"`. Default: `"do"` |
 | `sync` | In a tutorial: whether the slides and the moves follow each other. Default: `true` |
 | `setup` | `"manual"`: you run `just setup` yourself at each step. The only value for now |

@@ -45,13 +45,15 @@ from timewalk import (
     parse_notes,
     pick_steps,
     replace_section,
+    select_steps,
     split_slides,
     step_moves,
     tag_steps,
+    walk_notes,
 )
 
 KINDS = ("narrative", "tutorial")
-WALK_KEYS = ("id", "title", "description", "kind", "folder", "notes", "slides", "steps", "tags", "setup", "sync", "moves")
+WALK_KEYS = ("id", "title", "description", "kind", "folder", "notes", "slides", "steps", "select", "intro", "tags", "setup", "sync", "moves")
 SLIDE_FILES = (".md", ".markdown", ".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".pdf", ".html")
 
 
@@ -71,6 +73,8 @@ class Walk:
     mode: str = "do"  # In a tutorial, how it starts: "do", the learner makes each move; "watch", timewalk shows each commit
     description: str = ""  # What the walk is about, in a sentence or two: the page shows it at the walk's first step
     folder: Path | None = None  # Its folder, if the table gives one: where timewalk-notes starts a notes.md
+    select: list[str] | None = None  # Steps, moves and ranges of moves it takes from a bigger walk, in order; see timewalk.select_steps
+    intro: Path | None = None  # What its copies say before the first step, in place of the text of the notes before it
 
 
 class TocError(ValueError):
@@ -109,7 +113,7 @@ def load_toc(
         kind = entry.get("kind", "narrative")
         if kind not in KINDS:
             raise TocError(f"{where}: kind = {kind!r}; this version of timewalk knows only {', '.join(repr(k) for k in KINDS)}")
-        for key in ("title", "description", "folder", "notes", "slides", "tags", "setup"):
+        for key in ("title", "description", "folder", "notes", "slides", "intro", "tags", "setup"):
             if key in entry and not isinstance(entry[key], str):
                 raise TocError(f"{where}: {key} must be text in quotes")
         steps = entry.get("steps")
@@ -120,8 +124,14 @@ def load_toc(
         if steps is not None and len(set(steps)) != len(steps):
             raise TocError(f"{where}: steps names a step twice")
         if steps is not None and kind == "tutorial":
-            raise TocError(f"{where}: a tutorial takes every step of its tags, so that the moves between them are its own; "
-                           "for a part, give it tags of its own, for example tags = \"part-*\"")
+            raise TocError(f"{where}: a tutorial takes every step of its tags; for a part, name its steps and moves with select, "
+                           "for example select = [\"step-04\", \"step-05.3..step-05.6\"]")
+        select = entry.get("select")
+        if select is not None and not (isinstance(select, list) and select and all(isinstance(s, str) and s for s in select)):
+            raise TocError(f"{where}: select must be a list of steps, moves and ranges of moves, for example "
+                           "select = [\"step-04\", \"step-05.3..step-05.6\", \"step-10.3\"]")
+        if select is not None and steps is not None:
+            raise TocError(f"{where}: give steps or select, not both")
         if entry.get("moves", "do") not in ("do", "watch"):
             raise TocError(f"{where}: moves = {entry['moves']!r}; write \"do\" or \"watch\"")
         if "sync" in entry and not isinstance(entry["sync"], bool):
@@ -135,9 +145,12 @@ def load_toc(
             folder / "slides" / "slides.toml" if folder and (folder / "slides" / "slides.toml").is_file() else None)
         if folder is not None and not folder.is_dir():
             raise TocError(f"{where}: its folder {entry['folder']} does not exist")
+        intro = toc.parent / entry["intro"] if "intro" in entry else None
+        if intro is not None and not intro.is_file():
+            raise TocError(f"{where}: its intro {entry['intro']} does not exist")
         walks.append(Walk(ident, entry.get("title", ident), kind, notes.resolve() if notes else None, slides.resolve() if slides else None,
                           entry.get("tags", "step-*"), steps, "manual", entry.get("sync", True), entry.get("moves", "do"),
-                          entry.get("description", "").strip(), folder.resolve() if folder else None))
+                          entry.get("description", "").strip(), folder.resolve() if folder else None, select, intro.resolve() if intro else None))
     return walks
 
 
@@ -145,7 +158,9 @@ def steps_of(
     walk: Walk,  # A walk
     main: Path,  # The repository
 ) -> list[str]:  # The names of its steps, in order
-    "List the steps of a walk. Raises GitError when its tags match nothing or a named step is not a tag."
+    "List the steps of a walk. Raises GitError when its tags match nothing, or a named step or move is not one."
+    if walk.select:
+        return [step.name for step in select_steps(main, walk.tags, walk.select, walk.kind == "tutorial")[0]]
     steps = pick_steps(tag_steps(main, walk.tags), walk.steps)
     if not steps:
         raise GitError(f"no tags match {walk.tags!r}")
@@ -178,14 +193,21 @@ def check_walk(
     except GitError as error:
         return [f"{name}: {error}"], [], used
     moves: dict[str, list] = {}
-    if walk.kind == "tutorial":
+    history = set(steps)   # the steps and moves of the whole history: a walk that selects may name them in shared notes and slides
+    if walk.select:
+        taken, taken_moves = select_steps(main, walk.tags, walk.select, walk.kind == "tutorial")
+        every = tag_steps(main, walk.tags)
+        history = {step.name for step in every} | {move.name for found in step_moves(main, every) for move in found}
+        if walk.kind == "tutorial":
+            moves = {step.name: found for step, found in zip(taken, taken_moves, strict=True)}
+    elif walk.kind == "tutorial":
         picked = pick_steps(tag_steps(main, walk.tags), walk.steps)
         moves = {step.name: found for step, found in zip(picked, step_moves(main, picked), strict=True)}
         for found in moves.values():
             for move in found[:-1]:  # the last move is the step's own commit, with the step's subject
                 if not move.subject.startswith(f"{move.name}:"):
                     errors.append(f"{name}: the commit {move.sha[:7]}, move {move.name}, has the subject {move.subject!r}; start it with '{move.name}:'")
-    names = set(steps) | {move.name for found in moves.values() for move in found}
+    names = set(steps) | {move.name for found in moves.values() for move in found} | history
     for label, path in (("notes", walk.notes), ("slides", walk.slides)):
         if path is not None and any(inside(path, folder) for folder in (main, replay) if folder):
             errors.append(f"{name}: its {label}, {path}, are inside the repository or its replay copy; keep them in the class folder")
@@ -198,17 +220,21 @@ def check_walk(
             blocks = note_blocks(text)
             errors += [f"{name}: {walk.notes.name}:{line}: {problem}" for line, problem in blocks.errors]
             warnings += [f"{name}: {walk.notes.name}:{line}: {problem}" for line, problem in blocks.warnings]
-            if walk.kind != "tutorial" and "do" in blocks.mode:
+            if walk.kind != "tutorial" and not walk.select and "do" in blocks.mode:   # a walk that selects shares a tutorial's notes
                 line = blocks.mode.index("do")
                 warnings.append(f"{name}: {walk.notes.name}:{line}: a narrative has no do mode, so its ::: do blocks never show; "
                                 "it shows the ::: watch blocks")
-            for section in sections:
+            if walk.select:
+                problems = selection_problems(walk, main, sections, taken, taken_moves, history)
+                errors += [f"{name}: {problem}" for problem in problems[0]]
+                warnings += [f"{name}: {problem}" for problem in problems[1]]
+            for section in sections if not walk.select else []:
                 if section not in steps:
                     errors.append(f"{name}: {walk.notes.name} has a section ## {section}, which is not a step of the walk")
-            for step in steps:
+            for step in steps if not walk.select else []:
                 if step not in sections:
                     warnings.append(f"{name}: {step} has no section in {walk.notes.name}")
-            for step, found in moves.items():
+            for step, found in moves.items() if not walk.select else []:
                 written = [part["name"] for part in sections.get(step, {}).get("parts", []) if part["kind"] == "move"]
                 wanted = [move.name for move in found]
                 for extra in sorted(set(written) - set(wanted)):
@@ -252,8 +278,10 @@ def check_walk(
             errors.append(f"{name}: slides.toml has an entry for {step}, which is not a step{' or a move' if moves else ''} of the walk")
     if "sync" in data and not isinstance(data["sync"], bool):
         errors.append(f"{name}: {walk.slides.name} has sync = {data['sync']!r}; write true or false")
+    sections_of = {s.name: s.section for s in taken} if walk.select else {}
     for step in steps:
-        if not listed.get(step):
+        # a small step shows its moves' slides, and with none of its own, its step's
+        if not listed.get(step) and not any(listed.get(move.name) for move in moves.get(step, [])) and not listed.get(sections_of.get(step, "")):
             errors.append(f"{name}: {step} has no entry in slides.toml; give it at least one slide")
     for step, entries in data.get("slides", {}).items():
         if not isinstance(entries, list):
@@ -269,6 +297,53 @@ def check_walk(
         if problem:
             errors.append(f"{name}: {step}: {problem}")
     return errors, warnings, used
+
+
+def selection_problems(
+    walk: Walk,  # A walk with select
+    main: Path,  # The repository
+    sections: dict[str, dict],  # Its notes, as parse_notes reads them
+    taken: list,  # Its steps, from select_steps
+    taken_moves: list[list],  # The moves of each
+    history: set[str],  # The steps and moves of the whole history
+) -> tuple[list[str], list[str]]:  # Errors and warnings
+    """Check the notes of a walk that takes part of a bigger walk: each section it takes must be there, and the items and
+    commands of each are checked as its readers see them. A section it does not take is checked with the whole walk."""
+    errors, warnings = [], []
+    file = walk.notes.name
+    tutorial = walk.kind == "tutorial"
+    for section in sections:
+        if section not in history:
+            errors.append(f"{file} has a section ## {section}, which is not a step of the history")
+    view = walk_notes(sections, taken, taken_moves, tutorial, True)
+    every = {m.name: m for found in step_moves(main, tag_steps(main, walk.tags)) for m in found}
+    for step, found in zip(taken, taken_moves, strict=True):
+        source = step.section or step.name
+        if source not in sections:
+            errors.append(f"{step.name} takes the section ## {source}, and {file} has none")
+            continue
+        order = [part["name"] for part in sections[source]["parts"] if part["kind"] == "move"]
+        written = set(order)
+        for move in [m.name for m in found] or ([step.name] if step.section else []):
+            if move not in written:
+                errors.append(f"{step.name} takes the section ### {move}, and {file} has none")
+        numbers = [int(name.rsplit(".", 1)[1]) for name in order if name.rsplit(".", 1)[0] == source and name.rsplit(".", 1)[1].isdigit()]
+        if numbers != sorted(numbers):
+            errors.append(f"the ### sections of {source} in {file} are not in the order of the commits: {', '.join(order)}")
+        for move in found:
+            if not move.subject.startswith((f"{move.name}:", f"{source}:")):
+                errors.append(f"the commit {move.sha[:7]}, move {move.name}, has the subject {move.subject!r}; start it with '{move.name}:'")
+        if not tutorial:
+            continue
+        parts = view.get(step.name, {}).get("parts", [])
+        for problem in dict.fromkeys(p for mode in MODES for p in item_problems(main, in_mode(parts, mode), every)):
+            warnings.append(problem)
+        missing = {mode: moves_without_commands(in_mode(parts, mode)) for mode in MODES}
+        for move in dict.fromkeys(m for gone in missing.values() for m in gone):
+            modes = [mode for mode in MODES if move in missing[mode]]
+            where = "" if len(modes) == len(MODES) else f" in {modes[0]} mode"
+            warnings.append(f"{move} has no command{where} in {file}; add one that shows what the move did, for example $ just test")
+    return list(dict.fromkeys(errors)), list(dict.fromkeys(warnings))
 
 
 def in_mode(
@@ -455,10 +530,19 @@ def add_move_sections(
     """Add a section for each step, and a draft section for each move, that the notes do not have yet. A step's heading
     takes its title from the first line of its tag's message. Sections already there stay as they are."""
     text = walk.notes.read_text(encoding="utf-8") if walk.notes and walk.notes.is_file() else ""
-    picked = pick_steps(tag_steps(main, walk.tags), walk.steps)
+    if walk.select:   # a walk that takes part of a bigger one: the sections it takes, in the notes of the whole
+        picked = tag_steps(main, walk.tags)
+        taken, taken_moves = select_steps(main, walk.tags, walk.select, True)
+        wanted: dict[str, list] = {}
+        for step, found in zip(taken, taken_moves, strict=True):
+            wanted.setdefault(step.section or step.name, []).extend(found)
+        pairs = [(step, wanted[step.name]) for step in picked if step.name in wanted]
+    else:
+        picked = pick_steps(tag_steps(main, walk.tags), walk.steps)
+        pairs = list(zip(picked, step_moves(main, picked), strict=True))
     added: list[str] = []
     drafts: list[str] = []
-    for step, moves in zip(picked, step_moves(main, picked), strict=True):
+    for step, moves in pairs:
         if step.name not in parse_notes(text):
             first = (step.note or step.subject).strip().split("\n")[0].strip()
             title = first.split(":", 1)[1].strip() if first.startswith(f"{step.name}:") else first   # a lightweight tag: its commit's subject
@@ -479,8 +563,33 @@ def add_move_sections(
         added += [move.name for move in moves if move.name not in written]
         drafts.extend(new)
         raw = parse_notes(text).get(step.name, {}).get("raw", "")
-        text = replace_section(text, step.name, "\n" + (raw.rstrip() + "\n\n" if raw.strip() else "") + "\n".join(new))
+        drafted = {move.name: section for move, section in zip([m for m in moves if m.name not in written], new, strict=True)}
+        text = replace_section(text, step.name, "\n" + place_moves(raw, step.name, drafted))
     return text, added, drafts
+
+
+def place_moves(
+    raw: str,  # A step's section, as written, below its heading
+    step: str,  # The step
+    drafts: dict[str, str],  # New move sections, by move name
+) -> str:  # The section with each new move before the first move written after it in the commits, or at the end
+    "Put drafted move sections in the order of the commits, and leave the sections already written as they are."
+    def number(name: str) -> int:
+        return int(name.rsplit(".", 1)[1])
+
+    lines, out, fence = raw.rstrip().split("\n") if raw.strip() else [], [], None
+    waiting = sorted(drafts, key=number)
+    for line in lines:
+        mark = re.match(r"^\s*(```+|~~~+)", line)
+        if mark:
+            fence = mark.group(1)[0] if fence is None else (None if mark.group(1)[0] == fence else fence)
+        heading = re.match(rf"^###\s+{re.escape(step)}\.(\d+)(\s|$)", line) if fence is None and not mark else None
+        while heading and waiting and number(waiting[0]) < int(heading.group(1)):
+            out += [drafts[waiting.pop(0)].rstrip("\n"), ""]
+        out.append(line)
+    if waiting:
+        out += ([""] if out else []) + ["\n\n".join(drafts[name].rstrip("\n") for name in waiting)]
+    return "\n".join(out) + "\n"
 
 
 def notes_main() -> None:

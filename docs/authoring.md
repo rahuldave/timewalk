@@ -111,7 +111,8 @@ line of commits that git follows back through the first parent of each merge.
 - **Keep one step without moves after the first step.** Then the class also meets a step of one commit,
   which ends with **Next step**.
 - **Give the tutorial every tag of its glob.** A tutorial cannot have `steps = [...]`. For a tutorial on
-  one part of the history, make tags of its own for that part, on a branch.
+  one part of the history, name its steps and moves with `select`. See
+  [Take a small walk out of a big one](walks.md#take-a-small-walk-out-of-a-big-one).
 
 See [Commits for a tutorial](build-walks.md#commits-for-a-tutorial),
 [Moves with jj](build-walks.md#moves-with-jj), and [Steps and moves as git](git.md#steps-and-moves-as-git).
@@ -201,6 +202,36 @@ If an anchor command is in a `do` block, the move has no command in watch mode, 
 of it. `timewalk-notes --blocks` drafts both blocks in each new move. See
 [Blocks for one mode](walks.md#do-mode-and-watch-mode).
 
+### Write a move to read alone
+
+A small walk can take one move, or a few moves, out of the tutorial. Its notes column then shows the
+section of the move without the text of its step, and without the moves before it. See
+[One notes file for several walks](walks.md#one-notes-file-for-several-walks). So write each move
+section to read well alone:
+
+- **Do not lean on the text of the step before the move.** Do not write "as we said above" or "the file
+  from the last move". Say again what the reader needs.
+- **Name the files of the move.** Write each path in full, in the list "The move changes these files:" and
+  in the items.
+- **Name the commands of the move.** Give each command to type, and its anchor commands, in the section
+  of the move.
+- **Put the setup at the top of the section of the step.** The commands before the first words of the
+  step's section, for example `$ just setup`, show at the **Start** of every small step. Put there each
+  command that a move needs before it starts. The text after them shows only at a whole step.
+
+```markdown
+## step-05 Types
+
+$ just setup
+
+ty checks the types. The step adds it, then types in the code and the tests.
+
+### step-05.3 The linter asks for types
+```
+
+A small step of `step-05.3` shows `$ just setup`, then the section of `step-05.3`. It leaves out the
+sentence about ty.
+
 ### Settings
 
 - **Set `moves = "do"` or `moves = "watch"`** in `toc.toml`, for the mode that the tutorial starts in.
@@ -251,9 +282,11 @@ Run the checks in this order:
 | A walk with a key that a walk does not have |
 | An `id` that is missing, has other characters than letters, digits, `-` and `_`, or is used twice |
 | A `kind` other than `"narrative"` or `"tutorial"` |
-| A `title`, `description`, `folder`, `notes`, `slides`, `tags` or `setup` that is not text |
+| A `title`, `description`, `folder`, `notes`, `slides`, `intro`, `tags` or `setup` that is not text |
 | `steps` that is not a list of names, names a step twice, or comes with `tags` |
-| `steps` in a tutorial |
+| `steps` in a tutorial. The message points to `select` |
+| `select` that is not a list of names, or comes with `steps` |
+| An `intro` that does not exist |
 | A `moves` value other than `"do"` or `"watch"` |
 | A `sync` value other than `true` or `false` |
 | A `setup` value other than `"manual"` |
@@ -264,10 +297,12 @@ Then it checks each walk, and reports every problem that it finds:
 | Problem | Gives |
 |---|---|
 | No tag matches the glob of the walk, or a name in `steps` is not a tag | An error |
+| In `select`, a name that is not a step or a move, an entry out of order or over a part taken before, a range across steps, or a range in a narrative | An error |
+| In a walk with `select`, a section that the walk takes and the notes do not have | An error |
 | In a tutorial, a move whose subject does not start with its name and a colon | An error |
 | A notes file or a manifest inside the repository or its replay copy | An error |
 | A notes file that does not exist | An error |
-| A `##` section for a step that is not in the walk | An error |
+| A `##` section for a step that is not in the walk. In a walk with `select`, a section for a name that is not a step of the history | An error |
 | In a tutorial, a `###` section for no move, a move with no `###` section, or sections out of the order of the commits | An error |
 | A manifest that does not exist, is not valid TOML, or has a `[slides]` or `[docs]` that is not a table | An error |
 | An entry in the manifest for a step or move that is not in the walk | An error |

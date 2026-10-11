@@ -2491,7 +2491,7 @@ def test_timewalk_tutorial_writes_a_website_with_a_section_for_each_mode(tutoria
         assert "\n## step-01.1 A file a {#step-01.1}\n" in page, "a move is a section of its step's page, with the move as its id"
     assert "Make `a.txt`" in (site / "do/step-01.qmd").read_text() and "Make `a.txt`" not in (site / "watch/step-01.qmd").read_text()
     config = (site / "_smalldocs.yml").read_text()
-    assert 'render: ["index.qmd", "watch/*.qmd", "do/*.qmd"]' in config and "theme: cosmo" in config
+    assert 'render: ["index.qmd", "do/*.qmd", "watch/*.qmd"]' in config and "theme: cosmo" in config
     assert "href: do/step-01.qmd#step-01.1" in config and "href: watch/step-02.qmd" in config
     assert "- [step-01: Three moves](do/step-01.qmd)" in (site / "index.qmd").read_text()
     (site / "do" / "step-09.qmd").write_text("<!-- Made by timewalk-tutorial from the notes of the walk. Do not edit it by hand: run timewalk-tutorial again. -->\n")
@@ -2542,7 +2542,7 @@ def test_timewalk_tutorial_drops_every_form_of_private_line_and_keeps_code(tutor
 
 def test_timewalk_tutorial_links_items_to_the_right_change(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
     "An item naming another move links there; a diff item of a step links to the step's whole change; paths are quoted in links."
-    from timewalk.tutorial import sections
+    from timewalk.tutorial import build, read_sections
 
     steps = {s.name: s for s in tutorial.steps}
     moves = {m.name: m for found in tutorial.moves for m in found}
@@ -2551,15 +2551,16 @@ def test_timewalk_tutorial_links_items_to_the_right_change(tutorial: timewalk.Re
             "- file `my file (1).py`: odd\n\n### step-01.3 C\n\nPress **Apply the whole move**, then run `just lint`.\n\n### Why\n\n"
             "Use **Apply this file** here too.\n\n## step-07 Not a tag\n\n$ rm -rf ghost\n")
     warned: set[str] = set()
-    _, _, found = sections(text, steps, moves, url, 3, warned)
-    body = found[0].body
+    _, _, sources = read_sections(text)
+    found = build(sources, tutorial.steps, tutorial.moves, url, 3, warned)
+    body = found[1].body
     digest = hashlib.sha256(b"README.md").hexdigest()
     assert f"[its change]({url}/compare/{steps['step-00'].sha}...{steps['step-01'].sha}#diff-{digest})" in body
     assert f"[`a.txt`]({url}/blob/{moves['step-01.1'].sha}/a.txt)" in body
     assert f"({url}/blob/{moves['step-01.2'].sha}/my%20file%20%281%29.py)" in body
     assert f"Press [the move's commit]({url}/commit/{moves['step-01.3'].sha}), then run `just lint`." in body, "nothing else of the sentence goes"
     assert f"Use [the move's commit]({url}/commit/{moves['step-01.3'].sha}) here too." in body, "a heading that is not a move keeps the move"
-    assert "ghost" not in body and warned == {"the notes have ## step-07, which is not a step of the walk; it is left out"}
+    assert "ghost" not in "".join(s.body for s in found) and "step-07" not in [s.name for s in found], "a section of no step is left out"
 
 
 def test_timewalk_tutorial_writes_nothing_when_one_file_is_not_its_own(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
@@ -2604,3 +2605,221 @@ def test_a_narrative_with_a_do_block_is_told_it_never_shows(tutorial: timewalk.R
     (tutorial_class / "notes.md").write_text("## step-00\n\n## step-01\n::: do\nnever\n:::\n\n## step-02\n")
     _, warnings = check(load_toc(tutorial_class / "toc.toml"), tutorial.main, tutorial_class)
     assert any("a narrative has no do mode" in w for w in warnings)
+
+
+def test_a_selection_takes_steps_moves_and_ranges_in_order(tutorial: timewalk.Repo) -> None:
+    "A whole step keeps its moves and its Start is the tag before; a move or a range is a small step, from the commit before it."
+    shas = {m.name: m.sha for found in tutorial.moves for m in found}
+    tags = {s.name: s.sha for s in tutorial.steps}
+    steps, moves = timewalk.select_steps(tutorial.main, "step-*", ["step-01.1", "step-01.2..step-01.3", "step-02"], True)
+    assert [s.name for s in steps] == ["step-01.1", "step-01.2 to step-01.3", "step-02"]
+    assert [[m.name for m in found] for found in moves] == [["step-01.1"], ["step-01.2", "step-01.3"], []]
+    assert [s.start for s in steps] == [tags["step-00"], shas["step-01.1"], tags["step-01"]]
+    assert [s.section for s in steps] == ["step-01", "step-01", ""] and steps[1].sha == tags["step-01"]
+    whole, _ = timewalk.select_steps(tutorial.main, "step-*", ["step-01"], True)
+    assert whole[0].start == tags["step-00"] and whole[0].section == ""
+    story, story_moves = timewalk.select_steps(tutorial.main, "step-*", ["step-00", "step-01.2", "step-01"], False)
+    assert [s.name for s in story] == ["step-00", "step-01.2", "step-01"] and story_moves == [[], [], []] and story[1].sha == shas["step-01.2"]
+    with pytest.raises(timewalk.GitError, match="out of order"):
+        timewalk.select_steps(tutorial.main, "step-*", ["step-01", "step-01.2"], False)   # a narrative's step is its tag, after its moves
+    for wrong, said in ((["step-01.2", "step-01.1"], "out of order"), (["step-01", "step-01.2"], "out of order"),
+                        (["step-01.1..step-01.2", "step-01.2"], "out of order"), (["step-09"], "not a step or a move"),
+                        (["step-01.3..step-01.1"], "goes forward inside one step"), (["step-01.1..step-02"], "from a move to a move")):
+        with pytest.raises(timewalk.GitError, match=said):
+            timewalk.select_steps(tutorial.main, "step-*", wrong, True)
+    with pytest.raises(timewalk.GitError, match="a narrative takes steps and single moves"):
+        timewalk.select_steps(tutorial.main, "step-*", ["step-01.1..step-01.2"], False)
+
+
+def test_a_small_step_starts_at_the_commit_before_its_first_move(tutorial: timewalk.Repo) -> None:
+    "Move 0 of a small step is the commit before its first move; Last change and the reader's span start there too."
+    tutorial.select("step-*", tutorial=True, select=["step-01.2..step-01.3"])
+    shas = {m.name: m.sha for found in tutorial.moves for m in found}
+    assert tutorial.commit_at(0, 0) == tutorial.steps[0].start
+    tutorial.move(0, move=0)
+    assert run_git(tutorial.work, "rev-parse", "HEAD") == tutorial.steps[0].start
+    tutorial.move(0, move=1)
+    assert run_git(tutorial.work, "rev-parse", "HEAD") == shas["step-01.2"] and tutorial.span() == (tutorial.steps[0].start, shas["step-01.2"])
+    assert tutorial.changes(0) == {"README.md": "M", "b.txt": "A", "c.txt": "A"}, "a small step's change is from its Start"
+
+
+def test_the_saved_branch_of_a_small_step_is_a_name_git_takes(tutorial: timewalk.Repo) -> None:
+    "A small step's name has spaces; the branch that keeps a learner's work there is still a name that git takes."
+    tutorial.select("step-*", tutorial=True, select=["step-01.1..step-01.2", "step-02"])
+    tutorial.move(0, move=0)
+    (tutorial.work / "README.md").write_text("my own\n")
+    tutorial.move(1)
+    assert tutorial.kept == ["timewalk/saved/step-01.1-to-step-01.2"]
+
+
+def test_a_walk_reads_its_small_steps_from_the_notes_of_the_whole() -> None:
+    "A small step shows the commands at the top of its step and its moves' sections; a narrative shows a step before its moves."
+    notes = timewalk.parse_notes("## step-01 S\n\n$ just setup\n\nAbout the whole step.\n\n### step-01.1 A\nmove a\n$ cat a\n\n"
+                                 "### step-01.2 B\nmove b\n\n### step-01.3 C\nmove c\n")
+    a, b = timewalk.Move("step-01.1", "1" * 40, ""), timewalk.Move("step-01.2", "2" * 40, "")
+    small = timewalk.Step(0, "step-01.1 to step-01.2", "2" * 40, "", "", "0" * 40, "step-01")
+    view = timewalk.walk_notes(notes, [small], [[a, b]], True)["step-01.1 to step-01.2"]
+    assert view["derived"] and view["raw"] == ""
+    assert [p.get("name") or p["text"] for p in view["parts"]] == ["just setup", "step-01.1", "move a", "cat a", "step-01.2", "move b"]
+    stop = timewalk.Step(0, "step-01.2", "2" * 40, "", "", "1" * 40, "step-01")
+    whole = timewalk.Step(1, "step-01", "3" * 40, "", "")
+    story = timewalk.walk_notes(notes, [stop, whole], [[], []], False, True)
+    assert [p.get("text") for p in story["step-01.2"]["parts"]] == ["just setup", "move b"] and story["step-01.2"]["title"] == "B"
+    assert [p["kind"] for p in story["step-01"]["parts"]] == ["command", "text"], "a narrative's step stops before its moves"
+    assert story["step-01"]["derived"], "so its notes are edited in the whole tutorial"
+    assert timewalk.walk_notes(notes, [stop, whole], [[], []], False)["step-01"] is notes["step-01"], "a narrative that does not select shows all"
+    bare = timewalk.parse_notes("## step-01 S\n\n$ just setup\n")
+    assert timewalk.walk_notes(bare, [stop], [[]], False, True)["step-01.2"]["parts"] == [bare["step-01"]["parts"][0]], \
+        "a section with no moves yet gives its setup, and no crash"
+
+
+def test_the_checks_of_a_walk_that_selects(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
+    "A walk that selects reads the notes of the whole: a section it takes and the notes lack is an error; the rest is not its own."
+    from timewalk.walks import TocError, check, load_toc
+
+    toc = tutorial_class / "toc.toml"
+    toc.write_text(toc.read_text() + '\n[[walk]]\nid = "part"\nkind = "tutorial"\nnotes = "notes.md"\nslides = "slides/slides.toml"\n'
+                   'select = ["step-01.2..step-01.3"]\n')
+    errors, warnings = check(load_toc(toc), tutorial.main, tutorial_class)
+    assert (errors, [w for w in warnings if "part" in w]) == ([], [])
+    (tutorial_class / "notes.md").write_text("## step-00\n\n## step-01\n### step-01.1 A\n$ ls\n### step-01.3 C\n$ ls\n\n## step-02\n")
+    errors, _ = check(load_toc(toc), tutorial.main, tutorial_class)
+    assert "walk part: step-01.2 to step-01.3 takes the section ### step-01.2, and notes.md has none" in errors
+    for bad, said in (('select = "step-01"', "select must be a list"), ('steps = ["step-01"]\nselect = ["step-01"]', "steps or select"),
+                      ('select = ["step-01"]\nintro = "nope.md"', "its intro nope.md does not exist")):
+        toc.write_text(f'[[walk]]\nid = "x"\nkind = "narrative"\nnotes = "notes.md"\n{bad}\n')
+        with pytest.raises(TocError, match=said):
+            load_toc(toc)
+
+
+def test_timewalk_notes_drafts_what_a_small_walk_takes_into_the_notes_of_the_whole(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
+    "A walk that selects drafts the sections of its steps and moves only, in the order of the whole."
+    from timewalk.walks import add_move_sections, load_toc
+
+    toc = tutorial_class / "toc.toml"
+    toc.write_text('[[walk]]\nid = "part"\nkind = "tutorial"\nnotes = "notes.md"\nselect = ["step-01.2"]\n')
+    (tutorial_class / "notes.md").write_text("## step-00\n\n## step-02\n")
+    text, added, _ = add_move_sections(load_toc(toc)[0], tutorial.main)
+    assert added == ["step-01", "step-01.2"] and text.index("## step-01") < text.index("### step-01.2") < text.index("## step-02")
+    assert "### step-01.1" not in text
+
+
+def test_timewalk_tutorial_writes_a_small_walk_and_a_narrative(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
+    "A small step starts at the commit before its first move, with its step's setup; a narrative has one file and one site."
+    shas = {m.name: m.sha for found in tutorial.moves for m in found}
+    (tutorial_class / "notes.md").write_text("# The whole\n\nThe opening.\n\n## step-00 Start\n\n## step-01 Three moves\n\n$ just setup\n\n"
+                                             "About all three.\n\n### step-01.1 A\nmove a\n\n### step-01.2 B\nmove b\n$ ls\n\n"
+                                             "### step-01.3 C\nmove c\n$ ls\n\n## step-02 D\n\nThe last.\n")
+    (tutorial_class / "intro.md").write_text("Only two moves.\n")
+    toc = tutorial_class / "toc.toml"
+    toc.write_text('[[walk]]\nid = "part"\ntitle = "Part"\nkind = "tutorial"\nnotes = "notes.md"\nintro = "intro.md"\n'
+                   'select = ["step-01.2..step-01.3"]\n\n[[walk]]\nid = "story"\ntitle = "Story"\nkind = "narrative"\nnotes = "notes.md"\n'
+                   'select = ["step-01.2", "step-01"]\n')
+    url = "https://github.com/o/t"
+    done = run_tutorial(tutorial.main, "--toc", str(toc), "--walk", "part", "--markdown", str(tutorial_class / "part"),
+                        "--site", str(tutorial_class / "part-site"), "--github", url)
+    assert done.returncode == 0, done.stderr
+    do = (tutorial_class / "part" / "TUTORIAL-do.md").read_text()
+    assert do.index("# Part") < do.index("Only two moves.") and "The opening." not in do, "the walk's intro takes the place of the opening"
+    assert f"## step-01.2 to step-01.3\n\n[The code at its Start]({url}/tree/{shas['step-01.1']}), the commit before step-01.2." in do
+    assert "```bash\njust setup\n```" in do and "About all three." not in do and "move a" not in do and "move b" in do
+    assert (tutorial_class / "part-site" / "do" / "step-01.2-to-step-01.3.qmd").exists()
+    done = run_tutorial(tutorial.main, "--toc", str(toc), "--walk", "story", "--markdown", str(tutorial_class / "story"),
+                        "--site", str(tutorial_class / "story-site"), "--github", url)
+    assert done.returncode == 0, done.stderr
+    story = (tutorial_class / "story" / "TUTORIAL.md").read_text()
+    assert not (tutorial_class / "story" / "TUTORIAL-do.md").exists() and "do mode" not in story
+    assert "## step-01 Three moves" in story and "About all three." in story and "move a" not in story, "a step stops before its moves"
+    assert f"## step-01.2 B\n\n[The code at step-01.2]({url}/tree/{shas['step-01.2']})" in story and "move b" in story
+    assert sorted(p.name for p in (tutorial_class / "story-site").glob("*.qmd")) == ["index.qmd", "step-01.2.qmd", "step-01.qmd"]
+
+
+def test_a_selecting_walk_on_the_page_its_stops_tabs_and_slides(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
+    "Next change of a stop goes from the next stop's Start; a stop at a move with no slides shows its step's; an item may name any move."
+    from timewalk.walks import load_toc
+
+    toc = tutorial_class / "toc.toml"
+    toc.write_text(toc.read_text() + '\n[[walk]]\nid = "story"\nkind = "narrative"\nnotes = "notes.md"\nslides = "slides/slides.toml"\n'
+                   'select = ["step-01.1", "step-02"]\n')
+    shas = {m.name: m.sha for found in tutorial.moves for m in found}
+    tags = {s.name: s.sha for s in tutorial.steps}
+    client = TestClient(timewalk.make_app(tutorial, TOKEN, PORT, assistant="", walks=load_toc(toc), root=tutorial_class), headers=HOST)
+    auth = {"t": TOKEN}
+    assert client.post("/api/walk", params=auth, json={"id": "story"}).status_code == 200
+    state = client.get("/api/state", params=auth).json()
+    assert [s["name"] for s in state["steps"]] == ["step-01.1", "step-02"] and state["current"] == 0
+    assert state["changes"]["next"] == {"name": "step-02", "before": tags["step-01"], "after": tags["step-02"]}, "from the next stop's Start"
+    assert state["changes"]["last"]["before"] == tags["step-00"], "a stop at a move shows what the move changed"
+    assert tutorial.span() == (tags["step-00"], shas["step-01.1"]), "the reader's span too, from the stop's Start"
+    assert state["slides"] == ["slides/deck.md#3"], "the move's own slide"
+    tutorial.select("step-*", tutorial=False, select=["step-01.2"])
+    assert tutorial.move_named("step-01.1").sha == shas["step-01.1"], "an item may name a move that the walk does not take"
+
+
+def test_a_stop_with_no_slides_of_its_own_shows_its_steps(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
+    "A narrative's stop at a move that the slides do not name shows the slides of its step."
+    from timewalk.walks import load_toc
+
+    (tutorial_class / "slides" / "slides.toml").write_text('[slides]\nstep-00 = ["deck.md#1"]\nstep-01 = ["deck.md#2"]\nstep-02 = ["deck.md#6"]\n')
+    toc = tutorial_class / "toc.toml"
+    toc.write_text('[[walk]]\nid = "story"\nkind = "narrative"\nnotes = "notes.md"\nslides = "slides/slides.toml"\nselect = ["step-01.1", "step-02"]\n')
+    client = TestClient(timewalk.make_app(tutorial, TOKEN, PORT, assistant="", walks=load_toc(toc), root=tutorial_class), headers=HOST)
+    tutorial.select("step-*", tutorial=False, select=["step-01.1", "step-02"])
+    tutorial.move(0)
+    assert client.get("/api/state", params={"t": TOKEN}).json()["slides"] == ["slides/deck.md#2"]
+
+
+def test_the_start_of_a_stop_is_a_place_after_a_restart(tutorial: timewalk.Repo) -> None:
+    "A copy at the Start of a small step, with no place remembered, is at move 0 of that step, and not at no step."
+    tutorial.select("step-*", tutorial=True, select=["step-01.2..step-01.3"])
+    run_git(tutorial.work, "checkout", "--quiet", "--detach", tutorial.steps[0].start)
+    tutorial.at = None
+    assert tutorial.position() == (0, 0)
+    tutorial.move(0, move=1)
+    assert tutorial.at == (0, 1)
+    tutorial.select("step-*", tutorial=True, select=["step-01.1"])
+    assert tutorial.at is None, "a new selection forgets the place of the last"
+
+
+def test_a_walk_that_selects_never_moves_a_repository_in_place(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
+    "Started in place, or with walks that have errors, timewalk does not move the copy to the first stop."
+    toc = tutorial_class / "toc.toml"
+    toc.write_text('[[walk]]\nid = "part"\nkind = "tutorial"\nnotes = "nope.md"\nselect = ["step-01.2"]\n')
+    head = run_git(tutorial.main, "rev-parse", "HEAD")
+    done = subprocess.run([sys.executable, "-m", "timewalk", str(tutorial.main), "--in-place", "--toc", str(toc), "--no-open", "--port", "8791"],
+                          capture_output=True, text=True, timeout=60)
+    assert done.returncode != 0 and "errors" in done.stderr
+    assert run_git(tutorial.main, "rev-parse", "HEAD") == head and run_git(tutorial.main, "symbolic-ref", "--short", "HEAD") == "main"
+
+
+def test_drafted_moves_go_in_the_order_of_the_commits() -> None:
+    "A new move section goes before the first section written after it; the sections already written stay as they are."
+    from timewalk.walks import place_moves
+
+    raw = "\n$ just setup\n\n### step-05.4 D\nd\n\n### step-05.6 F\n```\n### step-05.5 in code\n```\n"
+    out = place_moves(raw, "step-05", {"step-05.5": "### step-05.5 E\ne\n", "step-05.1": "### step-05.1 A\na\n", "step-05.9": "### step-05.9 Z\n"})
+    assert [line for line in out.split("\n") if line.startswith("### ")] == ["### step-05.1 A", "### step-05.4 D", "### step-05.5 E",
+                                                                             "### step-05.6 F", "### step-05.5 in code", "### step-05.9 Z"]
+
+
+def test_the_pdf_of_a_walk_that_selects_has_its_stops() -> None:
+    "A small step has the slides of its moves, the setup of its step and its moves' notes; a whole step has its moves' slides."
+    from timewalk.slides_pdf import selected_stops
+
+    parsed = timewalk.parse_notes("## step-05 S\n\n$ just setup\n\nAbout.\n\n### step-05.1 A\na\n\n### step-05.2 B\nb\n\n### step-05.3 C\nc\n")
+    slides = {"step-05": ["s.md#1"], "step-05.2": ["m.md#2"], "step-05.3": ["m.md#3"]}
+    stops = selected_stops(["step-05.2..step-05.3"], True, parsed, slides, True)
+    assert [(s["name"], s["slides"]) for s in stops] == [("step-05.2 to step-05.3", ["m.md#2", "m.md#3"])]
+    assert "just setup" in stops[0]["notes"] and "### step-05.2 B" in stops[0]["notes"] and "About." not in stops[0]["notes"]
+    whole = selected_stops(["step-05"], True, parsed, slides, False)[0]
+    assert whole["slides"] == ["s.md#1", "m.md#2", "m.md#3"] and whole["title"] == "S"
+    story = selected_stops(["step-05.1"], False, parsed, slides, True)[0]
+    assert story["slides"] == ["s.md#1"] and story["title"] == "A" and "### step-05.1" not in story["notes"], "a narrative's stop: its step's slide"
+
+
+def test_a_narrative_site_names_its_pages_whatever_the_tags() -> None:
+    "A narrative on tags of its own has its pages, by name, in the list of pages to build."
+    from timewalk.tutorial import Section, site_files
+
+    files = site_files("T", "", {None: [Section("parts-01", "One", "a\n", []), Section("parts-02", "", "b\n", [])]}, False)
+    assert 'render: ["index.qmd", "parts-01.qmd", "parts-02.qmd"]' in files["_smalldocs.yml"]

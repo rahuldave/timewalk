@@ -139,9 +139,15 @@ See [Commits for a tutorial](build-walks.md#commits-for-a-tutorial).
 
 A walk in `toc.toml` names a glob of tags, and can name some of its steps. timewalk then keeps only those
 steps, in their order. A tutorial takes every tag of its glob, because its moves are the commits between
-two tags. For a tutorial on one part of the history, give the part tags of its own on a branch, for
-example `hooks-00` to `hooks-02`. The replay copy fetches every tag, so the commits of that branch are
-in it too. See [Several walks](walks.md).
+two tags.
+
+For a walk on one part of a tutorial, name its steps, moves and ranges of moves with `select`, for
+example `["step-04", "step-05.3..step-05.6"]`. A whole step starts at the tag before it. A small step, a
+move or a range of moves, starts at the commit before its first move. Its moves keep their names and
+their commits. See [Take a small walk out of a big one](walks.md#take-a-small-walk-out-of-a-big-one).
+
+For a part with a history of its own, give the part tags of its own on a branch, for example `hooks-00` to
+`hooks-02`. The replay copy fetches every tag, so the commits of that branch are in it too.
 
 ## What is checked out, and when
 
@@ -158,6 +164,8 @@ git checkout -B timewalk/replay <commit>
 | Narrative | Checks out the tag of the step | None |
 | Tutorial, do mode | Checks out the tag before the step, the **Start** of the step. The first step, and a step of one commit, check out their own tag | **Catch me up** checks out the commit of the move that the learner works on. **Done** checks out nothing |
 | Tutorial, watch mode | Checks out the tag before the step, as in do mode | **Show** checks out the commit of the next move |
+| A small step of a walk with `select` | Checks out the commit before its first move, its **Start** | As in its mode |
+| A stop of a narrative at a move | Checks out the commit of the move | None |
 
 ### Do mode
 
