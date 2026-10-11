@@ -849,6 +849,89 @@ FILES_ITEM = re.compile(r"^\s*-\s+(diff|file)\s+(?:([\w.-]+)\s+)?`([^`]+)`\s*:?\
 SHOW_LINE = re.compile(r"^\s+show:\s*`(.+)`\s*$")
 
 
+# A block for one mode of a tutorial: "::: do" or "::: watch" opens it, and a line ":::" closes it. The fence is a
+# fenced div, as smalldocs, Quarto and Pandoc read it, so "::: {.do}" and "::::: watch" open one too.
+MODES = ("do", "watch")
+DIV_OPEN = re.compile(r"^:{3,}\s*(?:\{\s*\.([\w-]+)\s*\}|([\w-]+))\s*$")
+DIV_CLOSE = re.compile(r"^:{3,}\s*$")
+
+
+@dataclass
+class Blocks:
+    "Where a notes file has blocks for one mode."
+
+    mode: list[str | None]  # For each line, the mode of the block it is in, or None outside a block
+    fences: set[int]  # The lines that open or close a block, by index; they are not text
+    errors: list[tuple[int, str]]  # (line number from 1, what is wrong): a block not closed, a heading in a block
+    warnings: list[tuple[int, str]]  # (line number from 1, what is odd): a div of another name, a ::: that closes nothing
+
+
+def note_blocks(
+    text: str,  # A notes file, or a section of one
+) -> Blocks:  # The mode of each line, the fence lines, and what is wrong with the blocks
+    """Find the blocks for one mode: the text between "::: do" or "::: watch" and ":::".
+
+    A block holds no heading and no other block. A heading closes a block that is still open, and is an error. Inside
+    fenced code a ::: line is code, and closes nothing. A div of another name, such as ::: callout-note, is text in
+    both modes, and its closing ::: is text too.
+    """
+    lines = text.splitlines()
+    out = Blocks([None] * len(lines), set(), [], [])
+    fence: str | None = None
+    open_divs: list[tuple[int, str | None]] = []   # the divs open, innermost last: (line, mode), mode None for a div of another name
+
+    def mode() -> str | None:   # the mode of the innermost block for one mode
+        return next((m for _, m in reversed(open_divs) if m), None)
+
+    for at, line in enumerate(lines):
+        mark = re.match(r"^\s*(```+|~~~+)", line)
+        if fence is not None:
+            out.mode[at] = mode()
+            if mark and mark.group(1)[0] == fence:
+                fence = None
+            continue
+        if mark:
+            fence = mark.group(1)[0]
+        if re.match(r"^###?\s", line):
+            block = next(((start, m) for start, m in open_divs if m), None)
+            if block:
+                out.errors.append((block[0] + 1, f"the block ::: {block[1]} is not closed before the heading at line {at + 1}; "
+                                                 "close it with a line ::: above the heading, as a block holds no heading"))
+            open_divs.clear()
+            continue
+        opened, closed = (None, None) if mark else (DIV_OPEN.match(line), DIV_CLOSE.match(line))
+        if opened:
+            name = opened.group(1) or opened.group(2)
+            if name not in MODES:
+                out.warnings.append((at + 1, f"::: {name} is not a mode; only ::: do and ::: watch are blocks for one mode, so "
+                                             "this div shows in both modes as it is written"))
+                out.mode[at] = mode()
+                open_divs.append((at, None))
+                continue
+            if mode():
+                outer = next(start for start, m in open_divs if m)
+                out.errors.append((at + 1, f"::: {name} opens inside the block ::: {mode()} of line {outer + 1}; "
+                                           "a block holds no other block, so close the first with ::: before"))
+            open_divs.append((at, name))
+            out.fences.add(at)
+            continue
+        if closed:
+            if not open_divs:
+                out.warnings.append((at + 1, "this ::: closes no block"))
+                continue
+            _, was = open_divs.pop()
+            if was:
+                out.fences.add(at)
+            else:
+                out.mode[at] = mode()   # the end of a div of another name, inside a block, is text of that block
+            continue
+        out.mode[at] = mode()
+    block = next(((start, m) for start, m in open_divs if m), None)
+    if block:
+        out.errors.append((block[0] + 1, f"the block ::: {block[1]} is not closed; close it with a line :::"))
+    return out
+
+
 def _items_follow(
     lines: list[str],  # The lines of the notes
     at: int,  # The index of a files: line
@@ -874,6 +957,8 @@ def parse_notes(
         main$ git log         a command for the terminal in the repository you started from
         > Say: ...            a cue; shown with the prose, set apart in its own shade
         ### step-02.1 Title   in a tutorial, starts the notes of one move of the step, which is one commit
+        ::: do                in a tutorial, a block of lines for do mode only, up to a line :::
+        ::: watch             the same for watch mode
         files:                in a tutorial, the files that the move's commit added or changed, each a link
         files:                followed by items, the files to look at, each with words:
         - diff `src/x.py`: why   a button to the change of the move (or the step), and a sentence
@@ -884,8 +969,11 @@ def parse_notes(
     there is code to read, not a command. `parts` keeps the prose and the commands in the order of the file, so the
     page can show each command where it is written. `raw` keeps the section as written, for editing. A move's
     heading is a part of its own, `{"kind": "move", "name": "step-02.1", "title": ...}`, and the parts after it
-    belong to that move; the heading stays in `text`, as a Markdown heading, for the PDF.
+    belong to that move; the heading stays in `text`, as a Markdown heading, for the PDF. A part inside a block for one
+    mode has `"mode": "do"` or `"watch"`, and so has a command's entry; the lines that open and close a block are in
+    `raw` only.
     """
+    blocks = note_blocks(text)
     notes: dict[str, dict] = {}
     current: dict | None = None
     name = ""  # the step whose section this is
@@ -907,6 +995,9 @@ def parse_notes(
                 fence = mark.group(1)[0] if fence is None else (None if mark.group(1)[0] == fence else fence)
             continue
         current["raw"].append(line)
+        if at in blocks.fences:
+            continue   # the items of a files: line go on into a block, each item then for that mode
+        mode = blocks.mode[at] if at < len(blocks.mode) else None
         planned = re.match(r"^time:\s*(\d+):(\d\d)\s*$", line.strip()) if fence is None else None
         command = re.match(r"^\s*(main|runs[2-9]?)?\$\s+(.+)$", line) if fence is None else None
         move = re.match(rf"^###\s+({re.escape(name)}\.\d+)(?:\s+(.*))?$", line) if fence is None else None
@@ -921,9 +1012,10 @@ def parse_notes(
             parts.append({"kind": "move", "name": move.group(1), "title": (move.group(2) or "").strip()})
         elif fence is None and line.strip() == "files:" and (any(part["kind"] == "move" for part in parts) or _items_follow(lines, at)):
             items = []
-            parts.append({"kind": "files", "items": items})
+            parts.append({"kind": "files", "items": items, **({"mode": mode} if mode else {})})
         elif fence is None and items is not None and not command and (item := FILES_ITEM.match(line)):
-            items.append({"kind": item.group(1), "move": item.group(2), "path": item.group(3), "text": item.group(4).strip(), "show": []})
+            items.append({"kind": item.group(1), "move": item.group(2), "path": item.group(3), "text": item.group(4).strip(), "show": [],
+                          **({"mode": mode} if mode else {})})
             current["text"].append(line)  # the PDF prints an item as written
         elif fence is None and items and (shown := SHOW_LINE.match(line)):
             if shown.group(1).strip():
@@ -934,17 +1026,17 @@ def parse_notes(
             current["text"].append(line)
         elif command:
             items = None
-            entry = {"track": command.group(1) or "replay", "text": command.group(2).strip()}
+            entry = {"track": command.group(1) or "replay", "text": command.group(2).strip(), **({"mode": mode} if mode else {})}
             current["commands"].append(entry)
             parts.append({"kind": "command", **entry})
         else:
             if line.strip():
                 items = None   # a line of prose ends the items of a files: line
             current["text"].append(line)
-            if parts and parts[-1]["kind"] == "text":
+            if parts and parts[-1]["kind"] == "text" and parts[-1].get("mode") == mode:
                 parts[-1]["text"] += "\n" + line
             else:
-                parts.append({"kind": "text", "text": line})
+                parts.append({"kind": "text", "text": line, **({"mode": mode} if mode else {})})
     for entry in notes.values():
         entry["text"] = "\n".join(entry["text"]).strip()
         entry["raw"] = "\n".join(entry["raw"]).strip("\n")

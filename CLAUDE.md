@@ -93,6 +93,7 @@ Rahul set these rules. Each rule has tests. Do not weaken them.
 |---|---|
 | `src/timewalk/__init__.py` | The whole server, one module: `git()`, `Repo` (steps, the replay clone and its fetches, moves, saved branches, diffs, reads), notes and slides parsers, `Terminal` (a pty), `Hub` (events to pages), `make_app` (Starlette routes) |
 | `src/timewalk/walks.py` | Several walks: `load_toc` reads `toc.toml`, `check` checks notes and slides against the steps, and the commands `timewalk-check` and `timewalk-notes` (a tutorial's notes: a `## step-NN Title` section for each step, and drafts of its `### step-NN.k` sections, from each move's diff) |
+| `src/timewalk/tutorial.py` | The command `timewalk-tutorial`: copies of a tutorial walk to read without timewalk, one for each mode, with only that mode's `::: do` or `::: watch` blocks and without the private lines. `--markdown` writes `TUTORIAL-do.md` and `TUTORIAL-watch.md`, and `--site` one website (smalldocs, or Quarto with `--quarto`) with a Watch and a Do section. It writes over only the files that it made |
 | `src/timewalk/slides_pdf.py` | The command `timewalk-pdf`: the PDF of the slides and, with `--with-notes`, the notes, drawn by Chrome or Edge through Playwright. `--brand DIR` gives it the look of a brand folder (font, colours, cover, dividers); only this command and `print.js` know brands, and the page does not. The **PDF** button calls it through `/api/pdf`, with no brand |
 | `src/timewalk/static/` | `index.html`/`app.js` (the page, at `/`), `print.*` (for the PDF), `common.js`, `app.css` |
 | `src/timewalk/static/vendor/` | ghostty-web, highlight.js, marked, each with its licence. Vendored: do not edit |
@@ -101,8 +102,8 @@ Rahul set these rules. Each rule has tests. Do not weaken them.
 | `docs/` | The site: one Markdown page per topic (`authoring.md` lists what a narrative and a tutorial need, for the skills that build classes), `build.py` (the order is its `PAGES` list), `site.css`, `screenshots.py`, `images/`. `_site/` is built and ignored. `.github/workflows/pages.yml` publishes it |
 | `demo/notes.md`, `demo/slides/`, `demo/toc.toml`, `demo/walks/` | The notes and slides of the demo, and a second walk. They stay here, outside the sample, as in a class kit |
 
-timewalk is a package, `src/timewalk`, built with hatchling from `pyproject.toml`. It gives four commands,
-`timewalk`, `timewalk-pdf`, `timewalk-check` and `timewalk-notes`. Its dependencies are Starlette, uvicorn,
+timewalk is a package, `src/timewalk`, built with hatchling from `pyproject.toml`. It gives five commands,
+`timewalk`, `timewalk-pdf`, `timewalk-check`, `timewalk-notes` and `timewalk-tutorial`. Its dependencies are Starlette, uvicorn,
 websockets, Playwright and pypdf. The tests use the `dev` group. In a clone, run `uv run timewalk`.
 
 timewalk is not on PyPI, by Rahul's choice. Users run it from GitHub with

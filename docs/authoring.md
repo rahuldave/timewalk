@@ -166,6 +166,41 @@ A tutorial has two modes, and the class can change the mode at any time.
 - **Watch mode:** timewalk checks out the commit of each move. The code jumps. So the notes and "What
   changed" must say what happened.
 
+The two modes need different words for the same move. Put the words of one mode in a block for that
+mode, `::: do` or `::: watch`, closed by a line `:::`. The page shows a block only in its mode.
+
+- **In the `do` block,** give every line to type. Give the code, each file to make, and each command
+  that makes the move.
+- **In the `watch` block,** say what the move changed, and why.
+- **Outside the blocks,** keep what both modes need. Keep the list "The move changes these files:", the
+  line `files:` with its items and `show:` lines, and the anchor commands there.
+
+````markdown
+### step-02.2 A test of an empty text
+
+::: do
+Make `tests/test_empty.py`:
+
+```python
+...
+```
+:::
+
+::: watch
+The move adds one test. It counts the words of an empty text.
+:::
+
+files:
+- diff `tests/test_empty.py`: an empty text counts nothing.
+  show: `self.assertEqual(count(""), {})`
+
+$ uv run python -m unittest discover -s tests -q
+````
+
+If an anchor command is in a `do` block, the move has no command in watch mode, and `timewalk-check` warns
+of it. `timewalk-notes --blocks` drafts both blocks in each new move. See
+[Blocks for one mode](walks.md#do-mode-and-watch-mode).
+
 ### Settings
 
 - **Set `moves = "do"` or `moves = "watch"`** in `toc.toml`, for the mode that the tutorial starts in.
@@ -190,6 +225,7 @@ Run the checks in this order:
 
    Each draft has a line `files:` with an item for each file of the move. Finish each draft by hand.
    Write the words of each item, and pick the `show:` lines. Then run `timewalk-check` again.
+   Add `--blocks` to draft a block for each mode in each new move.
 3. **Make the PDF** of each walk:
 
    ```
@@ -243,13 +279,18 @@ Then it checks each walk, and reports every problem that it finds:
 | A PDF that cannot be read | An error |
 | A manifest at the top of the class folder, or notes in a slides folder | An error |
 | A step with no section in the notes | A warning |
-| In a tutorial, a move whose section has no command | A warning |
+| A block `::: do` or `::: watch` that is not closed, a heading in a block, or a block in a block | An error |
+| In a tutorial, a move whose section has no command, in one mode or in both | A warning |
+| A fenced div of another name, for example `::: callout-note`, or a line `:::` that closes no block | A warning |
 | In a tutorial, a `diff` item for a file that its move does not change | A warning |
 | In a tutorial, a `file` item for a file that is not in the commit of its move | A warning |
 | In a tutorial, a `show:` line that is no longer in the change of its item | A warning |
 | In a tutorial, an item that names a move that is not in the walk | A warning |
 | A walk with notes and no manifest | A warning |
 | A slide file in a slides folder that no walk uses | A warning |
+
+In a tutorial, it checks the items, the `show:` lines and the anchor commands in each mode. A warning
+for one mode names it, for example "step-02.1 has no command in watch mode".
 
 `timewalk-check` exits with code 1 when it finds an error. timewalk runs the same checks when it starts,
 and does not start after an error.

@@ -44,6 +44,9 @@ main$ git log --oneline
 | ``- file `path`: words`` | An item: a button **▤ See file path** that opens the file itself. In do mode, for a move not made yet, it opens the file as the move leaves it |
 | ``- diff step-02.1 `path`: words`` | An item for another move, named before the path |
 | ``  show: `a line` `` | Under an item: one line of the change. The notes draw it as an excerpt of the real diff, with the line shaded, and the reader marks the line |
+| `::: do` | In a tutorial walk: opens a block for do mode. The page shows the lines up to the next `:::` only in do mode. See [Do mode and watch mode](walks.md#do-mode-and-watch-mode) |
+| `::: watch` | The same, for watch mode. A narrative shows the `watch` blocks |
+| `:::` | Closes a block. A block holds no heading and no other block |
 | other lines | Markdown text to read |
 
 timewalk shows every line of the notes, cues included. If some cues are only for you, remove them from the
@@ -89,6 +92,11 @@ The last commands of a move section are its anchor commands. The notes column sh
 "After this move, run:". An anchor command shows what the move did, and the notes say what it gives. Make
 it safe to run again, and keep it from changing tracked files. A test that fails is a good anchor command,
 if the notes say that it fails. See [Anchor commands](walks.md#anchor-commands).
+
+A move section can hold a block for each mode. The `do` block gives the lines to type, and the `watch`
+block says what the move changed. The page shows only the block of the mode on show. Keep the list of
+files, the items and the anchor commands outside the blocks. See
+[What a narrative and a tutorial need](authoring.md#write-for-both-modes).
 
 ## The notes column
 

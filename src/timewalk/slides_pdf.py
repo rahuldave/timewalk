@@ -42,7 +42,7 @@ from starlette.responses import FileResponse, JSONResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from timewalk import HERE, load_slides, parse_notes
+from timewalk import HERE, load_slides, note_blocks, parse_notes
 
 COMMAND = re.compile(r"^\s*(main|runs[2-9]?)?\$\s+(.+)$")
 COLOUR = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$")
@@ -111,11 +111,20 @@ def load_brand(
 def notes_markdown(
     raw: str,  # A step's section of the notes, as written
 ) -> str:  # The same as Markdown for the page: commands in code blocks, no planned time
-    "Turn a section of the notes into Markdown to print: each run of command lines becomes one code block."
+    """Turn a section of the notes into Markdown to print: each run of command lines becomes one code block. A block for
+    one mode prints in both, each under a line that names its mode."""
     out: list[str] = []
     block: list[str] = []
     fence: str | None = None  # inside a fenced code block, a `$ ` line is code to read, and stays as written
-    for line in raw.split("\n"):
+    blocks = note_blocks(raw)
+    for at, line in enumerate(raw.split("\n")):
+        if at in blocks.fences:
+            if block:
+                out += ["```", *block, "```"]
+                block = []
+            mode = blocks.mode[at + 1] if at + 1 < len(blocks.mode) else None
+            out += ["", f"*In {mode} mode:*", ""] if mode and not re.match(r"^:{3,}\s*$", line) else [""]
+            continue
         mark = re.match(r"^\s*(```+|~~~+)", line)
         if mark:
             fence = mark.group(1)[0] if fence is None else (None if mark.group(1)[0] == fence else fence)

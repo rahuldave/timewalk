@@ -56,6 +56,8 @@ Keep the notes file outside the repository. timewalk refuses a notes file inside
   move by hand from the notes, and in watch mode timewalk checks out each commit. `timewalk-notes` drafts
   the notes of each move from its diff. The notes point at the files of a move, and quote its main lines.
   The reader shows the last change and the next one, and **Apply** types the git command that makes it.
+  A block `::: do` or `::: watch` in the notes shows in one mode only. `timewalk-tutorial` writes a copy
+  of a tutorial for each mode, as Markdown for GitHub and as a website, to read without timewalk.
 - **Shell.** One button, or Alt+Enter, gives the terminals the space of the slides and the files, in every window.
 - **Keyboard.** Left and Right change the step, and Up and Down change the slide.
 - **GitHub's theme,** light or dark, for the page, the code and the terminals.

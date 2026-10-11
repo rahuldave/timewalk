@@ -148,13 +148,20 @@ problem, and exits with code 1 when it finds an error.
 | A slide number past the end of its Markdown file, or a page past the end of its PDF | An error |
 | A notes file or a manifest inside your repository or its replay copy | An error |
 | A step with no section in the notes | A warning |
-| In a tutorial, a move whose section has no command | A warning |
+| A block `::: do` or `::: watch` that is not closed, a heading in a block, or a block in a block | An error |
+| In a tutorial, a move whose section has no command, in one mode or in both | A warning |
+| A fenced div of another name, for example `::: callout-note`, or a line `:::` that closes no block | A warning |
 | In a tutorial, a `diff` item for a file that its move does not change, or a `file` item for a file that is not in the commit of its move | A warning |
 | In a tutorial, a `show:` line that is no longer in the change of its item | A warning |
 | In a tutorial, an item that names a move that is not in the walk | A warning |
 | A slide file in a slides folder that no walk uses | A warning |
 
 A picture that a Markdown slide shows counts as used.
+
+In a tutorial, the checks read the items, the `show:` lines and the anchor commands once for each mode.
+Each mode has the text outside the blocks and its own blocks. A warning for one mode names it, for
+example "step-02.1 has no command in watch mode". See
+[Blocks for one mode](#do-mode-and-watch-mode).
 
 ## Tutorial walks
 
@@ -271,6 +278,61 @@ mode, the reader then shows the change in the tab **Next change**, with an **App
 In watch mode, the next move has a **Show ▶** button. It checks out the commit of that move, in every
 window. If the replay copy has edits, the move keeps them on a saved branch first. A move already shown
 has a grey **Shown ✓** button in its place, which does nothing.
+
+#### Blocks for one mode
+
+The two modes need different words. In do mode, the notes must give every line to type. In watch mode,
+the notes explain the change, and the lines to type get in the way. So the notes of a tutorial can hold
+a block for one mode. A block is a fenced div, as Pandoc, Quarto and smalldocs read it. A line `::: do`
+or `::: watch` opens it, and a line `:::` closes it.
+
+````markdown
+### step-02.1 A test of counting
+
+::: do
+Make `tests/test_count.py` with two tests:
+
+```python
+...
+```
+:::
+
+::: watch
+The move adds two tests. The second asks for something that the code cannot do yet.
+:::
+
+files:
+- diff `tests/test_count.py`: two tests. The second fails.
+
+$ uv run python -m unittest discover -s tests -q
+````
+
+`::: {.do}` also opens a block, and so does a fence of more colons, for example `::::: watch`. The page
+shows the notes in this way:
+
+- **The text outside a block** shows in both modes.
+- **A `do` block** shows only in do mode, and **a `watch` block** only in watch mode.
+- **The switch Do / Watch** changes the blocks on show, in every window. The step and the move stay.
+- **A narrative** has no mode. It shows the `watch` blocks, and `timewalk-check` warns of a `do` block.
+
+A block has these rules:
+
+- **Close each block with a line `:::`.**
+- **Put no `##` or `###` heading in a block, and no other block.** A heading closes a block that is still
+  open, and `timewalk-check` reports an error.
+- **A fenced code block in a block can hold a line `:::`.** The line is code, and closes nothing.
+- **A `files:` line, its items and the `$` commands in a block count only in the mode of the block.** The
+  checks read each mode as its reader sees it. See [The checks](#the-checks). The items of one `files:` line
+  can go on into a block. Each item in the block is then for its mode only.
+- **Cues work in a block.** The copies of `timewalk-tutorial` leave out a private cue in a block too.
+
+A fenced div of another name, for example `::: callout-note`, is not a block for one mode. Both modes show
+it as it is written, and `timewalk-check` warns of it. Such a div can go inside a block. Its closing `:::`
+then closes the div, and the block goes on.
+
+The PDF with `--with-notes` has no mode. It prints both blocks, each under a line "In do mode:" or "In
+watch mode:". `timewalk-tutorial` writes one copy for each mode, with only the blocks of that mode. See
+[Copies of a tutorial for GitHub and a website](#copies-of-a-tutorial-for-github-and-a-website).
 
 ### Moves on the page
 
@@ -477,6 +539,83 @@ parts:
 
 The list names only what the diff shows. Finish each draft by hand. Write the instructions and the words
 of each item. Quote the main line of each change with `show:`, and add the anchor commands.
+
+With `--blocks`, each new move starts with two blocks, `::: do` and `::: watch`. Each block has a comment
+that says what goes in it. Write the lines to type in the `do` block, and what the move changed in
+the `watch` block. See [Blocks for one mode](#do-mode-and-watch-mode).
+
+## Copies of a tutorial for GitHub and a website
+
+`timewalk-tutorial` writes copies of a tutorial walk that a reader can read without timewalk. It writes
+a Markdown file for each mode, for GitHub. It also writes a website, with a page for each step in each
+mode.
+
+```
+timewalk-tutorial ~/code/project --toc my-class/toc.toml --walk tutorial --markdown out
+timewalk-tutorial ~/code/project --toc my-class/toc.toml --walk tutorial --site site
+smalldocs render site
+```
+
+The links go to the project on GitHub. The address comes from the remote `origin` of the project, or from
+`--github`. [Reference](reference.md#timewalk-tutorial) lists every option.
+
+### What a copy holds
+
+Each copy is for one mode. It changes the notes in these ways:
+
+- **It keeps the text outside the blocks, and the blocks of its mode.** It leaves out the blocks of the
+  other mode.
+- **It leaves out the private lines,** by the rule of the `walk` skill. A private line is a `time:` line,
+  or a cue in an HTML comment. A cue `> Say:` or `> Note:` is private too, with the whole blockquote that
+  holds it. Fenced code is read as CommonMark reads it, and stays as it is written, blank lines included.
+  A blockquote with a cue and a public cue, such as `> Try:`, stops the command. Put a blank line between them.
+- **Each run of commands becomes a `bash` code block.** A command for a Runs tab gets a comment line, `#
+  in a second terminal`.
+- **Each step links to its code at its tag,** and each move to its commit on GitHub.
+- **Each item under `files:` links to its file at the commit.** A `diff` item also links to its change in
+  the commit. A `diff` item of a step, before its first move, links to the whole change of the step. A
+  `show:` line becomes a sub-item, "look at:", with the quoted line.
+- **A sentence about Apply goes to the commit instead.** A reader without timewalk has no **Apply** bar.
+  "with **Apply this file** in timewalk, or from the move's commit on GitHub" becomes "from the move's
+  commit", as a link. Any other **Apply this file** or **Apply the whole move** becomes a link to the
+  move's commit. The rest of the sentence stays.
+- **A section of a step or a move that the walk does not have is left out,** and the command says so.
+
+The text of the notes before the first step goes first, under the title. `--no-opening` leaves it out.
+`--intro` puts a Markdown file of your own before it.
+
+### The Markdown files
+
+`--markdown DIR` writes `TUTORIAL-do.md` and `TUTORIAL-watch.md` in the folder. Each file starts with a
+sentence that says what its mode asks of the reader, and a link to the other file. Each step is a `##`
+section, and each move a `###` section. GitHub shows both files with their links.
+
+### The website
+
+`--site DIR` writes one website with two sections, **Watch** and **Do**. One site has one address and one
+build. Each page links to the same step in the other mode, as the switch Do / Watch does in timewalk.
+
+| File | Holds |
+|---|---|
+| `index.qmd` | The front page: the title, the opening, and a list of the steps of each mode |
+| `watch/step-NN.qmd`, `do/step-NN.qmd` | One page for each step in each mode. Each move is a section of the page of its step |
+| `_smalldocs.yml` | The settings of the site, with a sidebar. Each move's heading has the move as its id, for example `{#step-02.1}`, and the sidebar links to it |
+| `styles.css` | A short style for code in a sentence |
+
+smalldocs builds the folder with `smalldocs render DIR`. With `--quarto`, the command writes `_quarto.yml`
+in place of `_smalldocs.yml`, and `quarto render DIR` builds it. The settings list the pages to build, and
+only the pages that `timewalk-tutorial` writes. A notes file in the folder never becomes a page.
+
+### What timewalk-tutorial writes over
+
+- **Every file that it writes starts with a line "Made by timewalk-tutorial".**
+- **It writes over only a file with that line.** If the folder has a file of the same name without it,
+  the command stops. It checks every file before it writes the first, so it then writes nothing.
+- **It removes its own old step pages,** for example the page of a step that the walk no longer has.
+- **It refuses a folder inside the project, its replay copy or a worktree of it,** also through a link.
+
+The `walk` skill refreshes the public walk repository of a class. Its own scan for private lines stays
+the check of what reaches students.
 
 ## A PDF of one walk
 

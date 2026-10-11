@@ -153,7 +153,8 @@ timewalk-pdf slides/slides.toml --notes notes.md --with-notes
 ```
 
 The notes show the prose, the cues in their own shade, and the commands in code blocks. The PDF leaves out
-the `time:` lines.
+the `time:` lines. The PDF has no mode, so it prints both blocks of a tutorial. Each block goes under a
+line "In do mode:" or "In watch mode:". See [Do mode and watch mode](walks.md#do-mode-and-watch-mode).
 
 The manifest is optional with `--with-notes`. Without a manifest, the PDF holds only the notes, as a
 runbook. A runbook is a written script of each step, with its prose and commands. Without `-o`, the command

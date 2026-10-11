@@ -35,7 +35,20 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
-from timewalk import GitError, expand_entry, git, name_status, parse_notes, pick_steps, replace_section, split_slides, step_moves, tag_steps
+from timewalk import (
+    MODES,
+    GitError,
+    expand_entry,
+    git,
+    name_status,
+    note_blocks,
+    parse_notes,
+    pick_steps,
+    replace_section,
+    split_slides,
+    step_moves,
+    tag_steps,
+)
 
 KINDS = ("narrative", "tutorial")
 WALK_KEYS = ("id", "title", "description", "kind", "folder", "notes", "slides", "steps", "tags", "setup", "sync", "moves")
@@ -180,7 +193,15 @@ def check_walk(
         if not walk.notes.is_file():
             errors.append(f"{name}: the notes file {walk.notes} does not exist")
         else:
-            sections = parse_notes(walk.notes.read_text(encoding="utf-8"))
+            text = walk.notes.read_text(encoding="utf-8")
+            sections = parse_notes(text)
+            blocks = note_blocks(text)
+            errors += [f"{name}: {walk.notes.name}:{line}: {problem}" for line, problem in blocks.errors]
+            warnings += [f"{name}: {walk.notes.name}:{line}: {problem}" for line, problem in blocks.warnings]
+            if walk.kind != "tutorial" and "do" in blocks.mode:
+                line = blocks.mode.index("do")
+                warnings.append(f"{name}: {walk.notes.name}:{line}: a narrative has no do mode, so its ::: do blocks never show; "
+                                "it shows the ::: watch blocks")
             for section in sections:
                 if section not in steps:
                     errors.append(f"{name}: {walk.notes.name} has a section ## {section}, which is not a step of the walk")
@@ -198,10 +219,15 @@ def check_walk(
                 if kept != [m for m in wanted if m in kept]:
                     errors.append(f"{name}: the ### sections of {step} in {walk.notes.name} are not in the order of the commits: {', '.join(kept)}")
                 every = {m.name: m for moves_of_step in moves.values() for m in moves_of_step}   # an item may name an earlier move
-                for problem in item_problems(main, sections.get(step, {}).get("parts", []), every):
+                parts = sections.get(step, {}).get("parts", [])
+                # Each mode reads the parts outside the blocks and its own blocks: check each as its reader sees it
+                for problem in dict.fromkeys(p for mode in MODES for p in item_problems(main, in_mode(parts, mode), every)):
                     warnings.append(f"{name}: {problem}")
-                for move in moves_without_commands(sections.get(step, {}).get("parts", [])):
-                    warnings.append(f"{name}: {move} has no command in {walk.notes.name}; add one that shows what the move did, "
+                missing = {mode: moves_without_commands(in_mode(parts, mode)) for mode in MODES}
+                for move in dict.fromkeys(m for found in missing.values() for m in found):
+                    modes = [mode for mode in MODES if move in missing[mode]]
+                    where = "" if len(modes) == len(MODES) else f" in {modes[0]} mode"
+                    warnings.append(f"{name}: {move} has no command{where} in {walk.notes.name}; add one that shows what the move did, "
                                     "for example $ just test")
     if walk.slides is None:
         if walk.notes is not None:
@@ -243,6 +269,15 @@ def check_walk(
         if problem:
             errors.append(f"{name}: {step}: {problem}")
     return errors, warnings, used
+
+
+def in_mode(
+    parts: list[dict],  # The parts of a step's notes
+    mode: str,  # "do" or "watch"
+) -> list[dict]:  # The parts that the page shows in that mode
+    "Keep the parts that a mode shows: those outside any block, and those in the blocks of that mode. So for the items of a files: line."
+    kept = [part for part in parts if part.get("mode") in (None, mode)]
+    return [{**part, "items": [i for i in part["items"] if i.get("mode") in (None, mode)]} if part["kind"] == "files" else part for part in kept]
 
 
 def item_problems(
@@ -396,6 +431,7 @@ def move_summary(
 def move_section(
     main: Path,  # The repository
     move,  # A move of a tutorial
+    blocks: bool = False,  # Also draft a block for each mode, for the words that differ between do and watch
 ) -> str:  # A ### section for it, for the author to finish
     "Write a first draft of a move's notes: its title from the commit, what changed, the files, and a place for a command."
     step = move.name.rsplit(".", 1)[0]
@@ -405,13 +441,16 @@ def move_section(
     summary = move_summary(main, move.sha)
     lead = "The move changes one file:" if len(summary) == 1 else "The move changes these files:"   # then one item for each file
     items = [f"- {'file' if status == 'A' else 'diff'} `{path}`: " for path, status in statuses.items() if status != "D"]
-    return "\n".join([f"### {move.name} {title}", "", lead, "", *summary, "", "files:", *items, "",
+    modes = ["::: do", "<!-- Do mode: every line to type, every command and every file of the move. -->", ":::", "",
+             "::: watch", "<!-- Watch mode: what the move changed, and why. -->", ":::", ""] if blocks else []
+    return "\n".join([f"### {move.name} {title}", "", *modes, lead, "", *summary, "", "files:", *items, "",
                       "<!-- Add a command that shows what this move did, for example: $ just test -->", ""])
 
 
 def add_move_sections(
     walk: Walk,  # A tutorial walk
     main: Path,  # The repository
+    blocks: bool = False,  # Draft a block for each mode in each new move
 ) -> tuple[str, list[str], list[str]]:  # The notes with the missing move sections added, the moves added, and their drafts
     """Add a section for each step, and a draft section for each move, that the notes do not have yet. A step's heading
     takes its title from the first line of its tag's message. Sections already there stay as they are."""
@@ -434,7 +473,7 @@ def add_move_sections(
             added.append(step.name)
             drafts.append(heading)
         written = {part["name"] for part in parse_notes(text).get(step.name, {}).get("parts", []) if part["kind"] == "move"}
-        new = [move_section(main, move) for move in moves if move.name not in written]
+        new = [move_section(main, move, blocks) for move in moves if move.name not in written]
         if not new:
             continue
         added += [move.name for move in moves if move.name not in written]
@@ -452,6 +491,8 @@ def notes_main() -> None:
     parser.add_argument("--toc", type=Path, required=True, help="the table of contents, toc.toml")
     parser.add_argument("--walk", required=True, help="the id of a tutorial walk")
     parser.add_argument("--write", action="store_true", help="write the sections into the notes file; without it, print them")
+    parser.add_argument("--blocks", action="store_true", help="in each new move, draft a block ::: do and a block ::: watch, "
+                                                              "for the words that differ between the modes")
     args = parser.parse_args()
     main_repo = Path(git(args.repo.resolve(), "rev-parse", "--show-toplevel"))
     try:
@@ -462,7 +503,7 @@ def notes_main() -> None:
         walk = dataclasses.replace(walk, notes=walk.folder / "notes.md")   # a walk's folder without notes yet: start them
     if walk is None or walk.kind != "tutorial" or walk.notes is None:
         raise SystemExit(f"timewalk-notes: {args.walk} is not a tutorial walk with a notes file or a folder in {args.toc}")
-    text, added, drafts = add_move_sections(walk, main_repo)
+    text, added, drafts = add_move_sections(walk, main_repo, args.blocks)
     if not added:
         print(f"timewalk-notes: every step and move has a section in {walk.notes.name}")
         return

@@ -9,7 +9,7 @@ uvx --from git+https://github.com/rahuldave/timewalk@v1.0.14 timewalk [repo] [op
 uvx --from git+https://github.com/rahuldave/timewalk@v1.0.14 timewalk-pdf [options]
 ```
 
-Or install the commands `timewalk`, `timewalk-pdf`, `timewalk-check` and `timewalk-notes` once with `uv tool install git+https://github.com/rahuldave/timewalk@v1.0.14`. In a clone of timewalk, run them with
+Or install the commands `timewalk`, `timewalk-pdf`, `timewalk-check`, `timewalk-notes` and `timewalk-tutorial` once with `uv tool install git+https://github.com/rahuldave/timewalk@v1.0.14`. In a clone of timewalk, run them with
 `uv run timewalk` and `uv run timewalk-pdf`.
 
 ## timewalk
@@ -49,7 +49,7 @@ timewalk-pdf --toc toc.toml [--walk ID] [-o OUT.pdf] [--with-notes] [--brand DIR
 | `-o`, `--output` | The PDF to write. Default: `build/slides.pdf` in the current folder, or `build/notes.pdf` when there is no manifest. The folder `build` is made if it is missing |
 | `--title` | A title for the footer of every page |
 | `--notes` | A notes file. Without `--with-notes`, `slides_pdf` reads only the title of each step from it, for the footer |
-| `--with-notes` | Put the notes of each step after its slides: the prose, the cues in their own shade, and the commands in code blocks. The `time:` lines stay out |
+| `--with-notes` | Put the notes of each step after its slides: the prose, the cues in their own shade, and the commands in code blocks. The `time:` lines stay out. Each block for one mode prints under "In do mode:" or "In watch mode:" |
 | `--brand` | A brand: a folder with a `brand.toml`, or the `brand.toml` itself. It sets the font, colours, footer, cover and dividers. See [Brand a PDF](brand.md) |
 | `--toc`, `--walk` | Take the manifest and the notes of one walk from a table of contents, in place of `MANIFEST` and `--notes`. Default: the first walk. The title of the walk goes in the footer, unless you give `--title` |
 
@@ -76,10 +76,20 @@ warning:
 - A `show:` line is no longer in the change of its item.
 - An item names a move that is not in the walk.
 
+It reads the items and the commands once for each mode, as the reader of that mode sees them. A warning
+for one mode names it, for example "step-02.1 has no command in watch mode".
+
+The blocks for one mode give these problems:
+
+- **An error:** a block `::: do` or `::: watch` that is not closed, a heading in a block, or a block in a
+  block.
+- **A warning:** a fenced div of another name, for example `::: callout-note`, or a line `:::` that closes
+  no block.
+
 ## timewalk-notes
 
 ```
-timewalk-notes REPO --toc toc.toml --walk ID [--write]
+timewalk-notes REPO --toc toc.toml --walk ID [--write] [--blocks]
 ```
 
 | Option | Does |
@@ -88,6 +98,7 @@ timewalk-notes REPO --toc toc.toml --walk ID [--write]
 | `--toc` | The table of contents |
 | `--walk` | The `id` of a tutorial walk with a notes file, or with a folder |
 | `--write` | Write the drafts into the notes file. Without it, print only the drafts |
+| `--blocks` | In each new move, draft a block `::: do` and a block `::: watch`, each with a comment that says what goes in it |
 
 Drafts a `### step-NN.k` section for each move that the notes do not have yet, at the end of its step. A
 draft has the subject of the commit as its title, and a list "The move changes these files:" from the diff. It ends with a
@@ -99,6 +110,35 @@ the title, steps without moves too. A walk whose folder has no `notes.md` yet ge
 The draft also has a line `files:`, with one item for each file of the commit. A new file gets a `file`
 item, and a changed file a `diff` item. You write the words of each item. The draft has no `show:` lines. See
 [Draft the notes of the moves](walks.md#draft-the-notes-of-the-moves).
+
+## timewalk-tutorial
+
+```
+timewalk-tutorial REPO --toc toc.toml [--walk ID] (--markdown DIR | --site DIR) [options]
+timewalk-tutorial REPO --notes notes.md [--tags GLOB] (--markdown DIR | --site DIR) [options]
+```
+
+| Option | Does |
+|---|---|
+| `REPO` | The project, with its step tags. Its commits give the links |
+| `--toc` | The table of contents. Give `--toc` or `--notes`, not both |
+| `--walk` | With `--toc`: the `id` of a tutorial walk. Default: the first tutorial of the table |
+| `--notes` | A notes file, in place of `--toc` |
+| `--tags` | With `--notes`: the glob of the step tags. Default: `step-*` |
+| `--github` | The address of the project on GitHub, `https://github.com/OWNER/NAME`, for the links. Default: the remote `origin` of the project. If `origin` is not on GitHub, give it |
+| `--title` | The title. Default: the `#` heading of the notes, or else the title of the walk |
+| `--intro` | A Markdown file to put first, under the title |
+| `--no-opening` | Leave out the text of the notes before the first step |
+| `--markdown` | The folder for `TUTORIAL-do.md` and `TUTORIAL-watch.md` |
+| `--site` | The folder for the website: `index.qmd`, `watch/step-NN.qmd`, `do/step-NN.qmd`, `_smalldocs.yml` and `styles.css` |
+| `--quarto` | With `--site`: write `_quarto.yml` in place of `_smalldocs.yml` |
+
+Give `--markdown`, `--site` or both. Each copy has the text outside the blocks and the blocks of one mode,
+without the private lines. Each step, move and item links to the code on GitHub. Build the website with
+`smalldocs render DIR`, or with `quarto render DIR` after `--quarto`.
+
+The command writes over only the files that it made. It refuses a folder inside the project or inside its
+replay copy. See [Copies of a tutorial for GitHub and a website](walks.md#copies-of-a-tutorial-for-github-and-a-website).
 
 ## Recipes
 
@@ -157,6 +197,7 @@ In the timewalk folder, `just` lists these:
 | ``- file `path`: words`` | An item: a button **▤ See file path** to the file. In do mode, for a move not made yet, the file as the move leaves it |
 | ``- diff step-02.1 `path`: words`` | An item of another move |
 | ``  show: `a line` `` | Under an item: a line of the change, drawn as an excerpt in the notes and marked in the reader. A click on the excerpt opens the change |
+| `::: do`, `::: watch` | In a tutorial: opens a block for one mode, up to a line `:::`. The page shows it only in that mode. A narrative shows the `watch` blocks |
 | The last commands of a move section | The anchor commands of the move, under "After this move, run:". They show what the move did. `timewalk-check` warns of a move section with no command |
 
 ## The views of the reader

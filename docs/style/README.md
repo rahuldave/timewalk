@@ -37,6 +37,8 @@ Keep the text of these headings. A link from another page uses each one as an an
 | walks.md | Moves on the page |
 | walks.md | Anchor commands |
 | walks.md | Draft the notes of the moves |
+| walks.md | Copies of a tutorial for GitHub and a website |
+| authoring.md | Write for both modes |
 | build-walks.md | Commits for a tutorial |
 | build-walks.md | Moves with jj |
 | authoring.md | How to check a walk |
@@ -114,6 +116,9 @@ only that page could not know it.
 | move | One small commit of a step in a tutorial, named `step-NN.k`. Its notes are a `### step-NN.k` section |
 | do mode | The mode of a tutorial where the learner makes each move by hand from the notes, and marks it done. The code does not move |
 | watch mode | The mode of a tutorial where timewalk checks out the commit of each move when asked |
+| block | In the notes of a tutorial, the lines between `::: do` or `::: watch` and a line `:::`. The page shows a block only in its mode. Write "block for one mode" where a reader could take it for a code block |
+| fenced div | The Markdown of Pandoc, Quarto and smalldocs for a block: a line of three colons or more with a name, and a line of colons that closes it |
+| copy of a tutorial | A file or a website that `timewalk-tutorial` writes, to read a tutorial in one mode without timewalk |
 | item | A line under `files:` in the notes, ``- diff `path`: words`` or ``- file `path`: words``. On the page, a button to a change or a file, with its words |
 | excerpt | A small, read-only part of the real diff that the notes draw for a `show:` line: the line, with two lines of context or its whole short hunk |
 | Last change, Next change | Two views of the reader. Last change is the change of the step or move just made, and Next change is the change of the next one |

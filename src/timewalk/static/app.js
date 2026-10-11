@@ -1290,7 +1290,18 @@ function drawNotes() {
     box.append(hint);
   }
   // In a step with moves, the text before the first move is about the whole step: it gets a section of its own.
-  const parts = mine?.parts || [];
+  // A block for one mode shows only in that mode. A narrative has no mode, and shows the watch blocks: it is watched.
+  const shown = ui.state.walk?.kind === "tutorial" ? mode || "do" : "watch";
+  const ofMode = (part) => !part.mode || part.mode === shown;
+  // A files: line whose items are all of the other mode shows nothing; one with no items shows the files of the commit.
+  const parts = [];
+  for (const part of mine?.parts || []) {
+    if (!ofMode(part)) continue;
+    if (part.kind === "files" && part.items?.length) {
+      const items = part.items.filter(ofMode);
+      if (items.length) parts.push({ ...part, items });
+    } else parts.push(part);
+  }
   let into = box;       // where the parts go: the notes, or the section of a move
   if (moves.length && parts.length && parts[0].kind !== "move") {
     into = document.createElement("section");
