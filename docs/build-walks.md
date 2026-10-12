@@ -237,7 +237,7 @@ These recipes run timewalk from GitHub on the clone of the project. `just presen
 and stops if a check finds an error:
 
 ```just
-timewalk := "uvx --from git+https://github.com/rahuldave/timewalk@v1.0.14"
+timewalk := "uvx --from git+https://github.com/rahuldave/timewalk@v1.1.0"
 
 # Open the walks: just present, or just present tutorial for another walk
 present walk="" *args:
