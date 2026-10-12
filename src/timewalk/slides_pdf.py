@@ -43,9 +43,9 @@ from starlette.responses import FileResponse, JSONResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from timewalk import HERE, load_slides, note_blocks, parse_notes
+from timewalk import HERE, load_slides, note_blocks, parse_notes, select_entry
 
-COMMAND = re.compile(r"^\s*(main|runs[2-9]?)?\$\s+(.+)$")
+COMMAND = re.compile(r"^\s*(main|runs[2-9]?|do)?\$\s+(.+)$")
 COLOUR = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$")
 FONT_FILES = (".ttf", ".otf", ".woff", ".woff2")
 # Every key a brand.toml may have: its table, its name, and what its value must be. Each key is optional.
@@ -150,7 +150,7 @@ def deck_of(
     with_notes: bool = False,  # Print each step's notes after its slides
     brand: dict | None = None,  # What `load_brand` returned, or None for no brand
     root: Path | None = None,  # The folder slides are named from; default: the manifest's folder
-    select: list[str] | None = None,  # A walk that takes part of a bigger one: its steps, moves and ranges of moves
+    select: list[str | dict] | None = None,  # A walk that takes part of a bigger one: its steps, moves and ranges of moves
     tutorial: bool = True,  # With select: whether the walk is a tutorial, whose steps have moves
 ) -> dict:  # The deck: its title, its brand and, per step, the step's title, slides and notes
     "Describe the whole deck, step by step."
@@ -186,7 +186,7 @@ def split_section(
 
 
 def selected_stops(
-    select: list[str],  # The steps, moves and ranges of moves of a walk, in order
+    select: list[str | dict],  # The steps, moves and ranges of moves of a walk, in order; see timewalk.select_entry
     tutorial: bool,  # Whether the walk is a tutorial
     parsed: dict[str, dict],  # The notes, as parse_notes reads them
     slides: dict[str, list[str]],  # The slides of each step and move
@@ -196,7 +196,8 @@ def selected_stops(
     moves in a tutorial; a small step of some moves, with the setup commands at the top of its step; a narrative's stop
     at a move. A stop with no slides of its own, nor of its moves, shows its step's."""
     out = []
-    for entry in select:
+    for given in select:
+        entry, titled = select_entry(given)
         first, _, end = entry.partition("..")
         whole = not end and (first in parsed or not re.match(r"^.+\.\d+$", first))
         step, _, number = first.rpartition(".") if not whole else (first, "", "")
@@ -206,18 +207,19 @@ def selected_stops(
             own = [f"{step}.{k}" for k in sorted(int(n.rsplit(".", 1)[1]) for n in slides if re.fullmatch(rf"{re.escape(step)}\.\d+", n))]
             deck = slides.get(step, []) + ([s for name in own for s in slides[name]] if tutorial else [])
             text = raw if tutorial else "\n".join(before)
-            out.append({"name": step, "title": parsed.get(step, {}).get("title", ""), "slides": deck,
+            out.append({"name": step, "title": titled or parsed.get(step, {}).get("title", ""), "slides": deck,
                         "notes": notes_markdown(text) if with_notes and text.strip() else ""})
             continue
         last = int(end.rpartition(".")[2]) if end else int(number)
         names = [f"{step}.{k}" for k in range(int(number), last + 1)]
-        lead = list(itertools.takewhile(lambda line: COMMAND.match(line) or not line.strip(), before))
+        lead = [line for line in itertools.takewhile(lambda line: COMMAND.match(line) or not line.strip(), before)
+                if not (COMMAND.match(line) and COMMAND.match(line).group(1) == "do")]   # a do$ line makes no Start
         chunks = [line for name in names for line in moves.get(name, [])[0 if tutorial else 1:]]
         heading = re.match(r"^###\s+\S+\s*(.*)$", moves.get(names[0], [""])[0])
         deck = [s for name in names for s in slides.get(name, [])] or slides.get(step, [])
         text = "\n".join([*lead, "", *chunks])
         out.append({"name": names[0] if len(names) == 1 else f"{names[0]} to {names[-1]}",
-                    "title": heading.group(1).strip() if heading and len(names) == 1 else "",
+                    "title": titled or (heading.group(1).strip() if heading and len(names) == 1 else ""),
                     "slides": deck, "notes": notes_markdown(text) if with_notes and text.strip() else ""})
     return out
 
@@ -343,7 +345,7 @@ def make_pdf(
     with_notes: bool = False,  # Print each step's notes after its slides
     brand: Path | None = None,  # A brand's folder, or its brand.toml, for the look of the PDF; None for no brand
     root: Path | None = None,  # The class folder, when a walk names slides from other slides folders; default: the manifest's folder
-    select: list[str] | None = None,  # A walk that takes part of a bigger one: its steps, moves and ranges of moves
+    select: list[str | dict] | None = None,  # A walk that takes part of a bigger one: its steps, moves and ranges of moves
     tutorial: bool = True,  # With select: whether the walk is a tutorial
 ) -> bytes:  # The PDF
     "Make the whole PDF: draw it in a browser, copy in PDF pages, and join the parts in step order."

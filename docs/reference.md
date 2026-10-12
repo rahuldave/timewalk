@@ -85,7 +85,8 @@ The check reads the notes and the intro file of a walk, and gives the file and t
 between the two`.
 
 It reads the items and the commands once for each mode, as the reader of that mode sees them. A warning
-for one mode names it, for example "step-02.1 has no command in watch mode".
+for one mode names it, for example "step-02.1 has no command in watch mode". A `do$` line does not count
+as a command for this warning.
 
 A walk with `select` is checked on the sections that it takes. A section that it takes and the notes do
 not have is an error, for example "step-05.3 to step-05.6 takes the section ### step-05.4, and notes.md
@@ -97,6 +98,10 @@ The blocks for one mode give these problems:
   block.
 - **A warning:** a fenced div of another name, for example `::: callout-note`, or a line `:::` that closes
   no block.
+- **A warning:** a `do$` line in a block, before the first move of a step, or after the commands that
+  check its move. A `do$` line shows in both modes, so put it outside the blocks, in the section of the move
+  that it makes, before the checks. In a narrative, every `do$` line is a warning, as a narrative has no moves
+  to make.
 
 ## timewalk-notes
 
@@ -191,8 +196,9 @@ In the timewalk folder, `just` lists these:
 | `description` | What the walk is about, in a sentence or two. The status band shows it at the first step of the walk |
 | `notes`, `slides`, `folder` | The notes file and the manifest, or a folder that holds `notes.md` and `slides/slides.toml` |
 | `steps`, `tags` | Some of the steps by name, or a glob for tags of its own |
-| `select` | The steps, moves and ranges of moves that the walk takes from a bigger walk, in the order of the history, for example `["step-04", "step-05.3..step-05.6", "step-10.3"]`. Not with `steps` |
-| `intro` | A Markdown file that the copies of `timewalk-export` put before the first step, in place of the text of the notes before it |
+| `select` | The steps, moves and ranges of moves that the walk takes from a bigger walk, in the order of the history, for example `["step-04", "step-05.3..step-05.6", "step-10.3"]`. An entry `{ range = "step-05.3..step-05.6", title = "Types" }` gives its stop a title. Not with `steps` |
+| `intro` | A Markdown file about the walk. The notes column shows it at the first stop, under "About this walk". The copies of `timewalk-export` put it before the first step, in place of the text of the notes before it |
+| `loose` | In a tutorial: the files, or globs, that do mode compares by the names of their packages, for example `["pyproject.toml", "uv.lock"]`. Another file that it names is not compared by its contents, but must be there when the move makes it |
 | `moves` | In a tutorial: the mode it starts in, `"do"` or `"watch"`. Default: `"do"` |
 | `sync` | In a tutorial: whether the slides and the moves follow each other. Default: `true` |
 | `setup` | `"manual"`: you run `just setup` yourself at each step. The only value for now |
@@ -207,6 +213,7 @@ In the timewalk folder, `just` lists these:
 | `time: m:ss` | The planned start, for the clock band. The notes column and the PDF leave it out |
 | `> text` | A cue. Every window shows it, in its own shade. Remove private cues before you give the notes to students |
 | `$ cmd`, `runs$ cmd`, `runs2$ cmd` to `runs9$ cmd`, `main$ cmd` | A command for that tab |
+| `do$ cmd` | In a tutorial: a command that makes the move. In do mode, a command for the **At this step** tab. In watch mode and in a narrative, the line "The move ran:" and the command, with no button. Never an anchor command. The do copy of `timewalk-export` shows it as a command, and the watch copy as "The move ran:". The PDF prints it as written |
 | `### step-NN.k Title` | In a tutorial: starts the section of move `k` of step `NN`. Write the sections in the order of the commits |
 | `files:` | Starts a list of items. With no items: a **± See diff** button for each file that the commit of the move added or changed |
 | ``- diff `path`: words`` | An item: a button **± See diff path** to the change of the move, or of the step, to that file. Its words go under the button |
@@ -215,7 +222,7 @@ In the timewalk folder, `just` lists these:
 | ``  show: `a line` `` | Under an item: a line of the change, drawn as an excerpt in the notes and marked in the reader. A click on the excerpt opens the change |
 | ```  show: ``a `b` c`` ``` | The same, for a line with a backtick in it. See [Quote a line with backticks](walks.md#quote-a-line-with-backticks) |
 | `::: do`, `::: watch` | In a tutorial: opens a block for one mode, up to a line `:::`. The page shows it only in that mode. A narrative shows the `watch` blocks |
-| The last commands of a move section | The anchor commands of the move, under "After this move, run:". They show what the move did. `timewalk-check` warns of a move section with no command |
+| The last commands of a move section | The anchor commands of the move, under "After this move, run:". They show what the move did. A `do$` line is never one. `timewalk-check` warns of a move section with no command |
 
 ## The views of the reader
 

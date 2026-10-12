@@ -999,8 +999,9 @@ def test_a_section_of_the_notes_is_saved_and_the_rest_kept(served: TestClient, t
     assert after["step-00"] == timewalk.parse_notes(before)["step-00"], "other steps are untouched"
     stale = served.post("/api/notes", params=auth, json={"step": "step-01", "base": base, "text": "mine"})
     assert stale.status_code == 409 and "changed" in stale.json()["error"]
-    served.post("/api/notes", params=auth, json={"step": "step-09", "base": "", "text": "New notes."})
-    assert timewalk.parse_notes(notes.read_text())["step-09"]["text"] == "New notes."
+    served.post("/api/notes", params=auth, json={"step": "step-03", "base": "", "text": "New notes."})
+    assert timewalk.parse_notes(notes.read_text())["step-03"]["text"] == "New notes.", "a step without a section gets one"
+    assert served.post("/api/notes", params=auth, json={"step": "step-09", "base": "", "text": "x"}).status_code != 200, "not a step"
 
 
 def test_replace_section_keeps_the_layout_of_the_file() -> None:
@@ -2945,3 +2946,225 @@ def test_saving_a_section_keeps_the_others_whatever_the_line_breaks() -> None:
     assert list(timewalk.parse_notes(timewalk.replace_section(text, "step-01", "\nnew intro\n"))) == ["step-01", "step-02", "step-03"]
     assert timewalk.replace_section("## step-01\r\nold\r\n## step-02\r\nx\r\n", "step-01", "new\n") == "## step-01\r\nnew\n\n## step-02\r\nx\r\n"
     assert timewalk.replace_section("## a\nx\n## step-01", "step-01", "\nbody\n") == "## a\nx\n## step-01\n\nbody\n"
+
+
+def test_package_files_match_by_the_names_of_their_packages(tmp_path: Path) -> None:
+    "A pyproject.toml or uv.lock with newer versions matches loosely; another package, or another setting, does not."
+    made = b'[project]\nname = "w"\nrequires-python = ">=3.11"\ndependencies = ["httpx>=0.27"]\n\n[dependency-groups]\ntest = ["pytest>=8.3.4"]\n'
+    mine = tmp_path / "pyproject.toml"
+    mine.write_bytes(made.replace(b"8.3.4", b"9.0.1").replace(b"httpx>=0.27", b"HTTPX >= 0.28"))
+    assert timewalk.loosely_same("pyproject.toml", mine, made) == "names"
+    mine.write_bytes(made.replace(b"pytest>=8.3.4", b"pytest>=8.3.4\", \"ruff"))
+    assert timewalk.loosely_same("pyproject.toml", mine, made) == "", "another package"
+    mine.write_bytes(made.replace(b">=3.11", b">=3.12"))
+    assert timewalk.loosely_same("pyproject.toml", mine, made) == "", "a setting that is not a package"
+    lock = ('version = 1\nrequires-python = ">=3.11"\n\n[[package]]\nname = "pytest"\nversion = "{v}"\nsource = {{ registry = "https://pypi.org/simple" }}\n'
+            'dependencies = [{{ name = "pluggy" }}{extra}]\n\n[[package]]\nname = "w"\nversion = "0.1.0"\nsource = {{ virtual = "." }}\n\n'
+            '[package.dev-dependencies]\ntest = [{{ name = "pytest" }}]\n\n[package.metadata.requires-dev]\ntest = [{{ name = "pytest", specifier = ">={v}" }}]\n')
+    (tmp_path / "uv.lock").write_text(lock.format(v="9.0.1", extra=', { name = "iniconfig" }'))
+    assert timewalk.loosely_same("uv.lock", tmp_path / "uv.lock", lock.format(v="8.3.4", extra="").encode()) == "names", \
+        "what the project asks for, not what its packages need"
+    (tmp_path / "uv.lock").write_text(lock.format(v="9.0.1", extra="").replace('test = [{ name = "pytest" }]', 'test = [{ name = "ruff" }]'))
+    assert timewalk.loosely_same("uv.lock", tmp_path / "uv.lock", lock.format(v="8.3.4", extra="").encode()) == ""
+    (tmp_path / "notes.txt").write_text("anything")
+    assert timewalk.loosely_same("notes.txt", tmp_path / "notes.txt", b"else") == "skipped"
+    assert timewalk.loosely_same("new.txt", tmp_path / "new.txt", b"made by the move") == "", "a file not compared must still be made"
+    assert timewalk.loosely_same("notes.txt", tmp_path / "notes.txt", None) == "", "and one the move deletes, deleted"
+    assert timewalk.loosely_same("pyproject.toml", tmp_path / "gone" / "pyproject.toml", made) == "", "a file not made yet does not match"
+
+
+def test_a_walks_loose_files_do_not_stop_the_match(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
+    "With loose = [\"a.txt\"], a different a.txt still matches, and the match says how; check warns of a glob no move changes."
+    from timewalk.walks import TocError, check, load_toc
+
+    toc = tutorial_class / "toc.toml"
+    toc.write_text(toc.read_text() + 'loose = ["a.txt", "nothing/*.toml"]\n')
+    client = TestClient(timewalk.make_app(tutorial, TOKEN, PORT, assistant="", walks=load_toc(toc), root=tutorial_class), headers=HOST)
+    auth = {"t": TOKEN}
+    client.post("/api/move", params=auth, json={"to": 1})
+    (tutorial.work / "a.txt").write_text("not quite\n")
+    found = client.get("/api/match", params=auth).json()
+    assert found["match"] is True and found["loose"] == {"a.txt": "skipped"}
+    _, warnings = check(load_toc(toc), tutorial.main, tutorial_class)
+    assert "walk tut: loose names nothing/*.toml, which no move of the walk changes" in warnings
+    assert not any("loose names a.txt" in w for w in warnings)
+    toc.write_text(toc.read_text().replace('loose = ["a.txt", "nothing/*.toml"]', "loose = \"a.txt\""))
+    with pytest.raises(TocError, match="loose must be a list"):
+        load_toc(toc)
+
+
+def test_a_selection_can_title_its_entries(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
+    "{ range = ..., title = ... } titles a stop in the steps, the notes, the PDF and the copies; plain names still work."
+    from timewalk.export import Source, build
+    from timewalk.slides_pdf import selected_stops
+    from timewalk.walks import TocError, load_toc
+
+    select = ["step-00", {"range": "step-01.1..step-01.2", "title": "The first two"}, "step-01.3"]
+    steps, moves = timewalk.select_steps(tutorial.main, "step-*", select, True)
+    assert [(s.name, s.title) for s in steps] == [("step-00", ""), ("step-01.1 to step-01.2", "The first two"), ("step-01.3", "")]
+    notes = timewalk.parse_notes("## step-00 Zero\n\n## step-01 One\n### step-01.1 A\n$ ls\n### step-01.2 B\n$ ls\n### step-01.3 C\n$ ls\n")
+    shown = timewalk.walk_notes(notes, steps, moves, True, True)
+    assert [shown[s.name]["title"] for s in steps] == ["Zero", "The first two", "C"]
+    deck = selected_stops(select, True, notes, {}, False)
+    assert [stop["title"] for stop in deck] == ["Zero", "The first two", "C"]
+    sources = {"step-00": Source("Zero", [], {}), "step-01": Source("One", [], {n: (t, ["$ ls"]) for n, t in
+                                                                                  [("step-01.1", "A"), ("step-01.2", "B"), ("step-01.3", "C")]})}
+    shas = {s.name: s.sha for s in steps} | {m.name: m.sha for found in moves for m in found}
+    sections = build(sources, steps, moves, "https://github.com/o/t", 2, set(), shas, {s.name: s.start for s in steps})
+    assert [(s.name, s.title) for s in sections] == [("step-00", "Zero"), ("step-01.1 to step-01.2", "The first two"), ("step-01.3", "C")]
+    toc = tutorial_class / "toc.toml"
+    toc.write_text('[[walk]]\nid = "small"\nkind = "tutorial"\nnotes = "notes.md"\nselect = [{ range = "step-01.1..step-01.2", title = "Two" }, "step-02"]\n')
+    assert load_toc(toc)[0].select[0] == {"range": "step-01.1..step-01.2", "title": "Two"}
+    toc.write_text('[[walk]]\nid = "small"\nkind = "tutorial"\nnotes = "notes.md"\nselect = [{ moves = "step-01.1", title = "Two" }]\n')
+    with pytest.raises(TocError, match="has a range and a title"):
+        load_toc(toc)
+
+
+def test_the_page_gets_a_walks_intro(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
+    "A walk's intro goes to the page with the walk, to show at its first stop; a walk without one sends nothing."
+    from timewalk.walks import load_toc
+
+    toc = tutorial_class / "toc.toml"
+    (tutorial_class / "intro.md").write_text("This walk leaves out step-01.2.\n\n> Say: tell them why\n")
+    toc.write_text(toc.read_text() + 'intro = "intro.md"\n')
+    client = TestClient(timewalk.make_app(tutorial, TOKEN, PORT, assistant="", walks=load_toc(toc), root=tutorial_class), headers=HOST)
+    assert client.get("/api/state", params={"t": TOKEN}).json()["walk"]["intro"]["watch"].startswith("This walk leaves out step-01.2.")
+    toc.write_text(toc.read_text().replace('intro = "intro.md"\n', ""))
+    client = TestClient(timewalk.make_app(tutorial, TOKEN, PORT, assistant="", walks=load_toc(toc), root=tutorial_class), headers=HOST)
+    assert client.get("/api/state", params={"t": TOKEN}).json()["walk"]["intro"] == {}
+
+
+def test_loose_keeps_addresses_and_markers_and_warns_of_a_move_it_would_make_alone(tmp_path: Path) -> None:
+    "A package from another address, or with another marker, differs; check warns of a move whose only change is a version."
+    from timewalk.walks import check, load_toc
+
+    made = b'[project]\nname = "w"\ndependencies = ["httpx>=0.27"]\n'
+    for other in (b'"httpx @ git+https://example.invalid/httpx"', b"\"httpx>=0.27; sys_platform != 'win32'\""):
+        assert timewalk.loose_match("pyproject.toml", made.replace(b'"httpx>=0.27"', other), made) == ""
+    assert timewalk.loose_match("pyproject.toml", made.replace(b">=0.27", b">=0.28,<1"), made) == "names"
+    main = tmp_path / "p"
+    main.mkdir()
+    for args in (["init", "--quiet", "-b", "main"], ["config", "user.name", "t"], ["config", "user.email", "t@e"]):
+        run_git(main, *args)
+    for subject, text, tag in [("step-00: start", made, "step-00"), ("step-01.1: pin", made.replace(b">=0.27", b">=0.27,<1"), None),
+                               ("step-01: more", made.replace(b'"httpx>=0.27"', b'"httpx>=0.27,<1", "rich"'), "step-01")]:
+        (main / "pyproject.toml").write_bytes(text)
+        run_git(main, "add", "-A")
+        run_git(main, "commit", "--quiet", "-m", subject)
+        if tag:
+            run_git(main, "tag", "-a", tag, "-m", subject)
+    (tmp_path / "toc.toml").write_text('[[walk]]\nid = "t"\nkind = "tutorial"\nnotes = "notes.md"\nloose = ["pyproject.toml"]\n')
+    (tmp_path / "notes.md").write_text("## step-00\n\n## step-01\n### step-01.1 A\n$ ls\n### step-01.2 B\n$ ls\n")
+    _, warnings = check(load_toc(tmp_path / "toc.toml"), main, tmp_path)
+    assert any("step-01.1 changes only what loose does not compare" in w for w in warnings), warnings
+    assert not any("step-01.2 changes only" in w for w in warnings)
+
+
+def test_the_intro_keeps_its_modes_blocks_and_drops_its_times(tmp_path: Path) -> None:
+    "The page gets the intro once for each mode, with that mode's blocks, without the fences and the planned times."
+    intro = tmp_path / "intro.md"
+    intro.write_text("Both.\n\n::: do\nDO ONLY\n:::\n\n::: watch\nWATCH ONLY\n:::\n\ntime: 1:30\n\n```\ntime: 2:00\n```\n> Say: a cue\n")
+    found = timewalk.intro_of(intro)
+    assert "DO ONLY" in found["do"] and "WATCH ONLY" not in found["do"] and "WATCH ONLY" in found["watch"]
+    assert ":::" not in found["do"] + found["watch"] and "time: 1:30" not in found["do"]
+    assert "time: 2:00" in found["do"] and "> Say: a cue" in found["do"], "code stays, and cues are hidden by the page"
+    assert timewalk.intro_of(None) == {} and timewalk.intro_of(tmp_path / "gone.md") == {}
+
+
+def test_a_titled_whole_step_without_notes_and_titles_in_the_copies(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
+    "A whole step that select titles keeps the title without a section, and can be written; a title is one line; a bracket ends no link."
+    from timewalk.export import Section, site_files
+    from timewalk.walks import TocError, load_toc
+
+    steps, moves = timewalk.select_steps(tutorial.main, "step-*", [{"range": "step-00", "title": "T"}, "step-01.2"], True)
+    shown = timewalk.walk_notes({}, steps, moves, True, True)
+    assert shown["step-00"]["title"] == "T" and not shown["step-00"].get("derived"), "the step's notes can be written"
+    files = site_files("W", "", {None: [Section("step-00", "a [b] c", "x\n", [])]}, False)
+    assert "- [step-00: a \\[b\\] c](" in files["index.qmd"]
+    toc = tutorial_class / "toc.toml"
+    toc.write_text('[[walk]]\nid = "s"\nkind = "tutorial"\nnotes = "notes.md"\nselect = [{ range = "step-01.1", title = "a\\nb" }]\n')
+    with pytest.raises(TocError, match="on one line"):
+        load_toc(toc)
+
+
+def test_a_save_keeps_crlf_and_refuses_a_section_that_is_not_one(served: TestClient, tmp_path: Path) -> None:
+    "A notes file with Windows line ends keeps them through a save; a step that is not a section of the file is refused."
+    auth = {"t": TOKEN}
+    notes = tmp_path / "notes.md"
+    notes.write_bytes(notes.read_bytes().replace(b"\r\n", b"\n").replace(b"\n", b"\r\n"))
+    base = served.get("/api/notes", params=auth).json()["notes"]["step-01"]["raw"]
+    assert served.post("/api/notes", params=auth, json={"step": "step-01", "base": base, "text": "new\nlines"}).json() == {"ok": True}
+    data = notes.read_bytes()
+    assert b"new\r\nlines\r\n" in data and b"\n" not in data.replace(b"\r\n", b""), "every line ends as the file's did"
+    refused = served.post("/api/notes", params=auth, json={"step": "step-01.2 to step-01.3", "base": "", "text": "HACK"})
+    assert refused.status_code != 200 and b"HACK" not in notes.read_bytes()
+
+
+def test_a_derived_section_is_not_saved_and_a_restart_counts_the_moves_made(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
+    "A small step's notes come from its step's, and are not saved as their own; after a restart, the moves already made count as done."
+    from timewalk.walks import load_toc
+
+    toc = tutorial_class / "toc.toml"
+    toc.write_text(toc.read_text() + '\n[[walk]]\nid = "small"\nkind = "tutorial"\nnotes = "notes.md"\nselect = ["step-01.2..step-01.3"]\n')
+    client = TestClient(timewalk.make_app(tutorial, TOKEN, PORT, assistant="", walks=load_toc(toc), root=tutorial_class), headers=HOST)
+    auth = {"t": TOKEN}
+    client.post("/api/walk", params=auth, json={"walk": "small"})
+    before = (tutorial_class / "notes.md").read_text()
+    refused = client.post("/api/notes", params=auth, json={"step": "step-01.2 to step-01.3", "base": "", "text": "HACK", "walk": "small"})
+    assert refused.status_code != 200 and (tutorial_class / "notes.md").read_text() == before
+    tutorial.select("step-*", None, tutorial=True)
+    tutorial.move(1, move=2)
+    again = TestClient(timewalk.make_app(tutorial, TOKEN, PORT, assistant="", walks=load_toc(toc)[:1], root=tutorial_class), headers=HOST)
+    state = again.get("/api/state", params=auth).json()
+    assert (state["move"], state["done"]) == (2, 2)
+
+
+def test_nothing_is_written_into_a_replay_copy_made_elsewhere(sample: Path, tmp_path: Path) -> None:
+    "A replay copy in a folder of its own is known by its remote; timewalk-notes and timewalk-export do not write there."
+    from timewalk.walks import in_a_copy
+
+    elsewhere = tmp_path / "far" / "copy"
+    timewalk.Repo(sample, replay=elsewhere)
+    assert in_a_copy(elsewhere / "notes.md", sample) and in_a_copy(sample / "sub" / "x.md", sample)
+    assert not in_a_copy(tmp_path / "class" / "notes.md", sample)
+
+
+def test_a_saved_branch_is_named_by_a_tag_that_the_walk_leaves_out(tutorial: timewalk.Repo) -> None:
+    "Work kept from a commit that is no stop of the walk on show, but has a tag, is kept under the tag's name."
+    tutorial.move(2)
+    (tutorial.work / "d.txt").write_text("mine\n")
+    tutorial.select("step-*", None, tutorial=True, select=["step-01.1"])
+    tutorial.at = None
+    assert tutorial.place_name() == "step-02"
+
+
+def test_a_do_line_makes_the_move_runs_in_do_mode_and_is_shown_in_watch_mode(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
+    "do$ is a command that makes the move: a run of its own and no anchor; in a block, a warning; the copies show it by mode."
+    from timewalk.export import for_mode, render
+    from timewalk.walks import check, load_toc, moves_without_commands
+
+    notes = timewalk.parse_notes("## step-01\n### step-01.1 A\ndo$ uv add ruff\n### step-01.2 B\ndo$ git rm x\n$ just check\n")
+    parts = notes["step-01"]["parts"]
+    assert parts[1] == {"kind": "command", "track": "replay", "text": "uv add ruff", "makes": True}
+    assert moves_without_commands(parts) == ["step-01.1"], "a do$ line is no anchor"
+    lines = ["Now we add ruff.", "do$ uv add --dev ruff", "$ just check"]
+    shas = {"step-01.1": "m1"}
+    watched = "\n".join(line for line, _ in render(lines, "step-01.1", "https://github.com/o/t", shas, {}, None, True))
+    done = "\n".join(line for line, _ in render(lines, "step-01.1", "https://github.com/o/t", shas, {}, None, False))
+    assert "The move ran: `uv add --dev ruff`" in watched and "```bash\njust check\n```" in watched
+    assert "```bash\nuv add --dev ruff\n```" in done and "```bash\njust check\n```" in done and "The move ran" not in done, \
+        "what makes the move and what checks it are two blocks"
+    assert "SECRET" not in for_mode("## step-01\n\n> Say: SECRET\ndo$ uv add ruff\n", "watch"), "a do$ line ends a cue as a $ line does"
+    assert "uv add ruff" in for_mode("## step-01\n\n> Say: SECRET\ndo$ uv add ruff\n", "watch")
+    (tutorial_class / "notes.md").write_text("## step-00\n\n## step-01\ndo$ touch early\n$ just setup\n### step-01.1 A\n::: do\ndo$ uv add ruff\n"
+                                             "```\ndo$ in code\n```\n:::\n$ ls\n### step-01.2 B\n$ ls\ndo$ late\n### step-01.3 C\ndo$ fine\n$ ls\n\n## step-02\n")
+    _, warnings = check(load_toc(tutorial_class / "toc.toml"), tutorial.main, tutorial_class)
+    found = [w for w in warnings if "do$" in w]
+    assert any("step-01: the do$ line 'touch early' is before the first move" in w for w in found), found
+    assert any("step-01.1: the do$ line 'uv add ruff' is in the block ::: do" in w for w in found), found
+    assert any("step-01.2: the do$ line 'late' comes after the commands that check the move" in w for w in found), found
+    assert len(found) == 3, "code is not a do$ line, and step-01.3 is right"
+    steps, moves = timewalk.select_steps(tutorial.main, "step-*", ["step-01.2..step-01.3"], True)
+    parsed = timewalk.parse_notes((tutorial_class / "notes.md").read_text())
+    start = timewalk.walk_notes(parsed, steps, moves, True, True)["step-01.2 to step-01.3"]["parts"]
+    assert [p["text"] for p in start if p["kind"] == "command"][:1] == ["just setup"], "a do$ line before the moves joins no Start"

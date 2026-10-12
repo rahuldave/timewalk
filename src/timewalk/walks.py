@@ -27,6 +27,7 @@ starting; a warning is printed and does not.
 
 import argparse
 import dataclasses
+import fnmatch
 import os
 import re
 import subprocess
@@ -37,12 +38,14 @@ from pathlib import Path
 
 from timewalk import (
     FILES_ITEM,
+    HOME,
     MODES,
     SHOW_LINE,
     GitError,
     code_span,
     expand_entry,
     git,
+    loose_match,
     name_status,
     note_blocks,
     parse_notes,
@@ -57,7 +60,7 @@ from timewalk import (
 )
 
 KINDS = ("narrative", "tutorial")
-WALK_KEYS = ("id", "title", "description", "kind", "folder", "notes", "slides", "steps", "select", "intro", "tags", "setup", "sync", "moves")
+WALK_KEYS = ("id", "title", "description", "kind", "folder", "notes", "slides", "steps", "select", "intro", "tags", "setup", "sync", "moves", "loose")
 SLIDE_FILES = (".md", ".markdown", ".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".pdf", ".html")
 
 
@@ -77,8 +80,9 @@ class Walk:
     mode: str = "do"  # In a tutorial, how it starts: "do", the learner makes each move; "watch", timewalk shows each commit
     description: str = ""  # What the walk is about, in a sentence or two: the page shows it at the walk's first step
     folder: Path | None = None  # Its folder, if the table gives one: where timewalk-notes starts a notes.md
-    select: list[str] | None = None  # Steps, moves and ranges of moves it takes from a bigger walk, in order; see timewalk.select_steps
+    select: list[str | dict] | None = None  # Steps, moves and ranges of moves it takes from a bigger walk, in order; see timewalk.select_entry
     intro: Path | None = None  # What its copies say before the first step, in place of the text of the notes before it
+    loose: list[str] = dataclasses.field(default_factory=list)  # In do mode, globs of the files to match loosely; see timewalk.loosely_same
 
 
 class TocError(ValueError):
@@ -131,13 +135,23 @@ def load_toc(
             raise TocError(f"{where}: a tutorial takes every step of its tags; for a part, name its steps and moves with select, "
                            "for example select = [\"step-04\", \"step-05.3..step-05.6\"]")
         select = entry.get("select")
-        if select is not None and not (isinstance(select, list) and select and all(isinstance(s, str) and s for s in select)):
+        if select is not None and not (isinstance(select, list) and select and all((isinstance(s, str) and s) or isinstance(s, dict) for s in select)):
             raise TocError(f"{where}: select must be a list of steps, moves and ranges of moves, for example "
                            "select = [\"step-04\", \"step-05.3..step-05.6\", \"step-10.3\"]")
+        for part in select or []:
+            if isinstance(part, dict) and not (set(part) <= {"range", "title"} and isinstance(part.get("range"), str) and part["range"]
+                                               and isinstance(part.get("title", ""), str) and not re.search(r"[\r\n]", part.get("title", ""))):
+                raise TocError(f"{where}: an entry of select in braces has a range and a title, both text in quotes on one line, for example "
+                               "{ range = \"step-05.3..step-05.6\", title = \"Types\" }")
         if select is not None and steps is not None:
             raise TocError(f"{where}: give steps or select, not both")
         if entry.get("moves", "do") not in ("do", "watch"):
             raise TocError(f"{where}: moves = {entry['moves']!r}; write \"do\" or \"watch\"")
+        loose = entry.get("loose", [])
+        if not (isinstance(loose, list) and all(isinstance(glob, str) and glob for glob in loose)):
+            raise TocError(f"{where}: loose must be a list of files, or globs of files, for example loose = [\"pyproject.toml\", \"uv.lock\"]")
+        if loose and kind != "tutorial":
+            raise TocError(f"{where}: loose is for a tutorial's do mode, where the learner's files are matched with each move; this walk is a {kind}")
         if "sync" in entry and not isinstance(entry["sync"], bool):
             raise TocError(f"{where}: sync must be true or false")
         if entry.get("setup", "manual") != "manual":
@@ -154,7 +168,7 @@ def load_toc(
             raise TocError(f"{where}: its intro {entry['intro']} does not exist")
         walks.append(Walk(ident, entry.get("title", ident), kind, notes.resolve() if notes else None, slides.resolve() if slides else None,
                           entry.get("tags", "step-*"), steps, "manual", entry.get("sync", True), entry.get("moves", "do"),
-                          entry.get("description", "").strip(), folder.resolve() if folder else None, select, intro.resolve() if intro else None))
+                          entry.get("description", "").strip(), folder.resolve() if folder else None, select, intro.resolve() if intro else None, loose))
     return walks
 
 
@@ -178,6 +192,26 @@ def inside(
     "Say whether a path lies inside a folder, by its written form."
     full, base = os.path.normpath(path), os.path.normpath(folder)
     return os.path.commonpath([full, base]) == base
+
+
+def in_a_copy(
+    path: Path,  # A file to write, which may not exist yet
+    main: Path,  # The project
+) -> bool:  # Whether the file is in the project, a worktree of it, or a replay copy of it wherever it is
+    "Say whether timewalk must not write a file: a replay copy is known by its remote home, which names the project."
+    real = path.resolve()
+    if any(inside(real, folder.resolve()) for folder in (main, main.parent / f"{main.name}-replay")):
+        return True
+    folder = next((p for p in [real, *real.parents] if p.is_dir()), None)
+    if folder is None:
+        return False
+    found = subprocess.run(["git", "rev-parse", "--show-toplevel"], cwd=folder, capture_output=True, text=True)
+    if found.returncode:
+        return False
+    top = Path(found.stdout.strip())
+    worktrees = [Path(line.split(" ", 1)[1]) for line in git(main, "worktree", "list", "--porcelain").splitlines() if line.startswith("worktree ")]
+    home = subprocess.run(["git", "remote", "get-url", HOME], cwd=top, capture_output=True, text=True).stdout.strip()
+    return any(top.resolve() == w.resolve() for w in worktrees) or bool(home and Path(home).resolve() == main.resolve())
 
 
 def check_walk(
@@ -214,6 +248,17 @@ def check_walk(
                 if not move.subject.startswith(f"{move.name}:"):
                     errors.append(f"{name}: the commit {move.sha[:7]}, move {move.name}, has the subject {move.subject!r}; start it with '{move.name}:'")
     names = set(steps) | {move.name for found in moves.values() for move in found} | history
+    changed = {path for found in moves.values() for move in found
+               for path in git(main, "diff-tree", "-r", "--root", "--no-commit-id", "--name-only", "-z", move.sha).split("\x00") if path} if walk.loose else set()
+    for glob in walk.loose:
+        if not any(fnmatch.fnmatchcase(path, glob) for path in changed):
+            warnings.append(f"{name}: loose names {glob}, which no move of the walk changes")
+    for move in (move for found in moves.values() for move in found) if walk.loose else []:
+        touched = [path for path in git(main, "diff", "--name-only", "-z", "--no-renames", f"{move.sha}^", move.sha).split("\x00") if path]
+        if touched and all(any(fnmatch.fnmatchcase(path, glob) for glob in walk.loose) for path in touched) and all(
+                loose_match(path, blob_at(main, move.sha, path), blob_at(main, f"{move.sha}^", path)) for path in touched):
+            warnings.append(f"{name}: {move.name} changes only what loose does not compare, such as versions, so do mode marks it "
+                            "done before the learner makes it; take its files out of loose, or put the move with one that changes more")
     for label, path in (("notes", walk.notes), ("slides", walk.slides)):
         if path is not None and any(inside(path, folder) for folder in (main, replay) if folder):
             errors.append(f"{name}: its {label}, {path}, are inside the repository or its replay copy; keep them in the class folder")
@@ -230,6 +275,9 @@ def check_walk(
             warnings += [f"{name}: {walk.notes.name}:{line}: {problem}" for line, problem in blocks.warnings]
             errors += [f"{name}: {walk.notes.name}:{line}: {problem}" for line, problem in cue_problems(text)]
             warnings += [f"{name}: {walk.notes.name}:{line}: {problem}" for line, problem in show_problems(text)]
+            if walk.kind == "tutorial" or not walk.select:   # a walk that selects shares notes that its tutorial checks
+                warnings += [f"{name}: {walk.notes.name}: {problem}" for step, found in sections.items()
+                             for problem in do_line_problems(step, found.get("parts", []), walk.kind == "tutorial")]
             if walk.kind != "tutorial" and not walk.select and "do" in blocks.mode:   # a walk that selects shares a tutorial's notes
                 line = blocks.mode.index("do")
                 warnings.append(f"{name}: {walk.notes.name}:{line}: a narrative has no do mode, so its ::: do blocks never show; "
@@ -365,6 +413,55 @@ def in_mode(
     return [{**part, "items": [i for i in part["items"] if i.get("mode") in (None, mode)]} if part["kind"] == "files" else part for part in kept]
 
 
+def blob_at(
+    main: Path,  # The repository
+    commit: str,  # A commit, or a commit with ^
+    path: str,  # A file of the project
+) -> bytes | None:  # The file at that commit, or None if the commit has no such file
+    "Read one file of a commit."
+    done = subprocess.run(["git", "cat-file", "blob", f"{commit}:{path}"], cwd=main, capture_output=True)
+    return done.stdout if done.returncode == 0 else None
+
+
+def do_line_problems(
+    step: str,  # The step whose section it is
+    parts: list[dict],  # The parts of its notes
+    tutorial: bool,  # Whether the walk is a tutorial
+) -> list[str]:  # What is wrong with its do$ lines, each a sentence
+    """Check the do$ lines of a step: each makes a move, so it is in a move's section, in the shared text, and before the
+    commands that check the move."""
+    problems: list[str] = []
+    sections: list[tuple[str | None, list[dict]]] = [(None, [])]
+    for part in parts:
+        if part["kind"] == "move":
+            sections.append((part["name"], []))
+        else:
+            sections[-1][1].append(part)
+    for move, found in sections:
+        makes = [at for at, part in enumerate(found) if part["kind"] == "command" and part.get("makes")]
+        if not makes:
+            continue
+        where = move or step
+        if not tutorial:
+            problems.append(f"{where}: a narrative has no moves to make, so its do$ line {found[makes[0]]['text']!r} is shown as what a "
+                            "move ran; write it as a $ line, or as text")
+            continue
+        if move is None:
+            problems.append(f"{step}: the do$ line {found[makes[0]]['text']!r} is before the first move; a do$ line makes a move, so put "
+                            "it in the section of the move it makes")
+            continue
+        for at in makes:
+            if found[at].get("mode"):
+                problems.append(f"{move}: the do$ line {found[at]['text']!r} is in the block ::: {found[at]['mode']}; a do$ line shows in "
+                                "both modes, a command in do mode and what the move ran in watch mode, so put it outside the block")
+        checks = [at for at, part in enumerate(found) if part["kind"] == "command" and not part.get("makes") and not part.get("mode")]
+        last_check = checks[-1] if checks else -1
+        if last_check >= 0 and makes[-1] > last_check:
+            problems.append(f"{move}: the do$ line {found[makes[-1]]['text']!r} comes after the commands that check the move; "
+                            "put the commands that make the move first")
+    return problems
+
+
 def show_problems(
     text: str,  # A notes file
 ) -> list[tuple[int, str]]:  # (line from 1, what is wrong) for each show: line that GitHub ends early
@@ -434,7 +531,7 @@ def moves_without_commands(
             if current and not has:
                 missing.append(current)
             current, has = part["name"], False
-        elif part["kind"] == "command":
+        elif part["kind"] == "command" and not part.get("makes"):   # a do$ line makes the move, and anchors nothing
             has = True
     return missing
 
@@ -652,6 +749,9 @@ def notes_main() -> None:
         print(f"timewalk-notes: every step and move has a section in {walk.notes.name}")
         return
     if args.write:
+        if in_a_copy(walk.notes, main_repo):
+            raise SystemExit(f"timewalk-notes: {walk.notes} is inside the project or its replay copy; timewalk never writes there. "
+                             "Keep the notes in the class folder")
         crlf = walk.notes.is_file() and b"\r\n" in walk.notes.read_bytes()   # keep a file's Windows line endings
         walk.notes.write_text(text, encoding="utf-8", newline="\r\n" if crlf else None)
         print(f"timewalk-notes: added {len(added)} sections to {walk.notes}: {', '.join(added)}")

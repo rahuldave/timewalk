@@ -228,7 +228,9 @@ The link shows only in a window on the machine that runs timewalk. The Room wind
 
 If you start timewalk with `--notes`, a column on the right shows the notes for the step. The notes hold
 the prose of the step, its cues and its commands. The first line of the column says what to do now, as the
-status band does. A green **Next step** button ends the notes. See [Notes](notes.md).
+status band does. At the first stop of a walk with an `intro`, the intro comes next, under "About this
+walk". A green **Next step** button ends the notes. See [Notes](notes.md) and
+[The intro of a walk](walks.md#the-intro-of-a-walk).
 
 ## The terminals
 

@@ -253,6 +253,10 @@ pdf walk="":
     {{ timewalk }} timewalk-pdf --toc toc.toml {{ if walk == "" { "" } else { "--walk " + walk } }} -o build/slides.pdf
 ```
 
+To try a change to timewalk before it is released, set `timewalk` to
+`uvx --from ~/Projects/timewalk`, a clone of timewalk on your machine. uv builds timewalk again when the clone has a new commit, or when a file in its
+`src` folder changes. You do not need to clear uv's cache.
+
 ## Check and present
 
 1. Run `just check`. It names each problem, for example a step with no slides, a move with no notes, or a

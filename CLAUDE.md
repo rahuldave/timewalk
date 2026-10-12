@@ -91,8 +91,8 @@ Rahul set these rules. Each rule has tests. Do not weaken them.
 
 | File | What it is |
 |---|---|
-| `src/timewalk/__init__.py` | The whole server, one module: `git()`, `Repo` (steps, the replay clone and its fetches, moves, saved branches, diffs, reads), `select_steps` (a small walk's steps, each with its `start`, the commit before it) and `walk_notes` (the notes of each of its stops), notes and slides parsers, `Terminal` (a pty), `Hub` (events to pages), `make_app` (Starlette routes) |
-| `src/timewalk/walks.py` | Several walks: `load_toc` reads `toc.toml` (with `select` and `intro` for a small walk), `check` checks notes and slides against the steps (`selection_problems` for a walk that selects), and the commands `timewalk-check` and `timewalk-notes` (a tutorial's notes: a `## step-NN Title` section for each step, and drafts of its `### step-NN.k` sections, from each move's diff) |
+| `src/timewalk/__init__.py` | The whole server, one module: `git()`, `Repo` (steps, the replay clone and its fetches, moves, saved branches, diffs, reads), `select_steps` (a small walk's steps, each with its `start`, the commit before it, and the title of its entry) and `walk_notes` (the notes of each of its stops), notes and slides parsers, `loosely_same` (a `pyproject.toml` or `uv.lock` that `loose` names matches by package names), `Terminal` (a pty), `Hub` (events to pages), `make_app` (Starlette routes) |
+| `src/timewalk/walks.py` | Several walks: `load_toc` reads `toc.toml` (with `select`, whose entries can have a title, and `intro` for a small walk, and `loose` for a tutorial), `check` checks notes and slides against the steps (`selection_problems` for a walk that selects), and the commands `timewalk-check` and `timewalk-notes` (a tutorial's notes: a `## step-NN Title` section for each step, and drafts of its `### step-NN.k` sections, from each move's diff) |
 | `src/timewalk/export.py` | The command `timewalk-export`: copies of a walk to read without timewalk, one for each mode of a tutorial, with only that mode's `::: do` or `::: watch` blocks and without the private lines. `--markdown` writes `TUTORIAL-do.md` and `TUTORIAL-watch.md` (a narrative: `TUTORIAL.md`), and `--site` one website (smalldocs, or Quarto with `--quarto`) with a Watch and a Do section (a narrative: one). It writes over only the files that it made |
 | `src/timewalk/slides_pdf.py` | The command `timewalk-pdf`: the PDF of the slides and, with `--with-notes`, the notes, drawn by Chrome or Edge through Playwright. `--brand DIR` gives it the look of a brand folder (font, colours, cover, dividers); only this command and `print.js` know brands, and the page does not. The **PDF** button calls it through `/api/pdf`, with no brand |
 | `src/timewalk/static/` | `index.html`/`app.js` (the page, at `/`), `print.*` (for the PDF), `common.js`, `app.css` |
@@ -105,6 +105,10 @@ Rahul set these rules. Each rule has tests. Do not weaken them.
 timewalk is a package, `src/timewalk`, built with hatchling from `pyproject.toml`. It gives five commands,
 `timewalk`, `timewalk-pdf`, `timewalk-check`, `timewalk-notes` and `timewalk-export`. Its dependencies are Starlette, uvicorn,
 websockets, Playwright and pypdf. The tests use the `dev` group. In a clone, run `uv run timewalk`.
+
+`uvx --from PATH timewalk`, with PATH a clone, rebuilds after a new commit or an edit in `src/`, because of
+`cache-keys` in `[tool.uv]`. Before, uv looked only at `pyproject.toml`, and ran the old build from its cache until
+the version changed.
 
 timewalk is not on PyPI, by Rahul's choice. Users run it from GitHub with
 `uvx --from git+https://github.com/rahuldave/timewalk@v1.0.14 timewalk`. To get a change to users, raise the
@@ -242,7 +246,8 @@ Rahul expects every change to the page to ship as a release, with its docs, in o
   event only. It does not keep them in `showing`, so a window opened later shows the file without them.
 - **An events socket says `hello` once it is on the list of windows.** The test client returns from
   `websocket_connect` when the server accepts, a moment before the server adds the socket to `hub.pages`. A test that
-  then posted and waited for the event missed it, and `receive_json()` waited for ever. The unit tests hung, now and
+  then posted and waited for the event missed it, and `receive_json()` waited for ever. The page had the same gap. A move made while a window drew itself sent that window no event. So a
+  window calls `refresh()` when it gets `hello`. The unit tests hung, now and
   then, for hours. Wait for `{"type": "hello"}` first. `pytest-timeout` (60 s here, 120 s in timewalk-test) turns any other
   hang into a failure with a traceback.
 - **`/api/match` runs often.** Every window in do mode asks every two seconds. It runs `Repo.differ_from` off the event

@@ -137,8 +137,9 @@ parts:
 
 - **The plan,** in the shared text before the instructions. It says in a sentence what we do now, in
   both modes.
-- **The instructions** to make the move by hand, with the code to type, in a `do` block. In a `watch`
-  block, say what to look at. See [Write for both modes](#write-for-both-modes).
+- **The instructions** to make the move by hand, with the code to type, in a `do` block. A command
+  that makes the move goes in a `do$` line in the shared text. In a `watch` block, say what to look at.
+  See [Write for both modes](#write-for-both-modes).
 - **The files changed, as a list.** Start it with "The move changes these files:", or "The move changes one
   file:" for one. Give each file an item of its own. Write its path as it is, in code. Then say what
   happened to it, for example "- `src/tally/__init__.py`: 7 lines added; adds `count`." Do not put the
@@ -187,8 +188,9 @@ with only what differs between the modes.
   - the explanation of the change
   - the commands that check what happened, for example `$ just test` and
     `$ uv run tally --top 3 data/corpus.txt`. The checks at the end of the move are its anchor commands.
-- **In a `do` block,** give the commands and the edits that carry out the plan. Give the code, each file
-  to make, and each command that makes the move.
+  - each command that makes the move, as a `do$` line, which the part below explains
+- **In a `do` block,** give the edits by hand that carry out the plan. Give the code, and each file to
+  make.
 - **In a `watch` block,** say what to look at. The code is already there, so point to it. Name the file
   or the line.
 
@@ -216,23 +218,57 @@ files:
 $ uv run python -m unittest discover -s tests -q
 ````
 
+#### Commands that make the move
+
+Do mode is for the learner to run, and watch mode is for the learner to watch. So each mode shows every
+command, and only do mode runs a command that makes the move. A command makes the move if it changes the
+files to what the commit of the move has. Examples are `uv add --group test pytest`, `uv lock`,
+`git rm old.py`, `ruff check --fix` and `chmod +x hooks/pre-commit`.
+
+Do not write such a command as a `$` line in the shared text. In watch mode, the learner would run it in
+the replay copy, which is already at the commit of the move. Do not hide it in a `do` block either,
+because watch mode then never shows it. Write it as a `do$` line in the shared text:
+
+```markdown
+git runs a hook only if the hook is executable. This command makes it so:
+
+do$ chmod +x hooks/pre-commit
+```
+
+- **In do mode,** the page shows a command button, as for a `$` line. The command goes to the **At this
+  step** tab.
+- **In watch mode, and in a narrative,** the page shows no button. It shows the line "The move ran:
+  `chmod +x hooks/pre-commit`".
+
+Keep the other lines where they were:
+
+- **A check stays a shared `$` line,** for example `$ just test`. It changes no tracked file, so it is
+  safe in both modes.
+- **An edit by hand stays in a `do` block,** with the code to type.
+
+A `do$` line is a run of its own, and never an anchor command. Put it outside the blocks.
+`timewalk-check` warns of a `do$` line in a block, or before the first move of a step. It also warns of one
+after the commands that check its move.
+
 #### How large to make a block
 
 A move section can hold several blocks, with shared text between them. The page shows the blocks of the
 mode and the shared text in the order of the notes. Let the importance of a command set the size of its
 block:
 
-- **Give an important command a `do` block of its own.** An important command needs a paragraph or more
-  to explain. Put the explanation in the shared text before the block, and the command in the block.
-  After the block, put a shared command that checks its result.
-- **Put two or three commands that are less important in one `do` block.** Give them one line of plan
-  in the shared text, and a shared check after the block.
-- **Divide the `watch` blocks in the same places.** Give a `do` block a `watch` block beside it, about
-  the same commands, when there is something to look at. A `do` block with nothing to look at, for
-  example `mkdir` and a first test run, needs no `watch` block.
+- **Give an important command a part of its own.** An important command needs a paragraph or more to
+  explain. Put the explanation in the shared text, then the command. After it, put a shared command that
+  checks its result.
+- **Put two or three commands that are less important together.** Give them one line of plan in the
+  shared text, and a shared check after them.
+- **Divide the `watch` blocks in the same places.** Give a group of commands a `watch` block beside it
+  when there is something to look at. A group with nothing to look at, for example `mkdir` and a first
+  test run, needs no `watch` block.
 
-So a move with several commands has neither a block for each command, nor one block for the whole move.
-A move of one edit has one `do` block for the whole move.
+A command that makes the move is a `do$` line, and needs no `do` block. A command for do mode alone, for
+example `mkdir` before an edit by hand, goes in a `do` block. So a move with several commands has neither
+a part for each command, nor one part for the whole move. A move of one edit has one `do` block for the
+whole move.
 
 ````markdown
 ### step-06.1 The formatter
@@ -252,9 +288,7 @@ Now we add ruff, the formatter and linter, to the group `dev`. `uv add` writes r
 `pyproject.toml` and `uv.lock`, and installs it in `.venv`. The group `dev` is for the people who work
 on tally. A user who installs tally does not get ruff.
 
-::: do
-$ uv add --dev ruff
-:::
+do$ uv add --dev ruff
 
 ::: watch
 Read the diff of `pyproject.toml`.
@@ -264,11 +298,8 @@ $ uv run ruff --version
 
 Now we format the code, and fix what the linter can fix.
 
-::: do
-$ uv run ruff format src tests
-$ uv run ruff check --fix src tests
-$ git diff --stat
-:::
+do$ uv run ruff format src tests
+do$ uv run ruff check --fix src tests
 
 ::: watch
 Read the diff of `src/tally/__init__.py`.
@@ -282,10 +313,12 @@ $ uv run tally --top 3 data/corpus.txt
 The tests pass, and the command prints the same three lines as before.
 ````
 
-In do mode, the page shows both `do` blocks and every command, in order. In watch mode, it shows the
-shared text and the `watch` blocks, and the learner runs only the checks. Most of the move is shared
-text, and each block has one to three lines. The two shared commands at the end are the anchor commands
-of the move. `$ uv run ruff --version` checks the first block only, and is not an anchor command.
+In do mode, the page shows every command, in order, and each `do$` line is a command to run. In watch
+mode, it shows the shared text and the `watch` blocks. Each `do$` line shows as "The move ran:", and the
+learner runs only the checks. The move has no `do` block, because each command that changes the files
+is a `do$` line.
+
+The two shared commands at the end are the anchor commands of the move. `$ uv run ruff --version` checks only the `uv add`, and is not an anchor command.
 
 The example is one move in two parts. It installs ruff, then runs it. timewalk checks the files only at
 the end of the move. If the class needs that check after `uv add` too, make the two parts two moves. See
@@ -300,6 +333,10 @@ the move. The page asks every two seconds, but each answer is about the whole mo
   change no file, for example a block that only runs commands. The page can then mark the move done
   before the learner runs that block.
 - **Apply this file** and **Apply the whole move** both take their change from the commit of the move.
+- **A move with `uv add`** writes the newest version of a package. A learner on a later day gets another
+  version, and the files never match. Write the command as a `do$` line. Then give the walk
+  `loose = ["pyproject.toml", "uv.lock"]`, so that these files match by the names of their packages. See
+  [Files that match by the names of their packages](walks.md#files-that-match-by-the-names-of-their-packages).
 - **A shared command after a block** checks only what that command shows. timewalk does not check the
   files there.
 
@@ -308,7 +345,8 @@ its own. If not, a shared command after its block is enough. See
 [Your files match](walks.md#your-files-match) and [Apply](walks.md#apply).
 
 If an anchor command is in a `do` block, the move has no command in watch mode, and `timewalk-check` warns
-of it. `timewalk-notes --blocks` drafts both blocks in each new move. See
+of it. A `do$` line is never an anchor command. So a move whose only commands are `do$` lines has no
+anchor command, and `timewalk-check` warns of it too. `timewalk-notes --blocks` drafts both blocks in each new move. See
 [Blocks for one mode](walks.md#do-mode-and-watch-mode).
 
 ### Write a move to read alone
@@ -394,8 +432,10 @@ Run the checks in this order:
 | A `title`, `description`, `folder`, `notes`, `slides`, `intro`, `tags` or `setup` that is not text |
 | `steps` that is not a list of names, names a step twice, or comes with `tags` |
 | `steps` in a tutorial. The message points to `select` |
-| `select` that is not a list of names, or comes with `steps` |
+| `select` that is not a list of names and entries in braces, or comes with `steps` |
+| An entry of `select` in braces with a key other than `range` and `title`, or with a value that is not text |
 | An `intro` that does not exist |
+| `loose` that is not a list of text, or `loose` in a narrative |
 | A `moves` value other than `"do"` or `"watch"` |
 | A `sync` value other than `true` or `false` |
 | A `setup` value other than `"manual"` |
@@ -424,13 +464,15 @@ Then it checks each walk, and reports every problem that it finds:
 | A manifest at the top of the class folder, or notes in a slides folder | An error |
 | A step with no section in the notes | A warning |
 | A block `::: do` or `::: watch` that is not closed, a heading in a block, or a block in a block | An error |
-| In a tutorial, a move whose section has no command, in one mode or in both | A warning |
+| In a tutorial, a move whose section has no command, in one mode or in both. A `do$` line does not count | A warning |
+| A `do$` line in a block, before the first move of a step, or after the commands that check its move | A warning |
 | A fenced div of another name, for example `::: callout-note`, or a line `:::` that closes no block | A warning |
 | In a tutorial, a `diff` item for a file that its move does not change | A warning |
 | In a tutorial, a `file` item for a file that is not in the commit of its move | A warning |
 | In a tutorial, a `show:` line that is no longer in the change of its item | A warning |
 | A `show:` line that quotes a line with a backtick in it in one backtick, and not in two | A warning |
 | In a tutorial, an item that names a move that is not in the walk | A warning |
+| An entry of `loose` that no move of the walk changes | A warning |
 | A public cue, for example `> Try:`, in the blockquote of a private cue, for example `> Say:`, in the notes or in the intro file of a walk | An error |
 | A walk with notes and no manifest | A warning |
 | A slide file in a slides folder that no walk uses | A warning |

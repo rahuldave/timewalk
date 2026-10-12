@@ -121,7 +121,7 @@ function drawSteps() {
     const item = document.createElement("li");
     const button = document.createElement("button");
     button.textContent = stepLabel(step);
-    button.title = `${step.name}: ${step.subject}`;
+    button.title = `${step.name}: ${step.title || ui.notes?.[step.name]?.title || step.subject}`;   // a title that select gives, or the notes
     button.className = step.index === current ? "here" : current !== null && step.index < current ? "done" : "";
     if (step.index === current) button.setAttribute("aria-current", "step");
     button.onclick = () => move(step.index);
@@ -139,7 +139,8 @@ function drawSteps() {
   drawStatus();
   $("prev").disabled = current === null || current === 0;
   $("next").disabled = current !== null && current === steps.length - 1;
-  document.title = (here ? `${here.name} | ` : "") + "timewalk";
+  const titled = here && (here.title || ui.notes?.[here.name]?.title);
+  document.title = (here ? `${here.name}${titled ? " " + titled : ""} | ` : "") + "timewalk";
   list.querySelector(".here")?.scrollIntoView({ block: "nearest", inline: "center" });
 }
 
@@ -1255,6 +1256,7 @@ async function loadNotes() {
   const notes = await api("/api/notes");
   ui.notes = notes.notes;
   ui.notesPath = notes.path;
+  if (ui.state?.steps) drawSteps();   // the tab's title and the steps' hover text use the notes' titles
 }
 
 function clockText(seconds) {
@@ -1289,6 +1291,19 @@ function drawNotes() {
     hint.className = "p-hint";
     hint.textContent = direction().todo;
     box.append(hint);
+  }
+  // A walk's intro, at its first stop, in both modes: for example, what a small walk leaves out between its parts.
+  const introText = ui.state.walk?.intro?.[ui.state.walk?.kind === "tutorial" ? mode || "do" : "watch"]?.trim();   // its blocks of this mode
+  if (here && current === 0 && introText) {
+    const intro = document.createElement("section");
+    intro.className = "p-bridge p-intro";
+    const label = document.createElement("div");
+    label.className = "p-bridge-label";
+    label.textContent = "About this walk";
+    const prose = document.createElement("div");
+    prose.innerHTML = renderMarkdown(introText);
+    intro.append(label, prose);
+    box.append(intro);
   }
   // In a step with moves, the text before the first move is about the whole step: it gets a section of its own.
   // A block for one mode shows only in that mode. A narrative has no mode, and shows the watch blocks: it is watched.
@@ -1403,11 +1418,24 @@ function drawNotes() {
       group = null;
       continue;
     }
-    // A block's commands and the shared commands after it are two runs: the shared ones are the move's anchor
-    if (!group || group.dataset.mode !== (part.mode || "")) {
+    // A do$ line makes the move. Do mode runs it; watch mode shows what the move ran, with nothing to run.
+    if (part.makes && shown === "watch") {
+      const ran = document.createElement("p");
+      ran.className = "p-ran";
+      const code = document.createElement("code");
+      code.textContent = part.text;
+      ran.append("The move ran: ", code);
+      into.append(ran);
+      group = null;
+      continue;
+    }
+    // A block's commands and the shared commands after it are two runs: the shared ones are the move's anchor.
+    // A do$ line is a run of its own, and never the anchor.
+    const runOf = part.makes ? "makes" : part.mode || "";
+    if (!group || group.dataset.mode !== runOf) {
       group = document.createElement("div");
       group.className = "p-commands";
-      group.dataset.mode = part.mode || "";
+      group.dataset.mode = runOf;
       into.append(group);
     }
     group.append(commandButton(part));
@@ -1548,7 +1576,11 @@ async function checkMatch() {
 
 function drawMatch() {
   const match = ui.match;
-  const text = !match?.move ? "" : match.match ? `Your files match ${match.move} \u2713`
+  // A file of the walk's key loose: a pyproject.toml or uv.lock with other versions matches by its packages' names; another is not compared.
+  const loose = Object.entries(match?.loose || {});
+  const how = (kind, words) => { const files = loose.filter(([, k]) => k === kind).map(([path]) => path); return files.length ? `${files.join(", ")} ${words}` : ""; };
+  const notes = [how("names", "by the names of the packages, not their versions"), how("skipped", "not compared")].filter(Boolean).join("; ");
+  const text = !match?.move ? "" : match.match ? `Your files match ${match.move} \u2713` + (notes ? ` (${notes})` : "")
     : `${match.differ.length === 1 ? "1 file differs" : `${match.differ.length} files differ`} from ${match.move}: ${match.differ.join(", ")}`;
   for (const old of document.querySelectorAll("#notes .p-match")) old.remove();
   const head = document.querySelector("#notes .p-move.here .p-move-head");
@@ -1678,10 +1710,12 @@ const events = onEvents(async (event) => {
   if (event.type === "moved" || event.type === "walk") { hideNotice(); await refresh(); if (event.kept?.length) showKept(event.kept); }
   if (event.type === "refused") { showNotice("timewalk refused this window. If it restarted, open the new address that it printed.", true); return; }
   if (event.type === "reconnected") {
-    // The server came back, or the network did: look again, and open the terminals whose sockets closed.
+    // The server came back, or the network did: open the terminals whose sockets closed. hello then looks again.
     if ([...ui.terms.values()].some((entry) => entry.lost)) restartTerminals();
-    await refresh();
   }
+  // The server says hello once this window is on its list of windows. A move made before that, while the page was
+  // drawing, sent this window no event: look again.
+  if (event.type === "hello") { await refresh(); return; }
   if (event.type === "edits") {
     checkMatch();   // edits are often a move being made: no need to wait for the next poll
     await loadTree();

@@ -38,6 +38,7 @@ main$ git log --oneline
 | `runs$ command` | The same, in the **Runs** tab |
 | `runs2$ command` to `runs9$ command` | The same, in one more Runs tab, which opens the first time a line uses it. Use it for a second long command while the first command still runs |
 | `main$ command` | The same, in the **Main** tab, in your repository |
+| `do$ command` | In a tutorial walk: a command that makes the move, for example `do$ uv add --group test pytest`. In do mode, the same as `$ command`. In watch mode and in a narrative, no button, and the line "The move ran:" with the command. Never an anchor command. Put it outside the blocks. See [Write for both modes](authoring.md#write-for-both-modes) |
 | `### step-NN.k Title` | In a tutorial walk: starts the section of move `k` of step `NN`, for example `### step-02.1 A test of counting`. Write the sections in the order of the commits. See [Tutorial walks](walks.md#tutorial-walks) |
 | `files:` | Starts a list of items, the files to look at. If the line has no items, the page shows a **± See diff** button for each file that the commit of the move added or changed |
 | ``- diff `path`: words`` | Under `files:`, an item: a button **± See diff path** that opens the change of the move, or of the step, to that file, and its words. The words can go on in an indented line under it |
@@ -96,8 +97,11 @@ if the notes say that it fails. See [Anchor commands](walks.md#anchor-commands).
 A move section can hold blocks for one mode. The shared text first says what we do now. Then the `do`
 block gives the lines to type, and the `watch` block says what to look at. The page shows only the blocks
 of the mode on show. Keep the list of files, the items, the explanation and the anchor commands outside
-the blocks. See
-[What a narrative and a tutorial need](authoring.md#write-for-both-modes).
+the blocks. See [What a narrative and a tutorial need](authoring.md#write-for-both-modes).
+
+A command that makes the move, for example `uv add`, goes in a `do$` line in the shared text. Do mode
+runs it, and watch mode shows it as what the move ran. A `do$` line is never an anchor command. See
+[Write for both modes](authoring.md#write-for-both-modes).
 
 ## The notes column
 
@@ -159,7 +163,8 @@ See [Moves on the page](walks.md#moves-on-the-page).
 
 To change the notes of the current step, click **✎ Edit** at the top of the column. A text box shows the
 section of the step as it is in the file. Change the text, and then click **Save**. timewalk writes that
-section of the notes file, and leaves every other section as it is.
+section of the notes file, and leaves every other section as it is. A file with Windows line ends keeps
+them.
 
 Every window shows the new notes at once. If somebody changed the same section in the file after you
 clicked **✎ Edit**, timewalk refuses to save, so that it does not overwrite their change. Copy your text,

@@ -79,6 +79,8 @@ So timewalk writes the place in a file in the git folder of the replay copy, `ti
 folder is outside the files of the copy. So git does not track the file, and the file list does not show
 it.
 
+After a restart in do mode, the moves of the step up to that place count as done.
+
 ### A replay copy from an older version
 
 Older versions made the replay copy as a git worktree. A worktree is a second working folder attached to
@@ -214,8 +216,9 @@ The page itself never writes a file. The shell runs the command, and the learner
 ## How a move keeps the learner's work
 
 In the replay copy, a move never asks, and never discards work. It keeps the work on a saved branch
-first, `timewalk/saved/<place>`, named after the step or the move where the learner did it. A second save
-at the same place gets `-2`, then `-3`. A move does these things, in this order:
+first, `timewalk/saved/<place>`, named after the step or the move where the learner did it. A tag that the
+walk on show leaves out names it too, for example in a small walk. A second save at the same place gets
+`-2`, then `-3`. A move does these things, in this order:
 
 1. **It finds the untracked files in the way.** A file is in the way when HEAD or the new commit has a
    file of its name, or a folder of its name. A file is also in the way when one of those commits has a

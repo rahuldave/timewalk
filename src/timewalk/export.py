@@ -27,7 +27,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 from timewalk import GitError, Move, Step, code_span, git, note_blocks, pick_steps, select_steps, shown_line, step_moves, tag_steps
-from timewalk.walks import TocError, Walk, inside, load_toc
+from timewalk.walks import TocError, Walk, in_a_copy, inside, load_toc
 
 MADE = "Made by timewalk-export from the notes of the walk. Do not edit it by hand: run timewalk-export again."
 OLD_MADE = "Made by timewalk-tutorial from the notes of the walk. Do not edit it by hand: run timewalk-tutorial again."   # its line before it was renamed
@@ -51,8 +51,8 @@ OPEN = re.compile(r"^ {0,3}(`{3,}(?=[^`]*$)|~{3,})")
 CLOSE = re.compile(r"^ {0,3}(`{3,}|~{3,})\s*$")
 QUOTED = re.compile(LEAD + ">")
 LABEL = re.compile(LEAD + r"(?:>\s*)+[*_]{0,2}[A-Z][A-Za-z]*\s*[*_]{0,2}\s*:")
-NEW_BLOCK = re.compile(r"^\s*(?:#{1,6}(?:\s|$)|```|~~~|[-*+]\s|\d+[.)]\s|(?:---|\*\*\*|___)\s*$|<|(?:main|runs[2-9]?)?\$\s|time:)|^:{3,}\s*(?:\{[^}]*\}|[\w-]+)?\s*$")
-COMMAND = re.compile(r"^\s*(main|runs[2-9]?)?\$\s+(.+)$")
+NEW_BLOCK = re.compile(r"^\s*(?:#{1,6}(?:\s|$)|```|~~~|[-*+]\s|\d+[.)]\s|(?:---|\*\*\*|___)\s*$|<|(?:main|runs[2-9]?|do)?\$\s|time:)|^:{3,}\s*(?:\{[^}]*\}|[\w-]+)?\s*$")
+COMMAND = re.compile(r"^\s*(main|runs[2-9]?|do)?\$\s+(.+)$")
 ITEM = re.compile(r"^(\s*)-\s+(diff|file)\s+(?:([\w.-]+)\s+)?`([^`]+)`\s*:?\s*(.*)$")
 DIFF_LINES = 200   # the most lines of a change that a copy shows; the link to GitHub has the rest
 APPLY = re.compile(r"\*\*Apply (?:this file|the whole move)\*\*")
@@ -257,6 +257,7 @@ def build(
     history: dict[str, str] | None = None,  # The commit of every step and move of the whole history, which an item may name
     history_starts: dict[str, str] | None = None,  # The commit before each step of the whole history, for an item that names one
     diff: Callable[[str, str, str], str] | None = None,  # The change of a file from one commit to another; None shows no changes
+    watch: bool = False,  # For a reader who watches: a do$ line is what the move ran; see render
 ) -> list[Section]:  # The stops, each with its text and its links
     """Make each stop of the walk from the sections of the notes: a whole step is its section; a small step is the
     commands at the top of its step's section, such as `$ just setup`, and its moves; a narrative's stop is the text of a
@@ -275,7 +276,7 @@ def build(
         else:   # a step at its tag; a narrative's stop at a move, at the move's commit
             link = f"[The code at {step.name}]({url}/tree/{step.sha if step.section else quote(step.name)})"
         body: list[tuple[str, str | None]] = [(link, None), ("", None)]
-        body += render(lead(source.before) if step.section else source.before, step.name, url, shas, starts, diff)
+        body += render(lead(source.before) if step.section else source.before, step.name, url, shas, starts, diff, watch)
         section = Section(step.name, source.title, "", [])
         for name in names:
             if name not in source.moves:
@@ -292,9 +293,10 @@ def build(
                                                    f"[The commit of this move]({url}/commit/{shas[name]}) shows what the move changes.", ""]]
             else:   # a narrative's stop at a move: its commit, then its words
                 body += [(f"[The commit of {name}]({url}/commit/{shas[name]}) shows what it changes.", None), ("", None)]
-            body += render(lines, name, url, shas, starts, diff)
+            body += render(lines, name, url, shas, starts, diff, watch)
         if step.section and len(names) > 1:
             section.title = ""
+        section.title = step.title or section.title   # a title that select gives
         section.body = squeeze(apply_links(body, url).strip("\n")) + "\n"
         out.append(section)
     return out
@@ -306,8 +308,9 @@ def lead(
     "Find the commands at the top of a step's section, such as `$ just setup`, which the Start of a small step needs too."
     out = []
     for line in lines:
-        if COMMAND.match(line):
-            out.append(line)
+        if command := COMMAND.match(line):
+            if command.group(1) != "do":   # a do$ line makes a move, not a Start
+                out.append(line)
         elif line.strip():
             break
     return out
@@ -320,6 +323,7 @@ def render(
     shas: dict[str, str],  # The commit of each step and move of the walk
     starts: dict[str, str],  # The commit before each step of the walk, or ""
     diff: Callable[[str, str, str], str] | None = None,  # The change of a file from one commit to another, to show under a diff item
+    watch: bool = False,  # For a reader who watches, in watch mode or a narrative: a do$ line is what the move ran, not a command
 ) -> list[tuple[str, str | None]]:  # Each line, with the link to its change for an Apply in it; None: leave it as it is
     """Turn lines of the notes into Markdown to read: commands in code blocks, items as links to the code, and after a
     files: list, the change of each of its diff items."""
@@ -374,6 +378,17 @@ def render(
             if items:   # a command ends a files: list: its changes come first
                 show_changes()
                 items = False
+            if command.group(1) == "do" and watch:   # what the move ran: to read, not to run
+                flush()
+                while body and not body[-1][0].strip():
+                    body.pop()
+                body += [("", None), (f"The move ran: {code_span(command.group(2).strip())}", None), ("", None)]
+                continue
+            if command.group(1) == "do":   # what makes the move: a block of its own, apart from the commands that check it
+                flush()
+                commands.append(("", command.group(2).strip()))
+                flush()
+                continue
             commands.append((command.group(1) or "", command.group(2).strip()))
             continue
         if not line.strip() and commands:
@@ -492,7 +507,8 @@ def site_files(
                 other = "watch" if mode == "do" else "do"
                 switch = f"{mode.capitalize()} mode. [The same step in {other} mode](../{other}/{slug(section.name)}.qmd).\n\n"
             files[page] = f"---\ntitle: {json.dumps(name)}\n---\n\n<!-- {MADE} -->\n\n{switch}{section.body.rstrip()}\n"
-            front.append(f"- [{name}]({page})")
+            text = re.sub(r"([\\\[\]])", r"\\\1", name)   # a bracket in a title ends no link
+            front.append(f"- [{text}]({page})")
             if section.moves:
                 sidebar += [f"{indent}      - section: {json.dumps(name)}", f"{indent}        href: {page}", f"{indent}        contents:"]
                 sidebar += [f"{indent}          - text: {json.dumps(move)}\n{indent}            href: {page}#{ident}" for move, ident in section.moves]
@@ -530,7 +546,7 @@ def write(
 
     def check(target: Path) -> None:
         real = target.resolve()
-        if any(inside(real, base) for base in forbidden):
+        if any(inside(real, base) for base in forbidden) or in_a_copy(target, forbidden[0]):
             raise SystemExit(f"timewalk-export: {target} is inside the project or its replay copy; timewalk never writes there")
         if target.is_dir() or (target.exists() and not made_here(target)):
             raise SystemExit(f"timewalk-export: {target} exists, and timewalk-export did not make it; move it away, or write to another folder")
@@ -654,11 +670,12 @@ def main() -> None:
     if args.markdown:
         files = {}
         for mode in modes:
-            found = build(read_sections(texts[mode or "watch"])[2], steps, moves, url, 3, warned, history, history_starts, diff)
+            found = build(read_sections(texts[mode or "watch"])[2], steps, moves, url, 3, warned, history, history_starts, diff, mode != "do")
             files[FILE_NAME[mode] if mode else "TUTORIAL.md"] = markdown_file(mode, title, head, found)
         plan.append((args.markdown, files, ["TUTORIAL-do.md", "TUTORIAL-watch.md", "TUTORIAL.md"]))
     if args.site:
-        by_mode = {mode: build(read_sections(texts[mode or "watch"])[2], steps, moves, url, 2, warned, history, history_starts, diff) for mode in modes}
+        by_mode = {mode: build(read_sections(texts[mode or "watch"])[2], steps, moves, url, 2, warned, history, history_starts, diff, mode != "do")
+                   for mode in modes}
         plan.append((args.site, site_files(title, head, by_mode, args.quarto), ["watch/*.qmd", "do/*.qmd", "*.qmd"]))
     for warning in sorted(warned):
         print(f"timewalk-export: {warning}", file=sys.stderr)

@@ -50,8 +50,9 @@ steps = ["step-01", "step-02", "step-05"]
 | `slides` | The slides manifest of the walk |
 | `folder` | A folder for the walk. Its notes are `notes.md`, and its manifest is `slides/slides.toml`, in this folder |
 | `steps` | Optional. Some of the steps, by name. Without it, the walk has every step. A tutorial cannot have `steps`. It takes `select` |
-| `select` | Optional. The steps, the moves and the ranges of moves that the walk takes from a bigger walk, in the order of the history, for example `["step-04", "step-05.3..step-05.6"]`. Give `steps` or `select`, not both. See [Take a small walk out of a big one](#take-a-small-walk-out-of-a-big-one) |
-| `intro` | Optional. A Markdown file. The copies of the walk put it before the first step, in place of the text of the notes before the first step |
+| `select` | Optional. The steps, the moves and the ranges of moves that the walk takes from a bigger walk, in the order of the history, for example `["step-04", "step-05.3..step-05.6"]`. An entry can have a title, for example `{ range = "step-05.3..step-05.6", title = "Types" }`. Give `steps` or `select`, not both. See [Take a small walk out of a big one](#take-a-small-walk-out-of-a-big-one) |
+| `intro` | Optional. A Markdown file about the walk. The notes column shows it at the first stop of the walk, under "About this walk". The copies of the walk put it before the first step, in place of the text of the notes before the first step. See [The intro of a walk](#the-intro-of-a-walk) |
+| `loose` | Optional. In a tutorial, the files that do mode compares by the names of their packages, for example `["pyproject.toml", "uv.lock"]`. A glob is also good. See [Files that match by the names of their packages](#files-that-match-by-the-names-of-their-packages) |
 | `tags` | Optional. A glob for tags of its own, for example `"parts-*"` on another branch. Give `steps` or `tags`, not both |
 | `setup` | `"manual"`: you run `just setup` yourself at each step. The only value for now |
 | `moves` | In a tutorial, the mode that it starts in. `"do"`: the learner makes each move by hand. `"watch"`: timewalk checks out the commit of each move. See [Do mode and watch mode](#do-mode-and-watch-mode). Default: `"do"` |
@@ -151,12 +152,14 @@ problem, and exits with code 1 when it finds an error.
 | A notes file or a manifest inside your repository or its replay copy | An error |
 | A step with no section in the notes | A warning |
 | A block `::: do` or `::: watch` that is not closed, a heading in a block, or a block in a block | An error |
-| In a tutorial, a move whose section has no command, in one mode or in both | A warning |
+| In a tutorial, a move whose section has no command, in one mode or in both. A `do$` line does not count | A warning |
+| In a tutorial, a `do$` line in a block `::: do` or `::: watch`, before the first move of a step, or after the commands that check its move. In a narrative, any `do$` line | A warning |
 | A fenced div of another name, for example `::: callout-note`, or a line `:::` that closes no block | A warning |
 | In a tutorial, a `diff` item for a file that its move does not change, or a `file` item for a file that is not in the commit of its move | A warning |
 | In a tutorial, a `show:` line that is no longer in the change of its item | A warning |
 | A `show:` line that quotes a line with a backtick in it in one backtick, and not in two | A warning |
 | In a tutorial, an item that names a move that is not in the walk | A warning |
+| An entry of `loose` that no move of the walk changes | A warning |
 | A public cue, for example `> Try:`, in the blockquote of a private cue, for example `> Say:`, in the notes or in the intro file of a walk | An error |
 | A slide file in a slides folder that no walk uses | A warning |
 
@@ -198,7 +201,9 @@ history, name its steps and moves with `select`. See
 Give each move a `### step-NN.k Title` section, in the order of the commits. Here `NN` is the number of
 the step and `k` is the number of the move. A move section holds these parts:
 
-- **The instructions** to make the move by hand, with the code to type.
+- **The instructions** to make the move by hand, with the code to type. Write a command that makes the
+  move as a `do$` line, for example `do$ uv add --group test pytest`. See
+  [Write for both modes](authoring.md#write-for-both-modes).
 - **The files changed,** a list that starts "The move changes these files:". Each item is one file, its
   path as it is, then what happened to it. `timewalk-notes` drafts it from the diff. See [Draft the notes of the moves](#draft-the-notes-of-the-moves).
 - **A line `files:`, with items.** Each item is one file to look at, with words that say why. A `show:`
@@ -243,6 +248,9 @@ A run of commands ends where the mode changes. So the last command of a `do` blo
 after it are two runs. Only the last run of shared commands in a move is its anchor. A move with all its
 commands in blocks has no anchor. See
 [Blocks for one mode](#do-mode-and-watch-mode).
+
+A `do$` line is a run of its own. It changes files that git tracks, so it is never an anchor command. A
+move whose only commands are `do$` lines has no anchor.
 
 - **Make each anchor command safe to run again.** It must not change files that git tracks.
 - **Say what the command gives.** A test that fails is a good anchor, if the notes say that it fails and
@@ -327,6 +335,8 @@ shows the notes in this way:
 
 - **The text outside a block** shows in both modes.
 - **A `do` block** shows only in do mode, and **a `watch` block** only in watch mode.
+- **A `do$` line** shows in both modes. In do mode, it is a command to run. In watch mode, it shows as
+  "The move ran:" and the command, with no button.
 - **The switch Do / Watch** changes the blocks on show, in every window. The step and the move stay.
 - **A narrative** has no mode. It shows the `watch` blocks, and `timewalk-check` warns of a `do` block.
 
@@ -344,6 +354,10 @@ A block has these rules:
   checks read each mode as its reader sees it. See [The checks](#the-checks). The items of one `files:` line
   can go on into a block. Each item in the block is then for its mode only.
 - **Cues work in a block.** The copies of `timewalk-export` leave out a private cue in a block too.
+- **Put a `do$` line outside the blocks.** In a block, it shows in one mode only. `timewalk-check` warns of
+  it, for example `walk tut: notes.md: step-06.1: the do$ line 'uv add --dev ruff' is in the block ::: do`.
+  It also warns of a `do$` line before the first move of a step, and of one after the commands that check
+  its move. A `do$` line makes a move, so it goes in that move's section, before the checks.
 
 A fenced div of another name, for example `::: callout-note`, is not a block for one mode. Both modes show
 it as it is written, and `timewalk-check` warns of it. Such a div can go inside a block. Its closing `:::`
@@ -400,7 +414,7 @@ show the button on the slides.
 ![The notes of step-01 in watch mode, with both moves shown: the text before the moves, two moves with Shown and Restart step, and Next step at the end](images/tutorial-next.png)
 
 timewalk writes down the move on show in the git folder of the replay copy. After a restart, the page
-comes back at the same move. [What timewalk does with git](git.md#what-is-checked-out-and-when) says what
+comes back at the same move, and the moves before it count as done. [What timewalk does with git](git.md#what-is-checked-out-and-when) says what
 each mode checks out, and when.
 
 ### The items under files
@@ -531,6 +545,52 @@ move, and every file with edits. A new file of the move counts, even when git do
 comparison is strict, so one extra space is a difference. It is a hint and never a gate. **Done ✓**
 still marks a move done when the learner made it another way.
 
+### Files that match by the names of their packages
+
+A move made with `uv add`, for example `uv add --group test pytest`, writes the newest version of the
+package into `pyproject.toml` and `uv.lock`. A learner who makes the move on a later day can get a newer
+version. The strict comparison then never matches. The key `loose` of the walk names the files to compare
+by the names of their packages:
+
+```toml
+[[walk]]
+id = "tutorial"
+kind = "tutorial"
+loose = ["pyproject.toml", "uv.lock"]
+```
+
+Each entry is a path in the project, or a glob, for example `"*.toml"`. In a glob, `*` also matches a `/`.
+timewalk compares a file that `loose` names in this way:
+
+- **A `pyproject.toml`** matches if it says the same, with the versions taken out of each requirement.
+  The name of the package, its extras, its address (`@ git+https://...`) and its marker (`; sys_platform != 'win32'`)
+  still count. A requirement is a line such as `"pytest>=8.3"` in `project.dependencies`,
+  `project.optional-dependencies`, `dependency-groups`, `build-system.requires` or
+  `tool.uv.dev-dependencies`. The order of the requirements does not count. The names are compared as PyPI
+  compares them, so `Foo_Bar` is `foo-bar`. Every other setting, for example `requires-python`, must be the same.
+- **A `uv.lock`** matches if the packages of the project ask for the same packages by name. Its
+  workspace must have the same members, and `requires-python` must be the same. The packages of the project are the ones whose source is the project
+  itself, `editable` or `virtual`. The versions, and the packages that those packages need in turn, are
+  not compared. A `uv.lock` does not say in which group each package is, so name `pyproject.toml` in `loose`
+  too, as the example does.
+- **Any other file** that `loose` names is not compared by its contents. But if the move makes the file,
+  the learner must make it too. If the move deletes it, the learner must delete it.
+
+A `pyproject.toml` or a `uv.lock` that the move makes must be there too, as any file must.
+
+A file that matches only by the names of its packages is still a match, and the move is marked done. The
+page names such files after the tick, for example "Your files match step-02.1 ✓ (pyproject.toml, uv.lock
+by the names of the packages, not their versions)". A file left out shows as "(notes.txt not compared)".
+**Apply** still writes the file of the commit, with its versions.
+
+`loose` is for a tutorial only. `timewalk-check` gives an error for `loose` in a narrative, or for a
+`loose` that is not a list of text. It warns of each entry that no move of the walk changes, for example
+`walk tut: loose names nothing/*.toml, which no move of the walk changes`.
+
+It also warns of a move whose changes are all in files that `loose` names, and that a loose match finds
+equal. An example is a move that only changes the version of a package. Do mode would mark that move done
+before the learner makes it. Take its files out of `loose`, or join the move with one that changes more.
+
 ### Slides for moves
 
 A move can have slides of its own in `slides.toml`. Quote its name, because it holds a dot:
@@ -564,7 +624,7 @@ timewalk-notes ~/code/project --toc my-class/toc.toml --walk tutorial --write
 ```
 
 Without `--write`, it prints only the drafts. With `--write`, it writes them into the
-notes file of the walk. A section that is already in the notes stays as it is. Each draft has these
+notes file of the walk. It refuses a notes file inside the project or a replay copy of it. A section that is already in the notes stays as it is. Each draft has these
 parts:
 
 - **A heading** `### step-NN.k`, with the subject of the commit after its name as the title. A step that
@@ -617,9 +677,13 @@ Each copy is for one mode. It changes the notes in these ways:
   or a cue in an HTML comment. A cue `> Say:` or `> Note:` is private too, with the whole blockquote that
   holds it. Fenced code is read as CommonMark reads it, and stays as it is written, blank lines included.
   A blockquote with a cue and a public cue, such as `> Try:`, stops the command, with the file and the line.
-  Put a blank line between them. `timewalk-check` finds it first, as an error.
+  Put a blank line between them. `timewalk-check` finds it first, as an error. A command line, for example
+  `$ just test` or `do$ uv lock`, ends a blockquote.
 - **Each run of commands becomes a `bash` code block.** A command for a Runs tab gets a comment line, `#
   in a second terminal`.
+- **A `do$` line follows the mode of the copy.** The do copy puts it in a `bash` code block, as a `$`
+  line. The watch copy, and the copy of a narrative, show the line "The move ran:" with the command in
+  code.
 - **Each step links to its code at its tag,** and each move to its commit on GitHub.
 - **Each item under `files:` links to its file at the commit.** A `diff` item also links to its change in
   the commit. A `diff` item of a step, before its first move, links to the whole change of the step. A
@@ -707,8 +771,8 @@ kind = "tutorial"
 moves = "watch"
 notes = "walks/tutorial/notes.md"              # the notes of the whole tutorial
 slides = "walks/tutorial/slides/slides.toml"   # its slides
-intro = "walks/linting/intro.md"               # what the copies say before the first step
-select = ["step-04.1..step-04.7", "step-04.9..step-04.10", "step-05.3..step-05.6", "step-10.3"]
+intro = "walks/linting/intro.md"               # what the walk says at its first stop, and its copies before the first step
+select = ["step-04.1..step-04.7", "step-04.9..step-04.10", { range = "step-05.3..step-05.6", title = "Types" }, "step-10.3"]
 ```
 
 The class timewalk-test has two small walks, `small` and `story`. Open them with `just present small`
@@ -721,6 +785,7 @@ and `just present story`.
 | A step | `"step-04"` | The whole step. In a tutorial, the step keeps all its moves |
 | A move | `"step-10.3"` | One move, as a small step of its own |
 | A range of moves | `"step-05.3..step-05.6"` | The moves from the first to the last, as one small step. Both moves are in one step |
+| An entry with a title | `{ range = "step-05.3..step-05.6", title = "Types" }` | What `range` names, a step, a move or a range of moves, with a title. See [A title for a stop](#a-title-for-a-stop) |
 
 A small step is a step of a walk that holds only some of the moves of a step of the history. Name the
 entries in the order of the history. These rules apply:
@@ -770,7 +835,7 @@ the change of a small step holds only the change of its moves.
 
 A walk that selects starts at its first stop. If timewalk starts on such a walk and the replay copy is
 at no stop of it, timewalk moves the replay copy there. The move keeps any edits on a saved branch, as
-every move does.
+every move does. timewalk prints the name of the branch when it starts, as no window is open yet to show it.
 
 ### The names of small steps
 
@@ -778,6 +843,44 @@ The page names a small step by its moves. A range is "step-05.3 to step-05.6", a
 name of the move, for example "step-10.3". The moves of a small step keep their names, so a move is
 `step-05.4` in the notes, in the commit and in every walk. A saved branch at a small step is, for example,
 `timewalk/saved/step-05.3-to-step-05.6`.
+
+### A title for a stop
+
+An entry of `select` in braces gives its stop a title:
+
+```toml
+select = [{ range = "step-05.3..step-05.6", title = "Types" }, "step-06"]
+```
+
+The entry in braces has the key `range`, which takes any entry of `select`, a step, a move or a range of
+moves. The key `title` is optional, and is one line. The two forms of entry can be in one list. Any other key in the braces
+is an error.
+
+The title shows in these places:
+
+- the heading of the notes column, and the line "Next:" in the clock band at the stop before it
+- the hover text of the stop's button in the step bar
+- the title of the browser tab, for example "step-05.3 to step-05.6 Types | timewalk"
+- the PDF of `timewalk-pdf`
+- the heading of the stop in the Markdown copies of `timewalk-export`, `TUTORIAL-do.md` and `TUTORIAL-watch.md`
+- the title of the stop's page, and its entry in the sidebar, in the website of `timewalk-export`
+
+A range without a title has no title in the copies and the PDF, and the title of its step on the page. A
+title for a whole step, or for one move, takes the place of the title from the notes. The browser tab
+shows the title of every step, from `select` or from the notes.
+
+### The intro of a walk
+
+The key `intro` of a walk names a Markdown file about the whole walk. A small walk can use it to say which
+moves it leaves out between its parts. At the first stop of the walk, the notes column shows the intro
+under the line that says what to do now. Its label is "About this walk". It shows in do mode, in watch mode, and in a narrative.
+
+As in the notes, a `::: do` block of the intro shows only in do mode. A `::: watch` block shows in watch
+mode and in a narrative. A line `time:` does not show.
+
+The cues of the intro, for example `> Say:` lines, show only where the cues of the notes show. The Room
+window, and a window with **Cues** off, hide them. The copies of `timewalk-export` put the intro first,
+under the title.
 
 ### One notes file for several walks
 

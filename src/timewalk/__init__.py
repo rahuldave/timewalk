@@ -32,6 +32,8 @@ import argparse
 import asyncio
 import contextlib
 import fcntl
+import fnmatch
+import functools
 import itertools
 import json
 import math
@@ -120,6 +122,7 @@ class Step:
     note: str  # The annotated tag's message, or the rest of the commit message. Public: the audience sees it
     start: str = ""  # In a walk that selects, the commit before the step: the tag before it, or the commit before a small step's first move
     section: str = ""  # A small step's, or a narrative's stop at a move: the step whose section of the notes it reads its moves from
+    title: str = ""  # In a walk that selects, the title that its entry gives, such as { range = "step-05.3..step-05.6", title = "Types" }
 
 
 @dataclass
@@ -178,10 +181,17 @@ def pick_steps(
     return [Step(i, s.name, s.sha, s.subject, s.note) for i, s in enumerate(kept)]
 
 
+def select_entry(
+    entry: str | dict,  # An entry of select: "step-05.3..step-05.6", or { range = "step-05.3..step-05.6", title = "Types" }
+) -> tuple[str, str]:  # The step, move or range it takes, and its title, or ""
+    "Read one entry of select, a name or a table with a title."
+    return (entry, "") if isinstance(entry, str) else (entry["range"], entry.get("title", "").strip())
+
+
 def select_steps(
     main: Path,  # The repository
     tags: str,  # Glob for the tags that mark the steps of the whole history
-    select: list[str],  # Steps, moves and ranges of moves, in the order of the history: "step-04", "step-10.3", "step-05.3..step-05.6"
+    select: list[str | dict],  # Steps, moves and ranges of moves, in order: "step-04", "step-10.3", "step-05.3..step-05.6"; see select_entry
     tutorial: bool,  # A tutorial's stops have moves; a narrative's do not
 ) -> tuple[list[Step], list[list[Move]]]:  # The walk's steps, and the moves of each
     """Take a smaller walk out of a big one.
@@ -190,7 +200,7 @@ def select_steps(
     a small step: its Start is the commit before its first move, and its moves keep their names, so the notes, the commits
     and the selection agree. A small step's name is its move, or "step-05.3 to step-05.6". A narrative takes steps and
     single moves, each as a stop with no moves. Raises GitError for a name that is not a step or a move, a range in a
-    narrative, and a selection out of order or that overlaps itself.
+    narrative, and a selection out of order or that overlaps itself. An entry's title is the stop's title.
     """
     every = tag_steps(main, tags)
     if not every:
@@ -201,7 +211,8 @@ def select_steps(
     steps: list[Step] = []
     walk_moves: list[list[Move]] = []
     last = (-1, 0)   # the end of the entry before: (step, its last move), with a whole step at its last move
-    for entry in select:
+    for given in select:
+        entry, title = select_entry(given)
         first, ranged, end = entry.partition("..")
         if ranged and not (first and end):
             raise GitError(f"select names {entry}: a range has a move at each end, for example step-05.3..step-05.6")
@@ -227,13 +238,13 @@ def select_steps(
         (i, a), (_, b) = span
         step, before = every[i], every[i - 1].sha if i else ""
         if not end and first in index:
-            steps.append(Step(len(steps), step.name, step.sha, step.subject, step.note, before))
+            steps.append(Step(len(steps), step.name, step.sha, step.subject, step.note, before, title=title))
             walk_moves.append(moves[i] if tutorial else [])
             continue
         taken = moves[i][a - 1:b]
         start = moves[i][a - 2].sha if a > 1 else before
         name = taken[0].name if a == b else f"{taken[0].name} to {taken[-1].name}"
-        steps.append(Step(len(steps), name, taken[-1].sha, taken[-1].subject, "", start, step.name))
+        steps.append(Step(len(steps), name, taken[-1].sha, taken[-1].subject, "", start, step.name, title))
         walk_moves.append(taken if tutorial else [])
     return steps, walk_moves
 
@@ -275,7 +286,7 @@ class Repo:
         tags: str,  # Glob for the tags that mark the walk's steps
         names: list[str] | None = None,  # The steps of the walk, or None for every tag that matches
         tutorial: bool = False,  # Find the moves between the steps, for a tutorial
-        select: list[str] | None = None,  # Steps, moves and ranges of moves to take, in place of names; see select_steps
+        select: list[str | dict] | None = None,  # Steps, moves and ranges of moves to take, in place of names; see select_steps
     ) -> None:
         "Use the steps of another walk. The working copy does not move; `move` does that."
         if self.branch:
@@ -470,7 +481,9 @@ class Repo:
             for move in moves:
                 if move.sha == placed:
                     return move.name
-        return "between-steps"
+        # A stop of another walk, such as a tag that a walk which selects leaves out
+        tags = git(self.work, "tag", "--points-at", placed, "--list", "--sort=refname").split() if placed else []
+        return tags[0] if tags else "between-steps"
 
     def in_the_way(
         self,
@@ -651,7 +664,8 @@ class Repo:
     def edits(self) -> list[str]:  # Paths of tracked files with uncommitted changes
         "List tracked files that differ from the step. Untracked files are not edits and are never touched."
         # -z: a path with a space or an accent comes as it is, not quoted
-        fields = git(self.work, "status", "--porcelain", "-z", "--untracked-files=no").split("\x00")
+        # --no-optional-locks: this runs every second or two, and must not take index.lock from the learner's own git
+        fields = git(self.work, "--no-optional-locks", "status", "--porcelain", "-z", "--untracked-files=no").split("\x00")
         paths, i = [], 0
         while i < len(fields):
             entry = fields[i]
@@ -822,11 +836,14 @@ class Repo:
         self,
         base: str,  # The commit the working copy stands on
         target: str,  # The commit to compare the learner's files with
+        loose: list[str] | None = None,  # Globs of the files to compare loosely, from the walk's key loose; see loosely_same
+        found: dict[str, str] | None = None,  # Filled in: each loose file that differs as written, but matches loosely, and how
     ) -> list[str]:  # The files whose contents differ, tracked or not; empty when the files match
         """Compare the learner's files with a commit, by content: every file that the commits between base and target touch,
         and every file the learner edited. A file the learner made, and git does not track yet, counts too.
 
         Two git commands, whatever the number of files: the commit's blob for each path, and the blob of each file on disk.
+        A file that differs and matches a glob of `loose` costs one more, to read the commit's version.
         """
         touched = git(self.work, "diff", "--name-only", "-z", "--no-renames", base, target).split("\x00")
         paths = sorted({p for p in touched if p} | set(self.edits()))
@@ -839,7 +856,22 @@ class Repo:
                 wanted[path] = info.split()[2]
         on_disk = [p for p in paths if (self.work / p).is_file()]
         hashes = dict(zip(on_disk, git(self.work, "hash-object", "--stdin-paths", input_text="\n".join(on_disk)).splitlines(), strict=True)) if on_disk else {}
-        return [p for p in paths if wanted.get(p) != hashes.get(p)]
+        differ = [p for p in paths if wanted.get(p) != hashes.get(p)]
+        for path in [p for p in differ if any(fnmatch.fnmatchcase(p, glob) for glob in loose or [])]:
+            how = loosely_same(path, self.work / path, self.read_blob(wanted[path]) if path in wanted else None)
+            if how:
+                differ.remove(path)
+                if found is not None:
+                    found[path] = how
+        return differ
+
+    def read_blob(
+        self,
+        blob: str,  # The hash of a blob
+    ) -> bytes | None:  # Its contents, or None if git cannot read it
+        "Read one file of a commit by its blob."
+        done = subprocess.run(["git", "cat-file", "blob", blob], cwd=self.work, capture_output=True)
+        return done.stdout if done.returncode == 0 else None
 
     def tree(self) -> dict:  # Files of the working copy, with what the current step did to each
         "Describe the working copy: its tracked files and which of them the current step, or move, changed."
@@ -1060,6 +1092,8 @@ def parse_notes(
         runs2$ just sweep     the same in a further Runs tab (runs2 to runs9), for a second long command while
                               the first is still going
         main$ git log         a command for the terminal in the repository you started from
+        do$ uv add ruff       in a tutorial, the command that makes the move: a command in do mode, and in watch mode
+                              shown as what the move ran, with nothing to run; never the anchor of a move
         > Say: ...            a cue; shown with the prose, set apart in its own shade
         ### step-02.1 Title   in a tutorial, starts the notes of one move of the step, which is one commit
         ::: do                in a tutorial, a block of lines for do mode only, up to a line :::
@@ -1104,7 +1138,7 @@ def parse_notes(
             continue   # the items of a files: line go on into a block, each item then for that mode
         mode = blocks.mode[at] if at < len(blocks.mode) else None
         planned = re.match(r"^time:\s*(\d+):(\d\d)\s*$", line.strip()) if fence is None else None
-        command = re.match(r"^\s*(main|runs[2-9]?)?\$\s+(.+)$", line) if fence is None else None
+        command = re.match(r"^\s*(main|runs[2-9]?|do)?\$\s+(.+)$", line) if fence is None else None
         move = re.match(rf"^###\s+({re.escape(name)}\.\d+)(?:\s+(.*))?$", line) if fence is None else None
         if mark:
             fence = mark.group(1)[0] if fence is None else (None if mark.group(1)[0] == fence else fence)
@@ -1131,7 +1165,9 @@ def parse_notes(
             current["text"].append(line)
         elif command:
             items = None
-            entry = {"track": command.group(1) or "replay", "text": command.group(2).strip(), **({"mode": mode} if mode else {})}
+            makes = command.group(1) == "do"   # do$: the command that makes the move; run in do mode, shown as what it ran in watch mode
+            entry = {"track": "replay" if makes else command.group(1) or "replay", "text": command.group(2).strip(),
+                     **({"makes": True} if makes else {}), **({"mode": mode} if mode else {})}
             current["commands"].append(entry)
             parts.append({"kind": "command", **entry})
         else:
@@ -1168,6 +1204,9 @@ def walk_notes(
     for index, step in enumerate(steps):
         source = notes.get(step.section or step.name)
         if not source:
+            if step.title:   # a stop with no notes still has the title that select gives it; a whole step's can be written
+                out[step.name] = {"time": None, "title": step.title, "commands": [], "text": "", "raw": "", "parts": [],
+                                  **({"derived": True} if step.section else {})}
             continue
         parts = source["parts"]
         cut = [at for at, part in enumerate(parts) if part["kind"] == "move"]
@@ -1175,12 +1214,15 @@ def walk_notes(
         if not step.section:
             if not tutorial and cut and selects:
                 out[step.name] = {**source, "parts": before, "derived": True}
+            if step.title:
+                out[step.name] = {**out[step.name], "title": step.title}   # its section, under the title that select gives it
             continue
-        lead = list(itertools.takewhile(lambda part: part["kind"] == "command", before))
+        lead = [part for part in itertools.takewhile(lambda part: part["kind"] == "command", before) if not part.get("makes")]   # a do$ line makes no Start
         by_move = {parts[at]["name"]: parts[at:end] for at, end in zip(cut, [*cut[1:], len(parts)], strict=True)} if cut else {}
         names = [move.name for move in moves[index]] if tutorial else [step.name]
         taken = [part for name in names for part in by_move.get(name, [])[0 if tutorial else 1:]]
-        title = next((p["title"] for p in by_move.get(names[0], []) if p["kind"] == "move"), "") if len(names) == 1 else source.get("title", "")
+        title = step.title or (next((p["title"] for p in by_move.get(names[0], []) if p["kind"] == "move"), "") if len(names) == 1
+                               else source.get("title", ""))
         out[step.name] = {"time": None, "title": title, "commands": [p for p in lead + taken if p["kind"] == "command"],
                           "text": "", "raw": "", "parts": lead + taken, "derived": True}
     return out
@@ -1210,6 +1252,130 @@ def replace_section(
     if head[-1] == head[-1].rstrip("\r\n\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029"):
         head[-1] += "\n"   # the heading was the last line, with no line break
     return ("".join(head + new + (["\n"] if tail else []) + tail)).rstrip("\n") + "\n"
+
+
+def intro_of(
+    intro: Path | None,  # The intro file of a walk of the table of contents, if it has one
+) -> dict[str, str]:  # Its Markdown for each mode, do and watch; empty if there is none, or it cannot be read
+    """Read a walk's intro, for the notes of its first stop: what a small walk leaves out, for example. Each mode keeps
+    its own blocks, as in the notes, and the planned times go. Cues stay: the page hides them where it hides the notes'."""
+    try:
+        text = intro.read_text(encoding="utf-8") if intro else ""
+    except (OSError, UnicodeDecodeError):
+        text = ""
+    if not text.strip():
+        return {}
+    blocks, lines = note_blocks(text), text.splitlines()
+    fence: str | None = None   # in fenced code a time: line is code
+    timed = set()
+    for at, line in enumerate(lines):
+        mark = re.match(r"^\s*(```+|~~~+)", line)
+        if mark:
+            fence = mark.group(1)[0] if fence is None else (None if mark.group(1)[0] == fence else fence)
+        elif fence is None and re.match(r"^time:\s*\d+:\d\d\s*$", line.strip()):
+            timed.add(at)
+    return {mode: "\n".join(line for at, line in enumerate(lines) if at not in blocks.fences and at not in timed and blocks.mode[at] in (None, mode))
+            for mode in MODES}
+
+
+# A requirement such as "pytest>=8.3.4", "Uvicorn[standard] ; python_version < '3.12'" or "x @ git+https://...": its name,
+# its extras, what comes between (the versions, or "@" and an address), and its marker after the ";".
+REQUIREMENT = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)\s*(\[[^\]]*\])?([^;]*)(?:;(.*))?$", re.S)
+
+
+def package_names(
+    path: str,  # The file's path in the project; its name says how to read it
+    data: bytes,  # Its contents
+) -> object | None:  # What it says without the versions of packages, to compare; None if it is not a file of packages
+    """Read a pyproject.toml or a uv.lock with the versions left out. pyproject.toml keeps all it says, with each
+    requirement cut to its name, its extras, its address if it has one, and its marker. uv.lock keeps, of the project's
+    own packages, the names they ask for, and the names of the workspace's members."""
+    return _package_names(path.rsplit("/", 1)[-1], data)
+
+
+@functools.lru_cache(maxsize=16)
+def _package_names(
+    name: str,  # The file's name: pyproject.toml or uv.lock
+    data: bytes,  # Its contents
+) -> object | None:  # See package_names; cached, as the page asks every two seconds, and a uv.lock can be large
+    "Read a file of packages once for each contents."
+    if name not in ("pyproject.toml", "uv.lock"):
+        return None
+    try:
+        doc = tomllib.loads(data.decode("utf-8"))
+    except (UnicodeDecodeError, tomllib.TOMLDecodeError):
+        return None
+
+    def cut(requirement: object) -> object:   # "pytest>=8.3.4" is pytest; a table, such as { include-group = "test" }, stays
+        found = REQUIREMENT.match(requirement) if isinstance(requirement, str) else None
+        if not found:
+            return requirement
+        extras = sorted(e.strip().lower() for e in (found.group(2) or "[]")[1:-1].split(",") if e.strip())
+        between, marker = found.group(3).strip(), " ".join((found.group(4) or "").split())
+        address = between[1:].strip() if between.startswith("@") else ""   # a package from an address: the address counts
+        return (re.sub(r"[-_.]+", "-", found.group(1)).lower() + (f"[{','.join(extras)}]" if extras else "")
+                + (f" @ {address}" if address else "") + (f"; {marker}" if marker else ""))
+
+    def names(value: object) -> list:   # every name = "..." in a table, at any depth
+        if isinstance(value, dict):
+            return [*([value["name"]] if isinstance(value.get("name"), str) else []), *(n for v in value.values() for n in names(v))]
+        return [n for v in value for n in names(v)] if isinstance(value, list) else []
+
+    if name == "uv.lock":
+        own = [p for p in doc.get("package", []) if isinstance(p, dict) and isinstance(p.get("source"), dict)
+               and {"editable", "virtual"} & set(p["source"])]
+        return {"requires-python": doc.get("requires-python"), "manifest": sorted(set(names(doc.get("manifest", {})))),
+                "own": {p.get("name"): sorted(set(names({k: v for k, v in p.items() if k not in ("name", "version", "source")})))
+                        for p in own}}
+    lists = [("project", "dependencies"), ("build-system", "requires"), ("tool", "uv", "dev-dependencies")]
+    groups = [("project", "optional-dependencies"), ("dependency-groups",)]
+
+    def at(keys: tuple) -> object:   # the table or list at a path of keys, or None
+        value = doc
+        for key in keys:
+            value = value.get(key) if isinstance(value, dict) else None
+        return value
+
+    for keys in lists:
+        if isinstance(at(keys), list):
+            at(keys[:-1])[keys[-1]] = sorted(map(cut, at(keys)), key=repr)
+    for keys in groups:
+        table = at(keys)
+        for group, wanted in (table.items() if isinstance(table, dict) else []):
+            if isinstance(wanted, list):
+                table[group] = sorted(map(cut, wanted), key=repr)
+    return doc
+
+
+def loosely_same(
+    path: str,  # A file of the project, named by a glob of the walk's key loose
+    mine: Path,  # The learner's copy of it
+    theirs: bytes | None,  # The commit's copy, or None if the commit does not have it
+) -> str:  # How it matches: "names", by the names of its packages; "skipped", left out of the match; "" if it does not match
+    """Compare a file loosely. A pyproject.toml or a uv.lock matches if it names the same packages, whatever their versions:
+    a learner who runs uv add on a later day gets newer versions. Any other file that the key names is not compared, but
+    it must be there if the commit has it, and gone if the commit has not."""
+    try:
+        data = mine.read_bytes() if mine.is_file() else None
+    except OSError:
+        data = None
+    return loose_match(path, data, theirs)
+
+
+def loose_match(
+    path: str,  # A file of the project, named by a glob of the walk's key loose
+    data: bytes | None,  # One copy of it, or None where it does not exist
+    theirs: bytes | None,  # The other copy, or None
+) -> str:  # See loosely_same
+    "Compare two copies of a file loosely."
+    if (data is None) != (theirs is None):
+        return ""   # made, or deleted, on one side only: loose or not, the move is not made yet
+    if path.rsplit("/", 1)[-1] not in ("pyproject.toml", "uv.lock"):
+        return "skipped"
+    if data is None or theirs is None:
+        return ""
+    ours, wanted = package_names(path, data), package_names(path, theirs)
+    return "names" if ours is not None and ours == wanted else ""
 
 
 def notes_inside(
@@ -1590,6 +1756,8 @@ def make_app(
     # In a tutorial, `mode` is "do" (the learner makes each move by hand; `done` counts the moves of the step marked
     # done) or "watch" (timewalk checks out each move's commit). Every window shares both.
     showing["mode"] = first.mode if first else "do"
+    # After a restart, the moves already made at the step count as done: the code is there.
+    showing["done"] = repo.position()[1] or 0 if repo.steps else 0
     # Where each step was left: its slide, and how far down its slide, notes and open file were scrolled, as
     # fractions. A move back to a step brings it all back. Kept while the server runs.
     memory: dict[str, dict] = {}
@@ -1743,7 +1911,7 @@ def make_app(
                 "slide_moves": owners, "sync": synced(), "mode": showing["mode"], "done": showing["done"], "of": showing["of"],
                 "changes": changes_now(), "at": showing.get("at"),
                 "walk": {"id": active["walk"].id, "title": active["walk"].title, "kind": active["walk"].kind, "mode": active["walk"].mode,
-                         "description": active["walk"].description} if active["walk"] else None,
+                         "description": active["walk"].description, "intro": intro_of(active["walk"].intro)} if active["walk"] else None,
                 "walks": [{"id": w.id, "title": w.title, "kind": w.kind} for w in walks]}
 
     @guarded
@@ -1785,8 +1953,10 @@ def make_app(
             return {"move": None}
         working = showing["done"] + 1
         head = git(repo.work, "rev-parse", "HEAD")
-        differ = await asyncio.to_thread(repo.differ_from, head, repo.commit_at(index, working))   # off the event loop
-        return {"move": moves[working - 1].name, "number": working, "differ": differ, "match": not differ}
+        loose: dict[str, str] = {}
+        differ = await asyncio.to_thread(repo.differ_from, head, repo.commit_at(index, working),   # off the event loop
+                                         active["walk"].loose if active["walk"] else None, loose)
+        return {"move": moves[working - 1].name, "number": working, "differ": differ, "match": not differ, "loose": loose}
 
     @guarded
     async def move(request: Request) -> dict:
@@ -1949,11 +2119,22 @@ def make_app(
         if active["walk"] is not None and body.get("walk") != active["walk"].id and (began is None or began.notes != active["notes"]):
             raise GitError(f"the walk changed to {active['walk'].title} since you began this edit. Copy your text, and edit again in its walk")
         step, text, base = str(body["step"]), str(body["text"]), str(body.get("base", ""))
-        current = notes_file.read_text(encoding="utf-8") if notes_file.is_file() else ""
-        now = parse_notes(current).get(step, {}).get("raw", "")
+        with open(notes_file, encoding="utf-8", newline="") if notes_file.is_file() else contextlib.nullcontext(None) as read:
+            current = read.read() if read else ""   # as written: a file with Windows line endings keeps them
+        parsed = parse_notes(current)
+        tutorial = active["walk"] is not None and active["walk"].kind == "tutorial"
+        shown = walk_notes(parsed, repo.steps, repo.moves, tutorial, bool(active["walk"] and active["walk"].select))
+        if shown.get(step, {}).get("derived") or (step not in parsed and step not in {s.name for s in repo.steps}):
+            raise GitError(f"{step} has no section of its own in {notes_file.name}; edit the sections of the steps it comes from")
+        now = parsed.get(step, {}).get("raw", "")
         if now.strip() != base.strip():
             raise GitError(f"the notes for {step} changed in {notes_file.name} since this page read them. Copy your text, reload, and edit again")
-        notes_file.write_text(replace_section(current, step, text), encoding="utf-8")
+        crlf = "\r\n" in current
+        written = replace_section(current, step, text.replace("\r\n", "\n"))
+        if crlf:   # the lines of the new section, and an end added, take the file's line ends
+            written = re.sub(r"(?<!\r)\n", "\r\n", written)
+        with open(notes_file, "w", encoding="utf-8", newline="") as out:
+            out.write(written)
         await hub.tell({"type": "notes"})
         return {"ok": True}
 
@@ -2237,6 +2418,8 @@ def main() -> None:
             repo.move(0, move=0 if repo.moves[0] else None, anywhere=True)
         except GitError as exc:
             raise SystemExit(f"timewalk: {exc}") from None
+        if repo.kept:   # no window is open yet to say it
+            print(f"timewalk: to go to the first stop of {start.id}, your work is kept on {', '.join(repo.kept)}")
     local = args.host in ("127.0.0.1", "localhost", "::1")
     with socket.socket(socket.AF_INET6 if ":" in args.host else socket.AF_INET) as probe:
         # As uvicorn binds: the connections of a timewalk just stopped linger a minute, and must not stop a restart.
