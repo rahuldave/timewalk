@@ -684,7 +684,8 @@ Each copy is for one mode. It changes the notes in these ways:
 - **A `do$` line follows the mode of the copy.** The do copy puts it in a `bash` code block, as a `$`
   line. The watch copy, and the copy of a narrative, show the line "The move ran:" with the command in
   code.
-- **Each step links to its code at its tag,** and each move to its commit on GitHub.
+- **Each step links to its code at its tag,** and each move to its commit on GitHub. In a tutorial, a step with
+  moves first links to the code at its **Start**. The page puts the step there.
 - **Each item under `files:` links to its file at the commit.** A `diff` item also links to its change in
   the commit. A `diff` item of a step, before its first move, links to the whole change of the step. A
   `show:` line becomes a sub-item, "look at:", with the quoted line. The quoted line is code, in more
@@ -951,7 +952,8 @@ The links go to these places on GitHub:
 
 | Link | Goes to |
 |---|---|
-| A whole step | The code at its tag |
+| A whole step of a tutorial | The code at its **Start**, under "The code at its Start", where the page puts the step, and then the code at its tag, after its moves. A step of one commit, and the first step, have no moves. The page stays at their tag, so they have only the code at their tag |
+| A whole step of a narrative | The code at its tag |
 | A small step | The code at its **Start**, under "The code at its Start", the commit before its first move |
 | A stop of a narrative at a move | The code at the move's commit, where the stop stands |
 | A move | The commit of the move |

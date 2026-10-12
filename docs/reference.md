@@ -153,8 +153,8 @@ timewalk-export REPO --notes notes.md [--tags GLOB] (--markdown DIR | --site DIR
 
 Give `--markdown`, `--site` or both. Each copy of a tutorial has the text outside the blocks and the blocks
 of one mode, without the private lines. A narrative has one copy, with the `watch` blocks. Each step, move
-and item links to the code on GitHub. A small step links to the code at its **Start**, the commit before its
-first move. Build the website with `smalldocs render DIR`, or with `quarto render DIR` after `--quarto`.
+and item links to the code on GitHub. In a tutorial, a small step, and a whole step with moves, link to the code at
+their **Start**, the commit before the first move. Build the website with `smalldocs render DIR`, or with `quarto render DIR` after `--quarto`.
 
 The command writes over only the files that it made. It refuses a folder inside the project or inside its
 replay copy. See [Copies of a tutorial for GitHub and a website](walks.md#copies-of-a-tutorial-for-github-and-a-website).

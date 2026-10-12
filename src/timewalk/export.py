@@ -258,10 +258,12 @@ def build(
     history_starts: dict[str, str] | None = None,  # The commit before each step of the whole history, for an item that names one
     diff: Callable[[str, str, str], str] | None = None,  # The change of a file from one commit to another; None shows no changes
     watch: bool = False,  # For a reader who watches: a do$ line is what the move ran; see render
+    tutorial: bool = False,  # A tutorial: a whole step with moves, like a small step, stands first on its Start
 ) -> list[Section]:  # The stops, each with its text and its links
     """Make each stop of the walk from the sections of the notes: a whole step is its section; a small step is the
     commands at the top of its step's section, such as `$ just setup`, and its moves; a narrative's stop is the text of a
-    step before its first move, or one move's section."""
+    step before its first move, or one move's section. In a tutorial every stop with moves links first to the code at its Start, as
+    the page stands it there, and a whole step then to the code at its tag, after its moves."""
     starts = {**(history_starts or {}), **{step.name: step.start or (steps[i - 1].sha if i else "") for i, step in enumerate(steps)}}
     shas = {**(history or {}), **{step.name: step.sha for step in steps}, **{m.name: m.sha for found in moves for m in found}}
     out = []
@@ -273,6 +275,9 @@ def build(
         names = [m.name for m in found] or ([step.name] if step.section else [])
         if step.section and found:   # a small step of a tutorial stands first on its Start
             link = f"[The code at its Start]({url}/tree/{starts[step.name]}), the commit before {names[0]}." if starts[step.name] else ""
+        elif tutorial and found and starts[step.name]:   # a whole step with moves: the page stands it on its Start, as do mode begins it
+            link = (f"[The code at its Start]({url}/tree/{starts[step.name]}), the commit before {found[0].name}. "
+                    f"[The code at {step.name}]({url}/tree/{quote(step.name)}) is the code after its moves.")
         else:   # a step at its tag; a narrative's stop at a move, at the move's commit
             link = f"[The code at {step.name}]({url}/tree/{step.sha if step.section else quote(step.name)})"
         body: list[tuple[str, str | None]] = [(link, None), ("", None)]
@@ -670,11 +675,13 @@ def main() -> None:
     if args.markdown:
         files = {}
         for mode in modes:
-            found = build(read_sections(texts[mode or "watch"])[2], steps, moves, url, 3, warned, history, history_starts, diff, mode != "do")
+            found = build(read_sections(texts[mode or "watch"])[2], steps, moves, url, 3, warned, history, history_starts, diff, mode != "do",
+                          tutorial)
             files[FILE_NAME[mode] if mode else "TUTORIAL.md"] = markdown_file(mode, title, head, found)
         plan.append((args.markdown, files, ["TUTORIAL-do.md", "TUTORIAL-watch.md", "TUTORIAL.md"]))
     if args.site:
-        by_mode = {mode: build(read_sections(texts[mode or "watch"])[2], steps, moves, url, 2, warned, history, history_starts, diff, mode != "do")
+        by_mode = {mode: build(read_sections(texts[mode or "watch"])[2], steps, moves, url, 2, warned, history, history_starts, diff, mode != "do",
+                                  tutorial)
                    for mode in modes}
         plan.append((args.site, site_files(title, head, by_mode, args.quarto), ["watch/*.qmd", "do/*.qmd", "*.qmd"]))
     for warning in sorted(warned):

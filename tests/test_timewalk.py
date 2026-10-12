@@ -2467,7 +2467,12 @@ def test_timewalk_export_writes_a_markdown_file_for_each_mode(tutorial: timewalk
         assert "Say:" not in text and "which goes on here" not in text and "time:" not in text, "the private lines go"
         assert ":::" not in text.replace(":::\na line", "")
         assert text.startswith("<!-- Made by timewalk-export") and "# t, one move at a time" in text and "The opening." in text
-        assert f"[The code at step-01]({url}/tree/step-01)" in text
+        assert f"# step-00 Start\n\n[The code at step-00]({url}/tree/step-00)" in text, "the first step is where the walk starts"
+        start, end = tutorial.steps[0].sha, tutorial.steps[1].sha
+        assert (f"[The code at its Start]({url}/tree/{start}), the commit before step-01.1. "
+                f"[The code at step-01]({url}/tree/step-01) is the code after its moves.") in text, "do mode starts a whole step from its Start"
+        assert f"# step-02 D\n\n[The code at step-02]({url}/tree/step-02)\n" in text, "the page keeps a step of one commit at its tag"
+        assert f"tree/{end}" not in text
         assert f"### step-01.2 Files b\n\n[The commit of this move]({url}/commit/{shas['step-01.2']}) shows what the move changes." in text
         assert f"- [`a.txt`]({url}/blob/{shas['step-01.1']}/a.txt): the first file." in text
         digest = hashlib.sha256(b"README.md").hexdigest()
@@ -2572,6 +2577,22 @@ def test_timewalk_export_links_items_to_the_right_change(tutorial: timewalk.Repo
     assert f"Press [the move's commit]({url}/commit/{moves['step-01.3'].sha}), then run `just lint`." in body, "nothing else of the sentence goes"
     assert f"Use [the move's commit]({url}/commit/{moves['step-01.3'].sha}) here too." in body, "a heading that is not a move keeps the move"
     assert "ghost" not in "".join(s.body for s in found) and "step-07" not in [s.name for s in found], "a section of no step is left out"
+
+
+def test_timewalk_export_starts_a_selected_whole_step_on_its_start(tutorial: timewalk.Repo) -> None:
+    "A walk that selects a whole step with moves first links that step's Start, as the page stands it there; a step of one commit, its tag."
+    from timewalk.export import build, read_sections
+
+    url, every = "https://github.com/o/t", tutorial.steps
+    _, _, sources = read_sections("## step-01 S\n\none\n\n### step-01.1 A\n\n### step-01.2 B\n\n### step-01.3 C\n\n## step-02 T\n\ntwo\n")
+    steps, moves = timewalk.select_steps(tutorial.main, "step-*", ["step-01", "step-02"], True)
+    first, second = build(sources, steps, moves, url, 3, set(), None, None, tutorial=True)
+    assert first.body.startswith(f"[The code at its Start]({url}/tree/{every[0].sha}), the commit before step-01.1. "
+                                 f"[The code at step-01]({url}/tree/step-01) is the code after its moves.\n"), "the first stop too"
+    assert second.body.startswith(f"[The code at step-02]({url}/tree/step-02)\n"), "no moves: the page stays at the tag"
+    steps, moves = timewalk.select_steps(tutorial.main, "step-*", ["step-01"], False)
+    story = build(sources, steps, moves, url, 3, set(), None, None)
+    assert story[0].body.startswith(f"[The code at step-01]({url}/tree/step-01)\n"), "a narrative shows a step at its tag"
 
 
 def test_timewalk_export_writes_nothing_when_one_file_is_not_its_own(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
