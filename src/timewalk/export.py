@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import quote
 
-from timewalk import GitError, Move, Step, git, note_blocks, pick_steps, select_steps, step_moves, tag_steps
+from timewalk import GitError, Move, Step, code_span, git, note_blocks, pick_steps, select_steps, shown_line, step_moves, tag_steps
 from timewalk.walks import TocError, Walk, inside, load_toc
 
 MADE = "Made by timewalk-export from the notes of the walk. Do not edit it by hand: run timewalk-export again."
@@ -54,12 +54,24 @@ LABEL = re.compile(LEAD + r"(?:>\s*)+[*_]{0,2}[A-Z][A-Za-z]*\s*[*_]{0,2}\s*:")
 NEW_BLOCK = re.compile(r"^\s*(?:#{1,6}(?:\s|$)|```|~~~|[-*+]\s|\d+[.)]\s|(?:---|\*\*\*|___)\s*$|<|(?:main|runs[2-9]?)?\$\s|time:)|^:{3,}\s*(?:\{[^}]*\}|[\w-]+)?\s*$")
 COMMAND = re.compile(r"^\s*(main|runs[2-9]?)?\$\s+(.+)$")
 ITEM = re.compile(r"^(\s*)-\s+(diff|file)\s+(?:([\w.-]+)\s+)?`([^`]+)`\s*:?\s*(.*)$")
-SHOW = re.compile(r"^(\s+)show:\s*`(.+)`\s*$")
 DIFF_LINES = 200   # the most lines of a change that a copy shows; the link to GitHub has the rest
 APPLY = re.compile(r"\*\*Apply (?:this file|the whole move)\*\*")
 # "Take it with **Apply this file** in timewalk, or from the move's commit on GitHub": the words from "with" go
 WITH_APPLY = re.compile(r"\bwith\s+\*\*Apply (?:this file|the whole move)\*\*(\s+too)?,?(?:\s+in\s+timewalk)?"
                         r"(?:,?\s+or\s+(?:from\s+)?the\s+move's\s+commit(?:\s+on\s+GitHub)?)?")
+
+
+class NotesError(ValueError):
+    "Notes that the copies cannot be made from. timewalk-check reports the same."
+
+    def __init__(
+        self,
+        line: int,  # The line of the problem, from 1
+        problem: str,  # What is wrong there
+    ) -> None:
+        "Keep the line and the problem apart, for timewalk-check."
+        super().__init__(f"line {line}: {problem}")
+        self.line, self.problem = line, problem
 
 
 @dataclass
@@ -105,7 +117,7 @@ def private_lines(
 ) -> set[int]:  # The index of each line to leave out: the private lines, and the whole blockquote of each cue
     """Find the lines for the presenter alone, outside fenced code. A blockquote with a cue for the presenter and a public
     cue, such as "> Try:", cannot go in part, and stops the command."""
-    lines = text.split("\n")
+    lines = text.splitlines()   # as note_blocks splits them, so the indexes of the two agree
     code = fenced(lines)
     found, at = set(), 0
     while at < len(lines):
@@ -126,7 +138,7 @@ def private_lines(
         if cues:
             labels = [i for i in block if LABEL.match(lines[i]) and i not in cues]
             if labels:
-                raise SystemExit(f"timewalk-export: in the notes, {lines[labels[0]].strip()!r} is a public cue in the blockquote of "
+                raise NotesError(labels[0] + 1, f"{lines[labels[0]].strip()!r} is a public cue in the blockquote of "
                                  f"the cue {lines[cues[0]].strip()!r}; put a blank line between the two")
             found.update(block)
         at = block[-1] + 1
@@ -147,12 +159,11 @@ def for_mode(
     mode: str | None,  # "do" or "watch"; None for the text outside every block
 ) -> str:  # The notes as a reader of that mode reads them, without the private lines
     "Keep the text outside the blocks and the blocks of one mode, and leave out the presenter's lines."
-    text = "\n".join(text.splitlines())   # one way to split lines, for the blocks and the private lines alike
     blocks = note_blocks(text)
     if blocks.errors:
         line, problem = blocks.errors[0]
-        raise SystemExit(f"timewalk-export: line {line} of the notes: {problem}")
-    lines = [(at, line) for at, line in enumerate(text.split("\n")) if at not in blocks.fences and blocks.mode[at] in (None, mode)]
+        raise NotesError(line, problem)
+    lines = [(at, line) for at, line in enumerate(text.splitlines()) if at not in blocks.fences and blocks.mode[at] in (None, mode)]
     return without_private(lines, private_lines(text))   # found in the notes as written, so a block's fence ends a cue's blockquote
 
 
@@ -160,8 +171,18 @@ def public_text(
     text: str,  # Markdown of the author's, such as the intro of a walk
 ) -> str:  # The same without the presenter's lines
     "Leave out the presenter's lines of a file that has no blocks for one mode."
-    text = "\n".join(text.splitlines())
-    return without_private(list(enumerate(text.split("\n"))), private_lines(text))
+    return without_private(list(enumerate(text.splitlines())), private_lines(text))
+
+
+def cue_problems(
+    text: str,  # Notes, or the intro of a walk
+) -> list[tuple[int, str]]:  # What stops timewalk-export from leaving out the presenter's lines: (line from 1, problem), or nothing
+    "Find a cue that timewalk-export cannot leave out alone, for timewalk-check."
+    try:
+        private_lines(text)
+    except NotesError as error:
+        return [(error.line, error.problem)]
+    return []
 
 
 def without_private(
@@ -372,8 +393,8 @@ def render(
                 changes.append((named, path))
             body.append((f"{indent}- {link}" + (f": {words}" if words else ""), None))
             continue
-        if items and (shown := SHOW.match(line)):
-            body.append((f"{shown.group(1)}- look at: `{shown.group(2)}`", None))
+        if items and (shown := shown_line(line)):
+            body.append((f"{shown[0]}- look at: {code_span(shown[1])}", None))
             continue
         if line.strip() and not line.startswith(" "):
             if items:
@@ -611,25 +632,33 @@ def main() -> None:
         except GitError:
             return ""
 
-    named, opening, sources = read_sections(for_mode(text, None))
+    try:
+        texts = {mode: for_mode(text, mode) for mode in (None, *(["do", "watch"] if tutorial else ["watch"]))}
+    except NotesError as error:
+        raise SystemExit(f"timewalk-export: {walk.notes}: {error}") from None
+    intros = []
+    for path in (args.intro, walk.intro):
+        try:
+            intros.append(public_text(path.read_text(encoding="utf-8")) if path else "")
+        except NotesError as error:
+            raise SystemExit(f"timewalk-export: {path}: {error}") from None
+    named, opening, sources = read_sections(texts[None])
     for name in sources:
         if name not in history:
             warned.add(f"the notes have ## {name}, which is not a step of the history; it is left out")
     title = args.title or (walk.title if walk.select or not named else named) or "Tutorial"
-    head = "\n\n".join(part.strip() for part in [public_text(args.intro.read_text(encoding="utf-8")) if args.intro else "",
-                                                     public_text(walk.intro.read_text(encoding="utf-8")) if walk.intro
-                                                     else "" if args.no_opening else opening]
+    head = "\n\n".join(part.strip() for part in [intros[0], intros[1] if walk.intro else "" if args.no_opening else opening]
                          if part.strip())
     modes: list[str | None] = ["do", "watch"] if tutorial else [None]
     plan: list[tuple[Path, dict[str, str], list[str]]] = []
     if args.markdown:
         files = {}
         for mode in modes:
-            found = build(read_sections(for_mode(text, mode or "watch"))[2], steps, moves, url, 3, warned, history, history_starts, diff)
+            found = build(read_sections(texts[mode or "watch"])[2], steps, moves, url, 3, warned, history, history_starts, diff)
             files[FILE_NAME[mode] if mode else "TUTORIAL.md"] = markdown_file(mode, title, head, found)
         plan.append((args.markdown, files, ["TUTORIAL-do.md", "TUTORIAL-watch.md", "TUTORIAL.md"]))
     if args.site:
-        by_mode = {mode: build(read_sections(for_mode(text, mode or "watch"))[2], steps, moves, url, 2, warned, history, history_starts, diff) for mode in modes}
+        by_mode = {mode: build(read_sections(texts[mode or "watch"])[2], steps, moves, url, 2, warned, history, history_starts, diff) for mode in modes}
         plan.append((args.site, site_files(title, head, by_mode, args.quarto), ["watch/*.qmd", "do/*.qmd", "*.qmd"]))
     for warning in sorted(warned):
         print(f"timewalk-export: {warning}", file=sys.stderr)

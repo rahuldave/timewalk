@@ -76,6 +76,14 @@ warning:
 - A `show:` line is no longer in the change of its item.
 - An item names a move that is not in the walk.
 
+In any walk, a `show:` line that quotes a line with a backtick in it in one backtick is a warning. Write
+it in two backticks. See [Quote a line with backticks](walks.md#quote-a-line-with-backticks).
+
+A public cue, for example `> Try:`, in the blockquote of a private cue, for example `> Say:`, is an error.
+The check reads the notes and the intro file of a walk, and gives the file and the line, for example
+`notes.md:6: '> Try: this' is a public cue in the blockquote of the cue '> Say: a secret'; put a blank line
+between the two`.
+
 It reads the items and the commands once for each mode, as the reader of that mode sees them. A warning
 for one mode names it, for example "step-02.1 has no command in watch mode".
 
@@ -205,6 +213,7 @@ In the timewalk folder, `just` lists these:
 | ``- file `path`: words`` | An item: a button **▤ See file path** to the file. In do mode, for a move not made yet, the file as the move leaves it |
 | ``- diff step-02.1 `path`: words`` | An item of another move |
 | ``  show: `a line` `` | Under an item: a line of the change, drawn as an excerpt in the notes and marked in the reader. A click on the excerpt opens the change |
+| ```  show: ``a `b` c`` ``` | The same, for a line with a backtick in it. See [Quote a line with backticks](walks.md#quote-a-line-with-backticks) |
 | `::: do`, `::: watch` | In a tutorial: opens a block for one mode, up to a line `:::`. The page shows it only in that mode. A narrative shows the `watch` blocks |
 | The last commands of a move section | The anchor commands of the move, under "After this move, run:". They show what the move did. `timewalk-check` warns of a move section with no command |
 

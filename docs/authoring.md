@@ -147,7 +147,9 @@ parts:
   "The step changes these files:", or "The step changes one file:".
 - **A line `files:`, with items.** Give every item words that say what to look for in the file.
 - **A `show:` line for the main line of the move.** Under its item, quote that line of the change. The
-  notes draw it as an excerpt, and the reader marks it.
+  notes draw it as an excerpt, and the reader marks it. Put the line in one backtick. If the line has a
+  backtick in it, put it in two backticks, for example ``` show: ``The command `wikiapp` runs.`` ```. See
+  [Quote a line with backticks](walks.md#quote-a-line-with-backticks).
 - **One or more anchor commands at the end, in the shared text.** An anchor command shows what the move
   did. Make it safe to run again, and say what it gives. A test that fails is a good anchor, if the notes
   say that it fails.
@@ -427,7 +429,9 @@ Then it checks each walk, and reports every problem that it finds:
 | In a tutorial, a `diff` item for a file that its move does not change | A warning |
 | In a tutorial, a `file` item for a file that is not in the commit of its move | A warning |
 | In a tutorial, a `show:` line that is no longer in the change of its item | A warning |
+| A `show:` line that quotes a line with a backtick in it in one backtick, and not in two | A warning |
 | In a tutorial, an item that names a move that is not in the walk | A warning |
+| A public cue, for example `> Try:`, in the blockquote of a private cue, for example `> Say:`, in the notes or in the intro file of a walk | An error |
 | A walk with notes and no manifest | A warning |
 | A slide file in a slides folder that no walk uses | A warning |
 

@@ -36,8 +36,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from timewalk import (
+    FILES_ITEM,
     MODES,
+    SHOW_LINE,
     GitError,
+    code_span,
     expand_entry,
     git,
     name_status,
@@ -46,6 +49,7 @@ from timewalk import (
     pick_steps,
     replace_section,
     select_steps,
+    shown_line,
     split_slides,
     step_moves,
     tag_steps,
@@ -184,6 +188,8 @@ def check_walk(
     slide_folders: list[Path] | None = None,  # With a table of contents: the walks' slides folders, the only ones the page serves
 ) -> tuple[list[str], list[str], set[Path]]:  # Errors, warnings, and the slide files the walk uses
     "Check one walk's notes and slides against its steps and against each other."
+    from timewalk.export import cue_problems  # here, as timewalk.export imports this module
+
     errors: list[str] = []
     warnings: list[str] = []
     used: set[Path] = set()
@@ -211,6 +217,8 @@ def check_walk(
     for label, path in (("notes", walk.notes), ("slides", walk.slides)):
         if path is not None and any(inside(path, folder) for folder in (main, replay) if folder):
             errors.append(f"{name}: its {label}, {path}, are inside the repository or its replay copy; keep them in the class folder")
+    if walk.intro is not None and walk.intro.is_file():
+        errors += [f"{name}: {walk.intro.name}:{line}: {problem}" for line, problem in cue_problems(walk.intro.read_text(encoding="utf-8"))]
     if walk.notes is not None:
         if not walk.notes.is_file():
             errors.append(f"{name}: the notes file {walk.notes} does not exist")
@@ -220,6 +228,8 @@ def check_walk(
             blocks = note_blocks(text)
             errors += [f"{name}: {walk.notes.name}:{line}: {problem}" for line, problem in blocks.errors]
             warnings += [f"{name}: {walk.notes.name}:{line}: {problem}" for line, problem in blocks.warnings]
+            errors += [f"{name}: {walk.notes.name}:{line}: {problem}" for line, problem in cue_problems(text)]
+            warnings += [f"{name}: {walk.notes.name}:{line}: {problem}" for line, problem in show_problems(text)]
             if walk.kind != "tutorial" and not walk.select and "do" in blocks.mode:   # a walk that selects shares a tutorial's notes
                 line = blocks.mode.index("do")
                 warnings.append(f"{name}: {walk.notes.name}:{line}: a narrative has no do mode, so its ::: do blocks never show; "
@@ -355,6 +365,30 @@ def in_mode(
     return [{**part, "items": [i for i in part["items"] if i.get("mode") in (None, mode)]} if part["kind"] == "files" else part for part in kept]
 
 
+def show_problems(
+    text: str,  # A notes file
+) -> list[tuple[int, str]]:  # (line from 1, what is wrong) for each show: line that GitHub ends early
+    """Find the show: lines under an item that GitHub reads wrongly: a quote that holds a run of backticks as long as the run
+    around it, which timewalk reads but GitHub ends early, and a quote that ends in one backtick too many, which neither reads."""
+    lines, found, fence, under = text.splitlines(), [], None, False   # under: the line before is an item, or a line of one
+    for at, line in enumerate(lines):
+        mark = re.match(r"^\s*(```+|~~~+)", line)   # fenced code as parse_notes reads it
+        if mark:
+            fence = mark.group(1)[0] if fence is None else (None if mark.group(1)[0] == fence else fence)
+            under = False
+            continue
+        if fence is not None:
+            continue
+        shown, loose = SHOW_LINE.match(line), re.match(r"^\s+show:\s*`(.*)`\s*$", line)
+        if under and shown and len(shown.group(2)) in {len(run) for run in re.findall(r"`+", shown.group(3))}:
+            found.append((at + 1, f"GitHub ends this show: line's quote at a backtick inside it; write it as show: {code_span(shown_line(line)[1])}"))
+        elif under and not shown and loose and loose.group(1).strip():
+            found.append((at + 1, f"this show: line is not a quote as GitHub reads it, and timewalk does not read it; "
+                                  f"write it as show: {code_span(loose.group(1))}"))
+        under = bool(FILES_ITEM.match(line) or (under and line.startswith(" ") and line.strip()))
+    return found
+
+
 def item_problems(
     main: Path,  # The repository
     parts: list[dict],  # The parts of a step's notes
@@ -386,7 +420,7 @@ def item_problems(
             lines = [line[1:].strip() for line in diff.splitlines() if line[:1] in "+- " and not line.startswith(("+++", "---"))]
             for shown in item["show"]:
                 if not any(shown.strip() in line for line in lines if line):
-                    problems.append(f"{move.name}: the line `{shown}` is no longer in the change of {path}")
+                    problems.append(f"{move.name}: the line {code_span(shown)} is no longer in the change of {path}")
     return problems
 
 

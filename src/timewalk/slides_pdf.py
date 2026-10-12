@@ -118,7 +118,7 @@ def notes_markdown(
     block: list[str] = []
     fence: str | None = None  # inside a fenced code block, a `$ ` line is code to read, and stays as written
     blocks = note_blocks(raw)
-    for at, line in enumerate(raw.split("\n")):
+    for at, line in enumerate(raw.splitlines()):   # as note_blocks splits them
         if at in blocks.fences:
             if block:
                 out += ["```", *block, "```"]

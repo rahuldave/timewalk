@@ -155,7 +155,9 @@ problem, and exits with code 1 when it finds an error.
 | A fenced div of another name, for example `::: callout-note`, or a line `:::` that closes no block | A warning |
 | In a tutorial, a `diff` item for a file that its move does not change, or a `file` item for a file that is not in the commit of its move | A warning |
 | In a tutorial, a `show:` line that is no longer in the change of its item | A warning |
+| A `show:` line that quotes a line with a backtick in it in one backtick, and not in two | A warning |
 | In a tutorial, an item that names a move that is not in the walk | A warning |
+| A public cue, for example `> Try:`, in the blockquote of a private cue, for example `> Say:`, in the notes or in the intro file of a walk | An error |
 | A slide file in a slides folder that no walk uses | A warning |
 
 A picture that a Markdown slide shows counts as used.
@@ -420,6 +422,7 @@ files:
 | ``- file `path`: words`` | A button **▤ See file path** that opens the file itself, and its words |
 | ``- diff step-02.1 `path`: words`` | The same for another move, named before the path |
 | ``  show: `a line` `` | Under an item: a line of the change, quoted. The notes draw it as an excerpt, and the reader marks it |
+| ```  show: ``a `b` c`` ``` | The same, for a line with a backtick in it. See [Quote a line with backticks](#quote-a-line-with-backticks) |
 | An indented line under an item | More of the words of the item |
 
 On the page, each item is one button with an icon, a verb and the path. The button is **± See diff** for
@@ -445,6 +448,28 @@ the change, as the button of its item does. In a move after the next one, the cl
 
 If a `show:` line is no longer in the change, the notes draw a red band that says so. A click on the band
 opens the change too. A fix to the history can remove a quoted line. `timewalk-check` warns of it too.
+
+### Quote a line with backticks
+
+A backtick is the character `` ` ``. The quoted line of a `show:` line is a code span, as in CommonMark. A
+code span is code in a line of text, between backticks. Write a line in one backtick. If the line has a
+backtick in it, write it in two backticks:
+
+```markdown
+  show: `x = 1`
+  show: ``The command `wikiapp` uses this library.``
+  show: `` `x` ``
+```
+
+The second line quotes ``The command `wikiapp` uses this library.``, with no backticks around it. timewalk
+drops one space inside each end, as CommonMark does. So the third line quotes `` `x` ``. Write a line that
+starts or ends with a backtick in this way, with a space inside each end.
+
+A line with a backtick in it, in one backtick, shows wrong on GitHub and in the copies. They end the quote
+at the first backtick in it. The page still finds the line, if the line does not end with a backtick. If
+the line ends with a backtick, timewalk does not read it as a `show:` line. In both cases, `timewalk-check`
+warns of it, with the line number, and says how to write it. The page draws the excerpt from the real
+line of the change, so the page shows a `show:` line that it reads right.
 
 A line `files:` with no items under it shows a **± See diff** button for each file that the commit of
 the move added or changed. Items also work in a narrative. There, a `diff` item opens **Last change**, the change of the
@@ -591,13 +616,15 @@ Each copy is for one mode. It changes the notes in these ways:
 - **It leaves out the private lines,** by the rule of the `walk` skill. A private line is a `time:` line,
   or a cue in an HTML comment. A cue `> Say:` or `> Note:` is private too, with the whole blockquote that
   holds it. Fenced code is read as CommonMark reads it, and stays as it is written, blank lines included.
-  A blockquote with a cue and a public cue, such as `> Try:`, stops the command. Put a blank line between them.
+  A blockquote with a cue and a public cue, such as `> Try:`, stops the command, with the file and the line.
+  Put a blank line between them. `timewalk-check` finds it first, as an error.
 - **Each run of commands becomes a `bash` code block.** A command for a Runs tab gets a comment line, `#
   in a second terminal`.
 - **Each step links to its code at its tag,** and each move to its commit on GitHub.
 - **Each item under `files:` links to its file at the commit.** A `diff` item also links to its change in
   the commit. A `diff` item of a step, before its first move, links to the whole change of the step. A
-  `show:` line becomes a sub-item, "look at:", with the quoted line.
+  `show:` line becomes a sub-item, "look at:", with the quoted line. The quoted line is code, in more
+  backticks than any run of backticks in it, so GitHub and the site show it right.
 - **After each `files:` list, the change of each `diff` item follows as a `diff` code block,** under a line
   "The change of `path`:". A `file` item shows no change. The blocks come before the commands after the
   list, and the links to GitHub stay.

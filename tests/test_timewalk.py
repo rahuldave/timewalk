@@ -2884,3 +2884,64 @@ def test_timewalk_export_keeps_cues_out_whatever_the_line_breaks_and_in_the_intr
     assert "SECRET" not in out and "Public." in out
     intro = public_text("An intro.\n\n> Say: INTROSECRET\n\ntime: 1:00\n\nThe end.\n")
     assert "INTROSECRET" not in intro and "time:" not in intro and "An intro." in intro and "The end." in intro
+
+
+def test_timewalk_export_and_check_agree_on_notes_that_end_with_blank_lines(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
+    "Notes that end with a blank line, or with odd line breaks, export; a cue that export cannot drop is an error of timewalk-check too."
+    from timewalk.export import NotesError, for_mode, public_text
+    from timewalk.walks import check, load_toc
+
+    for ending in ["\n\n", "\n\n\n", "\r\n\r\n", "\n\x0c\n"]:
+        for mode in (None, "do", "watch"):
+            assert "text" in for_mode(f"## step-01 A\n\n::: do\ntext\n:::\n\ntext{ending}", mode)
+        assert "intro" in public_text(f"intro{ending}")
+    mixed = "## step-00\n\n## step-01\n\n> Say: a secret\n> Try: this\n\n## step-02\n"
+    with pytest.raises(NotesError) as raised:
+        for_mode(mixed, "do")
+    assert raised.value.line == 6
+    (tutorial_class / "notes.md").write_text(mixed)
+    errors, _ = check(load_toc(tutorial_class / "toc.toml"), tutorial.main, tutorial_class)
+    assert any("notes.md:6: '> Try: this' is a public cue in the blockquote" in e for e in errors), errors
+
+
+def test_a_show_line_with_backticks_is_a_double_backtick_span(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
+    "show: ``a `b` c`` quotes the line without its outer backticks; the copies write it back so; check warns of one backtick around one."
+    from timewalk.export import render
+    from timewalk.walks import check, load_toc
+
+    assert timewalk.shown_line("  show: ``The command `wikiapp` uses it.``") == ("  ", "The command `wikiapp` uses it.")
+    assert timewalk.shown_line("  show: `` `x` ``") == ("  ", "`x`"), "a space inside each end goes, as in CommonMark"
+    assert timewalk.shown_line("  show: `a `b` c`") == ("  ", "a `b` c"), "one backtick around a backtick still finds the line"
+    assert timewalk.shown_line("  show: `x = 1`") == ("  ", "x = 1")
+    for text in ["x = 1", "a `b` c", "`x`", "a ``b`` c", " x "]:
+        assert timewalk.shown_line("  show: " + timewalk.code_span(text)) == ("  ", text)
+    notes = timewalk.parse_notes("## step-02\n### step-02.1 A\nfiles:\n- diff `x.py`: x.\n  show: ``say `hi` now``\n$ ls\n")
+    assert next(p for p in notes["step-02"]["parts"] if p["kind"] == "files")["items"][0]["show"] == ["say `hi` now"]
+    body = "\n".join(line for line, _ in render(["files:", "- diff `x.py`: x.", "  show: `say `hi` now`"], "step-02.1",
+                                                 "https://github.com/o/t", {"step-02.1": "m1"}, {}, lambda *_: ""))
+    assert "  - look at: ``say `hi` now``" in body
+    (tutorial_class / "notes.md").write_text("## step-00\n\n## step-01\n### step-01.1 A\n$ ls\n### step-01.2 B\nfiles:\n"
+                                             "- diff `README.md`: changed.\n  show: `with `b``\n$ ls\n### step-01.3 C\n$ ls\n\n## step-02\n")
+    _, warnings = check(load_toc(tutorial_class / "toc.toml"), tutorial.main, tutorial_class)
+    assert any("notes.md:9: this show: line is not a quote as GitHub reads it" in w and "show: `` with `b` ``" in w for w in warnings), warnings
+
+
+def test_show_lines_are_code_spans_as_github_reads_them() -> None:
+    "The closing run of backticks is as long as the opening one; check warns only of an item's show: line that GitHub ends early."
+    from timewalk.walks import show_problems
+
+    assert [timewalk.shown_line("  show: " + s) for s in ["````", "`a``", "``a`"]] == [None, None, None]
+    assert timewalk.shown_line("  show: ` `` `") == ("  ", "``")
+    notes = ("## step-01\n### step-01.1 A\nfiles:\n- diff `a.py`: a.\n  show: ` `` `\n  show: ``a``b``\n  show: `a `b` c`\n"
+             "  show: ``a `b` c``\n\nProse.\n  show: `a`b`\n```\n- diff `b.py`: b.\n  show: `x`y`\n```\n$ ls\n")
+    assert show_problems(notes) == [
+        (6, "GitHub ends this show: line's quote at a backtick inside it; write it as show: ```a``b```"),
+        (7, "GitHub ends this show: line's quote at a backtick inside it; write it as show: ``a `b` c``")]
+
+
+def test_saving_a_section_keeps_the_others_whatever_the_line_breaks() -> None:
+    "A line break that parse_notes knows, inside a line, does not hide the next heading from the save; other lines keep their ends."
+    text = "## step-01\n\nintro\u2028## step-02 Second\nkept words\n\n## step-03\n\nend\n"
+    assert list(timewalk.parse_notes(timewalk.replace_section(text, "step-01", "\nnew intro\n"))) == ["step-01", "step-02", "step-03"]
+    assert timewalk.replace_section("## step-01\r\nold\r\n## step-02\r\nx\r\n", "step-01", "new\n") == "## step-01\r\nnew\n\n## step-02\r\nx\r\n"
+    assert timewalk.replace_section("## a\nx\n## step-01", "step-01", "\nbody\n") == "## a\nx\n## step-01\n\nbody\n"

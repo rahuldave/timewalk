@@ -43,7 +43,7 @@ main$ git log --oneline
 | ``- diff `path`: words`` | Under `files:`, an item: a button **± See diff path** that opens the change of the move, or of the step, to that file, and its words. The words can go on in an indented line under it |
 | ``- file `path`: words`` | An item: a button **▤ See file path** that opens the file itself. In do mode, for a move not made yet, it opens the file as the move leaves it |
 | ``- diff step-02.1 `path`: words`` | An item for another move, named before the path |
-| ``  show: `a line` `` | Under an item: one line of the change. The notes draw it as an excerpt of the real diff, with the line shaded, and the reader marks the line |
+| ``  show: `a line` `` | Under an item: one line of the change. The notes draw it as an excerpt of the real diff, with the line shaded, and the reader marks the line. For a line with a backtick in it, use two backticks: ```  show: ``a `b` c`` ```. See [Quote a line with backticks](walks.md#quote-a-line-with-backticks) |
 | `::: do` | In a tutorial walk: opens a block for do mode. The page shows the lines up to the next `:::` only in do mode. See [Do mode and watch mode](walks.md#do-mode-and-watch-mode) |
 | `::: watch` | The same, for watch mode. A narrative shows the `watch` blocks |
 | `:::` | Closes a block. A block holds no heading and no other block |

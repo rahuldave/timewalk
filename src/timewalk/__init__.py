@@ -928,7 +928,30 @@ def recipes(
 
 # Under a files: line: "- diff `src/x.py`: why", "- file step-02.1 `src/y.py`: why", and under an item "  show: `a line`".
 FILES_ITEM = re.compile(r"^\s*-\s+(diff|file)\s+(?:([\w.-]+)\s+)?`([^`]+)`\s*:?\s*(.*)$")
-SHOW_LINE = re.compile(r"^\s+show:\s*`(.+)`\s*$")
+SHOW_LINE = re.compile(r"^(\s+)show:\s*(`+)(?!`)(.+?)(?<!`)\2\s*$")   # the closing run as long as the opening one, as in CommonMark
+
+
+def shown_line(
+    line: str,  # A line of the notes
+) -> tuple[str, str] | None:  # Its indent and the line of the change that it quotes, if it is a show: line
+    """Read a show: line. The quoted line is a code span, as CommonMark reads one: in one backtick, or in two for a line
+    with a backtick, such as ``the command `x` runs``. A space inside each end goes, so `` `x` `` quotes `x`."""
+    found = SHOW_LINE.match(line)
+    if not found:
+        return None
+    text = found.group(3)
+    if len(text) > 1 and text[0] == text[-1] == " " and text.strip():
+        text = text[1:-1]
+    return found.group(1), text
+
+
+def code_span(
+    text: str,  # A line to quote
+) -> str:  # The line as a CommonMark code span
+    "Quote a line as code, in more backticks than any run of backticks in it, as shown_line reads it back."
+    ticks = "`" * (max((len(run) for run in re.findall(r"`+", text)), default=0) + 1)
+    pad = " " if text[:1] == "`" or text[-1:] == "`" or (text[:1] == text[-1:] == " " and text.strip()) else ""
+    return f"{ticks}{pad}{text}{pad}{ticks}"
 
 
 # A block for one mode of a tutorial: "::: do" or "::: watch" opens it, and a line ":::" closes it. The fence is a
@@ -1099,9 +1122,9 @@ def parse_notes(
             items.append({"kind": item.group(1), "move": item.group(2), "path": item.group(3), "text": item.group(4).strip(), "show": [],
                           **({"mode": mode} if mode else {})})
             current["text"].append(line)  # the PDF prints an item as written
-        elif fence is None and items and (shown := SHOW_LINE.match(line)):
-            if shown.group(1).strip():
-                items[-1]["show"].append(shown.group(1))
+        elif fence is None and items and (shown := shown_line(line)):
+            if shown[1].strip():
+                items[-1]["show"].append(shown[1])
             current["text"].append(line)
         elif fence is None and items and not command and line.startswith("  ") and line.strip() and lines[at - 1].strip():
             items[-1]["text"] = (items[-1]["text"] + " " + line.strip()).strip()   # an item's words, over more lines
@@ -1169,7 +1192,7 @@ def replace_section(
     body: str,  # The new section, below its heading
 ) -> str:  # The notes file with that section replaced, or added at the end if the step had none
     "Put a new body under one step's `## step` heading, leaving every other line of the file as it was."
-    lines = text.split("\n")
+    lines = text.splitlines(keepends=True)   # as parse_notes splits them, so the section saved is the one it read; each keeps its end
     fenced = set()  # lines inside fenced code: a "## " there is code, not a heading, as parse_notes reads it
     fence: str | None = None
     for i, line in enumerate(lines):
@@ -1179,12 +1202,14 @@ def replace_section(
         if mark:
             fence = mark.group(1)[0] if fence is None else (None if mark.group(1)[0] == fence else fence)
     start = next((i for i, line in enumerate(lines) if i not in fenced and re.match(rf"^##\s+{re.escape(step)}(\s|$)", line)), None)
-    new = body.rstrip("\n").split("\n") if body.strip() else []   # a blank line that the body starts with stays
+    new = [line + "\n" for line in body.rstrip("\n").split("\n")] if body.strip() else []   # a blank line that the body starts with stays
     if start is None:
-        return text.rstrip("\n") + f"\n\n## {step}\n\n" + "\n".join(new) + "\n"
+        return text.rstrip("\n") + f"\n\n## {step}\n\n" + "".join(new)
     end = next((i for i in range(start + 1, len(lines)) if i not in fenced and re.match(r"^##\s", lines[i])), len(lines))
-    tail = lines[end:]
-    return "\n".join(lines[:start + 1] + new + ([""] if tail else []) + tail).rstrip("\n") + "\n"
+    head, tail = lines[:start + 1], lines[end:]
+    if head[-1] == head[-1].rstrip("\r\n\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029"):
+        head[-1] += "\n"   # the heading was the last line, with no line break
+    return ("".join(head + new + (["\n"] if tail else []) + tail)).rstrip("\n") + "\n"
 
 
 def notes_inside(
