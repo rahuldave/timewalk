@@ -1,6 +1,6 @@
 """Write a tutorial for reading without timewalk: a Markdown file for each mode, and a website.
 
-    timewalk-tutorial REPO --toc toc.toml --walk tutorial --markdown DIR --site DIR
+    timewalk-export REPO --toc toc.toml --walk tutorial --markdown DIR --site DIR
 
 A tutorial's notes have one text for both modes, and blocks for one mode: `::: do` ... `:::` and `::: watch` ...
 `:::`. Each copy keeps the text outside the blocks and the blocks of its mode. It leaves out the private lines, the
@@ -16,10 +16,12 @@ replaces only such files.
 """
 
 import argparse
+import functools
 import hashlib
 import json
 import re
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import quote
@@ -27,7 +29,8 @@ from urllib.parse import quote
 from timewalk import GitError, Move, Step, git, note_blocks, pick_steps, select_steps, step_moves, tag_steps
 from timewalk.walks import TocError, Walk, inside, load_toc
 
-MADE = "Made by timewalk-tutorial from the notes of the walk. Do not edit it by hand: run timewalk-tutorial again."
+MADE = "Made by timewalk-export from the notes of the walk. Do not edit it by hand: run timewalk-export again."
+OLD_MADE = "Made by timewalk-tutorial from the notes of the walk. Do not edit it by hand: run timewalk-tutorial again."   # its line before it was renamed
 MODE_WORDS = {
     "do": "In do mode, you make each move yourself. The notes give every line to type, every command and every file.",
     "watch": "In watch mode, you read each move. The notes explain what it changed, and its commit holds the code.",
@@ -48,10 +51,11 @@ OPEN = re.compile(r"^ {0,3}(`{3,}(?=[^`]*$)|~{3,})")
 CLOSE = re.compile(r"^ {0,3}(`{3,}|~{3,})\s*$")
 QUOTED = re.compile(LEAD + ">")
 LABEL = re.compile(LEAD + r"(?:>\s*)+[*_]{0,2}[A-Z][A-Za-z]*\s*[*_]{0,2}\s*:")
-NEW_BLOCK = re.compile(r"^\s*(?:#{1,6}(?:\s|$)|```|~~~|[-*+]\s|\d+[.)]\s|(?:---|\*\*\*|___)\s*$|<|(?:main|runs[2-9]?)?\$\s|time:)")
+NEW_BLOCK = re.compile(r"^\s*(?:#{1,6}(?:\s|$)|```|~~~|[-*+]\s|\d+[.)]\s|(?:---|\*\*\*|___)\s*$|<|(?:main|runs[2-9]?)?\$\s|time:)|^:{3,}\s*(?:\{[^}]*\}|[\w-]+)?\s*$")
 COMMAND = re.compile(r"^\s*(main|runs[2-9]?)?\$\s+(.+)$")
 ITEM = re.compile(r"^(\s*)-\s+(diff|file)\s+(?:([\w.-]+)\s+)?`([^`]+)`\s*:?\s*(.*)$")
 SHOW = re.compile(r"^(\s+)show:\s*`(.+)`\s*$")
+DIFF_LINES = 200   # the most lines of a change that a copy shows; the link to GitHub has the rest
 APPLY = re.compile(r"\*\*Apply (?:this file|the whole move)\*\*")
 # "Take it with **Apply this file** in timewalk, or from the move's commit on GitHub": the words from "with" go
 WITH_APPLY = re.compile(r"\bwith\s+\*\*Apply (?:this file|the whole move)\*\*(\s+too)?,?(?:\s+in\s+timewalk)?"
@@ -122,7 +126,7 @@ def private_lines(
         if cues:
             labels = [i for i in block if LABEL.match(lines[i]) and i not in cues]
             if labels:
-                raise SystemExit(f"timewalk-tutorial: in the notes, {lines[labels[0]].strip()!r} is a public cue in the blockquote of "
+                raise SystemExit(f"timewalk-export: in the notes, {lines[labels[0]].strip()!r} is a public cue in the blockquote of "
                                  f"the cue {lines[cues[0]].strip()!r}; put a blank line between the two")
             found.update(block)
         at = block[-1] + 1
@@ -143,14 +147,31 @@ def for_mode(
     mode: str | None,  # "do" or "watch"; None for the text outside every block
 ) -> str:  # The notes as a reader of that mode reads them, without the private lines
     "Keep the text outside the blocks and the blocks of one mode, and leave out the presenter's lines."
+    text = "\n".join(text.splitlines())   # one way to split lines, for the blocks and the private lines alike
     blocks = note_blocks(text)
     if blocks.errors:
         line, problem = blocks.errors[0]
-        raise SystemExit(f"timewalk-tutorial: line {line} of the notes: {problem}")
-    lines = [line for at, line in enumerate(text.splitlines()) if at not in blocks.fences and blocks.mode[at] in (None, mode)]
-    drop = private_lines("\n".join(lines))
+        raise SystemExit(f"timewalk-export: line {line} of the notes: {problem}")
+    lines = [(at, line) for at, line in enumerate(text.split("\n")) if at not in blocks.fences and blocks.mode[at] in (None, mode)]
+    return without_private(lines, private_lines(text))   # found in the notes as written, so a block's fence ends a cue's blockquote
+
+
+def public_text(
+    text: str,  # Markdown of the author's, such as the intro of a walk
+) -> str:  # The same without the presenter's lines
+    "Leave out the presenter's lines of a file that has no blocks for one mode."
+    text = "\n".join(text.splitlines())
+    return without_private(list(enumerate(text.split("\n"))), private_lines(text))
+
+
+def without_private(
+    lines: list[tuple[int, str]],  # The lines to keep or drop, each with its index in the text
+    drop: set[int] | list[int],  # The indexes of the presenter's lines
+) -> str:  # The lines kept, with the end of a comment that a kept line opened
+    "Drop the presenter's lines, keep the `-->` of a comment that a kept line opened, and close up the blank lines."
+    drop = set(drop)
     kept, comment = [], False   # comment: a kept line opened an HTML comment that is not closed yet
-    for at, line in enumerate(lines):
+    for at, line in lines:
         if at not in drop:
             kept.append(line)
             if "<!--" in line or "-->" in line:
@@ -174,7 +195,7 @@ def github_url(
         origin = ""
     found = re.match(r"^(?:(?:https?|ssh|git)://)?(?:[^@/]+@)?github\.com(?::\d+(?=/))?[:/](.+?)(?:\.git)?/?$", origin)
     if not found:
-        raise SystemExit("timewalk-tutorial: the project's origin is not on GitHub; give its address with --github https://github.com/OWNER/NAME")
+        raise SystemExit("timewalk-export: the project's origin is not on GitHub; give its address with --github https://github.com/OWNER/NAME")
     return f"https://github.com/{found.group(1)}"
 
 
@@ -213,11 +234,13 @@ def build(
     level: int,  # The depth of a move's heading: 3 in the Markdown file, 2 on a page of the website, with the move as its id
     warnings: set[str],  # Where to put what is missing, each said once
     history: dict[str, str] | None = None,  # The commit of every step and move of the whole history, which an item may name
+    history_starts: dict[str, str] | None = None,  # The commit before each step of the whole history, for an item that names one
+    diff: Callable[[str, str, str], str] | None = None,  # The change of a file from one commit to another; None shows no changes
 ) -> list[Section]:  # The stops, each with its text and its links
     """Make each stop of the walk from the sections of the notes: a whole step is its section; a small step is the
     commands at the top of its step's section, such as `$ just setup`, and its moves; a narrative's stop is the text of a
     step before its first move, or one move's section."""
-    starts = {step.name: step.start or (steps[i - 1].sha if i else "") for i, step in enumerate(steps)}
+    starts = {**(history_starts or {}), **{step.name: step.start or (steps[i - 1].sha if i else "") for i, step in enumerate(steps)}}
     shas = {**(history or {}), **{step.name: step.sha for step in steps}, **{m.name: m.sha for found in moves for m in found}}
     out = []
     for step, found in zip(steps, moves, strict=True):
@@ -231,7 +254,7 @@ def build(
         else:   # a step at its tag; a narrative's stop at a move, at the move's commit
             link = f"[The code at {step.name}]({url}/tree/{step.sha if step.section else quote(step.name)})"
         body: list[tuple[str, str | None]] = [(link, None), ("", None)]
-        body += render(lead(source.before) if step.section else source.before, step.name, url, shas, starts)
+        body += render(lead(source.before) if step.section else source.before, step.name, url, shas, starts, diff)
         section = Section(step.name, source.title, "", [])
         for name in names:
             if name not in source.moves:
@@ -248,7 +271,7 @@ def build(
                                                    f"[The commit of this move]({url}/commit/{shas[name]}) shows what the move changes.", ""]]
             else:   # a narrative's stop at a move: its commit, then its words
                 body += [(f"[The commit of {name}]({url}/commit/{shas[name]}) shows what it changes.", None), ("", None)]
-            body += render(lines, name, url, shas, starts)
+            body += render(lines, name, url, shas, starts, diff)
         if step.section and len(names) > 1:
             section.title = ""
         section.body = squeeze(apply_links(body, url).strip("\n")) + "\n"
@@ -275,12 +298,15 @@ def render(
     url: str,  # The project on GitHub
     shas: dict[str, str],  # The commit of each step and move of the walk
     starts: dict[str, str],  # The commit before each step of the walk, or ""
+    diff: Callable[[str, str, str], str] | None = None,  # The change of a file from one commit to another, to show under a diff item
 ) -> list[tuple[str, str | None]]:  # Each line, with the link to its change for an Apply in it; None: leave it as it is
-    "Turn lines of the notes into Markdown to read: commands in code blocks, items as links to the code."
+    """Turn lines of the notes into Markdown to read: commands in code blocks, items as links to the code, and after a
+    files: list, the change of each of its diff items."""
     code = fenced(lines)
     body: list[tuple[str, str | None]] = []
     commands: list[tuple[str, str]] = []   # a run of commands: (track, command)
     items = False   # whether the lines are a files: list
+    changes: list[tuple[str, str]] = []   # the diff items of that list: (the step or move, the path)
 
     def flush() -> None:
         if not commands:
@@ -295,6 +321,21 @@ def render(
         body.extend((line, None) for line in [*block, "```", ""])
         commands.clear()
 
+    def show_changes() -> None:   # after a files: list, the change of each diff item, as GitHub and smalldocs colour it
+        for named, path in changes:
+            text = diff(starts.get(named) or f"{shas[named]}^", shas[named], path) if diff else ""
+            hunk = next((at for at, line in enumerate(text.split("\n")) if line.startswith("@@")), None)
+            if hunk is None:   # a binary file, or a change of mode alone: nothing to read
+                continue
+            lines = text.split("\n")[hunk:]   # the hunks; the heading above the block names the file
+            if len(lines) > DIFF_LINES:
+                lines = [*lines[:DIFF_LINES], f"... {len(lines) - DIFF_LINES} more lines: see its change on GitHub"]
+            fence = "`" * max(3, 1 + max((len(run) for run in re.findall(r"`+", text)), default=0))
+            while body and not body[-1][0].strip():
+                body.pop()
+            body.extend((line, None) for line in ["", f"The change of `{path}`:", "", f"{fence}diff", *lines, fence, ""])
+        changes.clear()
+
     def change(name: str) -> str:   # the link to what a step or a move changed
         if starts.get(name):
             return f"{url}/compare/{starts[name]}...{shas[name]}"
@@ -302,16 +343,23 @@ def render(
 
     for at, line in enumerate(lines):
         if at in code:
+            if items:   # fenced code ends a files: list: its changes come first
+                show_changes()
+                items = False
             flush()
             body.append((line, None))
             continue
         if command := COMMAND.match(line):
+            if items:   # a command ends a files: list: its changes come first
+                show_changes()
+                items = False
             commands.append((command.group(1) or "", command.group(2).strip()))
             continue
         if not line.strip() and commands:
             continue
         flush()
         if line.strip() == "files:":
+            show_changes()
             items = True
             body.append(("Files to read:", None))
             continue
@@ -321,15 +369,19 @@ def render(
             link = f"[`{path}`]({url}/blob/{shas[named]}/{quote(path)})"
             if kind == "diff":
                 link += f", [its change]({change(named)}#diff-{hashlib.sha256(path.encode()).hexdigest()})"
+                changes.append((named, path))
             body.append((f"{indent}- {link}" + (f": {words}" if words else ""), None))
             continue
         if items and (shown := SHOW.match(line)):
             body.append((f"{shown.group(1)}- look at: `{shown.group(2)}`", None))
             continue
         if line.strip() and not line.startswith(" "):
+            if items:
+                show_changes()
             items = False
         body.append((line, change(where)))
     flush()
+    show_changes()
     return body
 
 
@@ -448,12 +500,19 @@ def write(
 ) -> list[str]:  # The paths written or removed
     """Write the files, replacing only files that this command made, and remove its own files that a step no longer has.
     Every file is checked before the first is written, so a refusal writes nothing."""
+    def made_here(
+        path: Path,  # A file in a folder to write
+    ) -> bool:  # Whether this command made it, under its name now or its old name
+        "Find the line that this command puts in each file it makes."
+        text = path.read_text(encoding="utf-8", errors="replace")
+        return MADE in text or OLD_MADE in text
+
     def check(target: Path) -> None:
         real = target.resolve()
         if any(inside(real, base) for base in forbidden):
-            raise SystemExit(f"timewalk-tutorial: {target} is inside the project or its replay copy; timewalk never writes there")
-        if target.is_dir() or (target.exists() and MADE not in target.read_text(encoding="utf-8", errors="replace")):
-            raise SystemExit(f"timewalk-tutorial: {target} exists, and timewalk-tutorial did not make it; move it away, or write to another folder")
+            raise SystemExit(f"timewalk-export: {target} is inside the project or its replay copy; timewalk never writes there")
+        if target.is_dir() or (target.exists() and not made_here(target)):
+            raise SystemExit(f"timewalk-export: {target} exists, and timewalk-export did not make it; move it away, or write to another folder")
 
     stale: list[tuple[Path, Path]] = []
     for folder, files, ours in plan:
@@ -462,7 +521,7 @@ def write(
         for pattern in ours:
             for old in sorted(folder.glob(pattern)):
                 rel = old.relative_to(folder).as_posix()
-                if rel not in files and old.is_file() and MADE in old.read_text(encoding="utf-8", errors="replace"):
+                if rel not in files and old.is_file() and made_here(old):
                     check(old)
                     stale.append((folder, old))
     done = []
@@ -511,16 +570,16 @@ def main() -> None:
     try:
         main_repo = Path(git(args.repo.resolve(), "rev-parse", "--show-toplevel"))
     except GitError as error:
-        raise SystemExit(f"timewalk-tutorial: {args.repo}: {error}") from None
+        raise SystemExit(f"timewalk-export: {args.repo}: {error}") from None
     walk = Walk("notes", "", "tutorial", args.notes.resolve() if args.notes else None, None, args.tags, None, "manual")
     if args.toc:
         try:
             walks = load_toc(args.toc.resolve())
         except TocError as error:
-            raise SystemExit(f"timewalk-tutorial: {error}") from None
+            raise SystemExit(f"timewalk-export: {error}") from None
         walk = next((w for w in walks if w.id == args.walk), None) if args.walk else next((w for w in walks if w.kind == "tutorial"), None)
         if walk is None or walk.notes is None:
-            raise SystemExit(f"timewalk-tutorial: {args.walk or 'no tutorial'} is not a walk with notes in {args.toc}")
+            raise SystemExit(f"timewalk-export: {args.walk or 'no tutorial'} is not a walk with notes in {args.toc}")
     tutorial = walk.kind == "tutorial"
     try:
         if walk.select:
@@ -529,36 +588,52 @@ def main() -> None:
             steps = pick_steps(tag_steps(main_repo, walk.tags), walk.steps)
             moves = step_moves(main_repo, steps) if tutorial else [[] for _ in steps]
     except GitError as error:
-        raise SystemExit(f"timewalk-tutorial: {error}") from None
+        raise SystemExit(f"timewalk-export: {error}") from None
     if not steps:
-        raise SystemExit(f"timewalk-tutorial: no tags match {walk.tags!r} in {main_repo}")
+        raise SystemExit(f"timewalk-export: no tags match {walk.tags!r} in {main_repo}")
     every = tag_steps(main_repo, walk.tags)
     history = {**{s.name: s.sha for s in every}, **{m.name: m.sha for found in step_moves(main_repo, every) for m in found}}
+    history_starts = {s.name: every[i - 1].sha for i, s in enumerate(every) if i}
     text = walk.notes.read_text(encoding="utf-8")
     url = github_url(main_repo, args.github)
     warned: set[str] = set()
+
+    @functools.cache
+    def diff(
+        base: str,  # The commit before: a step's Start, or a move's commit with ^
+        sha: str,  # The commit after
+        path: str,  # A file of the project
+    ) -> str:  # What git prints for the change of the file, or "" when git cannot say
+        "Find the change of one file between two commits. A commit's own change comes from git show, which knows a first commit."
+        own = base == f"{sha}^"
+        try:
+            return git(main_repo, *(["show", "--format=", sha] if own else ["diff", base, sha]), "--no-color", "--no-ext-diff", "--", path)
+        except GitError:
+            return ""
+
     named, opening, sources = read_sections(for_mode(text, None))
     for name in sources:
         if name not in history:
             warned.add(f"the notes have ## {name}, which is not a step of the history; it is left out")
     title = args.title or (walk.title if walk.select or not named else named) or "Tutorial"
-    head = "\n\n".join(part.strip() for part in [args.intro.read_text(encoding="utf-8") if args.intro else "",
-                                                     walk.intro.read_text(encoding="utf-8") if walk.intro else "" if args.no_opening else opening]
+    head = "\n\n".join(part.strip() for part in [public_text(args.intro.read_text(encoding="utf-8")) if args.intro else "",
+                                                     public_text(walk.intro.read_text(encoding="utf-8")) if walk.intro
+                                                     else "" if args.no_opening else opening]
                          if part.strip())
     modes: list[str | None] = ["do", "watch"] if tutorial else [None]
     plan: list[tuple[Path, dict[str, str], list[str]]] = []
     if args.markdown:
         files = {}
         for mode in modes:
-            found = build(read_sections(for_mode(text, mode or "watch"))[2], steps, moves, url, 3, warned, history)
+            found = build(read_sections(for_mode(text, mode or "watch"))[2], steps, moves, url, 3, warned, history, history_starts, diff)
             files[FILE_NAME[mode] if mode else "TUTORIAL.md"] = markdown_file(mode, title, head, found)
         plan.append((args.markdown, files, ["TUTORIAL-do.md", "TUTORIAL-watch.md", "TUTORIAL.md"]))
     if args.site:
-        by_mode = {mode: build(read_sections(for_mode(text, mode or "watch"))[2], steps, moves, url, 2, warned, history) for mode in modes}
+        by_mode = {mode: build(read_sections(for_mode(text, mode or "watch"))[2], steps, moves, url, 2, warned, history, history_starts, diff) for mode in modes}
         plan.append((args.site, site_files(title, head, by_mode, args.quarto), ["watch/*.qmd", "do/*.qmd", "*.qmd"]))
     for warning in sorted(warned):
-        print(f"timewalk-tutorial: {warning}", file=sys.stderr)
+        print(f"timewalk-export: {warning}", file=sys.stderr)
     written = write(plan, forbidden_folders(main_repo))
     print("\n".join(f"  {path}" for path in written) or "  nothing changed")
     count = sum(len(found) for found in moves)
-    print(f"timewalk-tutorial: {len(steps)} steps and {count} moves" + (", in do mode and in watch mode" if tutorial else ", a narrative"))
+    print(f"timewalk-export: {len(steps)} steps and {count} moves" + (", in do mode and in watch mode" if tutorial else ", a narrative"))

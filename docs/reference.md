@@ -9,7 +9,7 @@ uvx --from git+https://github.com/rahuldave/timewalk@v1.0.14 timewalk [repo] [op
 uvx --from git+https://github.com/rahuldave/timewalk@v1.0.14 timewalk-pdf [options]
 ```
 
-Or install the commands `timewalk`, `timewalk-pdf`, `timewalk-check`, `timewalk-notes` and `timewalk-tutorial` once with `uv tool install git+https://github.com/rahuldave/timewalk@v1.0.14`. In a clone of timewalk, run them with
+Or install the commands `timewalk`, `timewalk-pdf`, `timewalk-check`, `timewalk-notes` and `timewalk-export` once with `uv tool install git+https://github.com/rahuldave/timewalk@v1.0.14`. In a clone of timewalk, run them with
 `uv run timewalk` and `uv run timewalk-pdf`.
 
 ## timewalk
@@ -116,11 +116,11 @@ The draft also has a line `files:`, with one item for each file of the commit. A
 item, and a changed file a `diff` item. You write the words of each item. The draft has no `show:` lines. See
 [Draft the notes of the moves](walks.md#draft-the-notes-of-the-moves).
 
-## timewalk-tutorial
+## timewalk-export
 
 ```
-timewalk-tutorial REPO --toc toc.toml [--walk ID] (--markdown DIR | --site DIR) [options]
-timewalk-tutorial REPO --notes notes.md [--tags GLOB] (--markdown DIR | --site DIR) [options]
+timewalk-export REPO --toc toc.toml [--walk ID] (--markdown DIR | --site DIR) [options]
+timewalk-export REPO --notes notes.md [--tags GLOB] (--markdown DIR | --site DIR) [options]
 ```
 
 | Option | Does |
@@ -184,7 +184,7 @@ In the timewalk folder, `just` lists these:
 | `notes`, `slides`, `folder` | The notes file and the manifest, or a folder that holds `notes.md` and `slides/slides.toml` |
 | `steps`, `tags` | Some of the steps by name, or a glob for tags of its own |
 | `select` | The steps, moves and ranges of moves that the walk takes from a bigger walk, in the order of the history, for example `["step-04", "step-05.3..step-05.6", "step-10.3"]`. Not with `steps` |
-| `intro` | A Markdown file that the copies of `timewalk-tutorial` put before the first step, in place of the text of the notes before it |
+| `intro` | A Markdown file that the copies of `timewalk-export` put before the first step, in place of the text of the notes before it |
 | `moves` | In a tutorial: the mode it starts in, `"do"` or `"watch"`. Default: `"do"` |
 | `sync` | In a tutorial: whether the slides and the moves follow each other. Default: `true` |
 | `setup` | `"manual"`: you run `just setup` yourself at each step. The only value for now |

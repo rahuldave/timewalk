@@ -1315,12 +1315,12 @@ function drawNotes() {
   }
   let files = [];       // the files of that move's commit, for a files: line
   let owner = 0;        // the move whose section it is
-  let group = null;     // the buttons of a run of commands, one after another in the file
-  /** The last commands of a move's section are its anchor: what to run to see what the move did. */
+  let group = null;     // the buttons of a run of commands of one block, one after another in the file
+  /** The last run of shared commands of a move's section is its anchor: what to run, in both modes, to see what the move did. */
   // A made move, or the one on show, ends with Restart step: back to the step's Start, where just setup comes again.
   const markAnchor = (section) => {
     if (!section?.classList.contains("p-move")) return;
-    const last = [...section.querySelectorAll(":scope > .p-commands")].pop();
+    const last = [...section.querySelectorAll(':scope > .p-commands[data-mode=""]')].pop();
     if (last) {
       last.classList.add("p-anchor");
       const label = document.createElement("div");
@@ -1403,9 +1403,11 @@ function drawNotes() {
       group = null;
       continue;
     }
-    if (!group) {
+    // A block's commands and the shared commands after it are two runs: the shared ones are the move's anchor
+    if (!group || group.dataset.mode !== (part.mode || "")) {
       group = document.createElement("div");
       group.className = "p-commands";
+      group.dataset.mode = part.mode || "";
       into.append(group);
     }
     group.append(commandButton(part));

@@ -2423,12 +2423,13 @@ def test_the_checks_of_blocks_and_of_each_mode(tutorial: timewalk.Repo, tutorial
 
 
 def test_timewalk_notes_drafts_a_block_for_each_mode(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
-    "With --blocks, a drafted move has a ::: do and a ::: watch block, closed, before its list of files; without it, none."
+    "With --blocks, a drafted move has a line for both modes, then a ::: do and a ::: watch block, closed, before its list of files; without it, none."
     from timewalk.walks import add_move_sections, load_toc
 
     (tutorial_class / "notes.md").write_text("## step-00\n\n## step-01\n\n## step-02\n")
     text, _, drafts = add_move_sections(load_toc(tutorial_class / "toc.toml")[0], tutorial.main, blocks=True)
     assert all("::: do\n" in d and "::: watch\n" in d and d.index("::: watch") < d.index("The move changes") for d in drafts)
+    assert all(d.index("For both modes") < d.index("::: do") for d in drafts), "the plan for both modes comes before the blocks"
     assert timewalk.note_blocks(text).errors == []
     _, _, plain = add_move_sections(load_toc(tutorial_class / "toc.toml")[0], tutorial.main)
     assert not any(":::" in d for d in plain)
@@ -2442,19 +2443,19 @@ def test_the_pdf_prints_both_blocks_under_their_mode() -> None:
     assert "*In do mode:*\n\ntype\n```\n$ just a\n```" in out and "*In watch mode:*\n\nsee" in out and ":::" not in out
 
 
-def run_tutorial(
+def run_export(
     main: Path,  # The project
-    *args: str,  # The options of timewalk-tutorial
+    *args: str,  # The options of timewalk-export
 ) -> subprocess.CompletedProcess:  # What it did
-    "Run timewalk-tutorial as a command."
-    return subprocess.run([sys.executable, "-c", "from timewalk.tutorial import main; main()", str(main), *args], capture_output=True, text=True)
+    "Run timewalk-export as a command."
+    return subprocess.run([sys.executable, "-c", "from timewalk.export import main; main()", str(main), *args], capture_output=True, text=True)
 
 
-def test_timewalk_tutorial_writes_a_markdown_file_for_each_mode(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
+def test_timewalk_export_writes_a_markdown_file_for_each_mode(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
     "Each file keeps its mode's blocks, drops the other's and the private lines, and links each step, move and item to GitHub."
     (tutorial_class / "notes.md").write_text(BLOCK_NOTES)
     out = tutorial_class / "out"
-    done = run_tutorial(tutorial.main, "--toc", str(tutorial_class / "toc.toml"), "--markdown", str(out), "--github", "https://github.com/o/t")
+    done = run_export(tutorial.main, "--toc", str(tutorial_class / "toc.toml"), "--markdown", str(out), "--github", "https://github.com/o/t")
     assert done.returncode == 0, done.stderr
     do, watch = (out / "TUTORIAL-do.md").read_text(), (out / "TUTORIAL-watch.md").read_text()
     url, shas = "https://github.com/o/t", {m.name: m.sha for found in tutorial.moves for m in found}
@@ -2464,7 +2465,7 @@ def test_timewalk_tutorial_writes_a_markdown_file_for_each_mode(tutorial: timewa
     for text in (do, watch):
         assert "Say:" not in text and "which goes on here" not in text and "time:" not in text, "the private lines go"
         assert ":::" not in text.replace(":::\na line", "")
-        assert text.startswith("<!-- Made by timewalk-tutorial") and "# t, one move at a time" in text and "The opening." in text
+        assert text.startswith("<!-- Made by timewalk-export") and "# t, one move at a time" in text and "The opening." in text
         assert f"[The code at step-01]({url}/tree/step-01)" in text
         assert f"### step-01.2 Files b\n\n[The commit of this move]({url}/commit/{shas['step-01.2']}) shows what the move changes." in text
         assert f"- [`a.txt`]({url}/blob/{shas['step-01.1']}/a.txt): the first file." in text
@@ -2472,18 +2473,22 @@ def test_timewalk_tutorial_writes_a_markdown_file_for_each_mode(tutorial: timewa
         assert f"- [`README.md`]({url}/blob/{shas['step-01.2']}/README.md), [its change]({url}/commit/{shas['step-01.2']}#diff-{digest})" in text
         assert "  - look at: `# t, with b`" in text
         assert "```bash\nls\n```" in text and "$ ls" not in text
+        change = text.index("The change of `README.md`:\n\n```diff\n@@")
+        assert text.index("  - look at: `# t, with b`") < change < text.index("```bash\nls\n```"), "the diff comes after its list, before the command"
+        assert "+# t, with b" in text[change:] and "diff --git" not in text and "index " not in text[change:change + 200]
+        assert "The change of `a.txt`" not in text, "a file item shows no change"
         assert f"Take it from [the move's commit]({url}/commit/{shas['step-01.2']})." in text, "Apply, in place"
         assert f"Use [the move's commit]({url}/commit/{shas['step-01.3']}). It is short." in text, "any other Apply becomes the link"
     assert "[The same tutorial in watch mode](TUTORIAL-watch.md)" in do and "[The same tutorial in do mode](TUTORIAL-do.md)" in watch
     assert "```bash\ncat a.txt\n```" in do
 
 
-def test_timewalk_tutorial_writes_a_website_with_a_section_for_each_mode(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
+def test_timewalk_export_writes_a_website_with_a_section_for_each_mode(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
     "A page for each step in each mode, a sidebar whose move links use the heading's id, and only its own pages rendered."
     (tutorial_class / "notes.md").write_text(BLOCK_NOTES)
     site = tutorial_class / "site"
     args = ["--toc", str(tutorial_class / "toc.toml"), "--site", str(site), "--github", "https://github.com/o/t", "--title", "T"]
-    assert run_tutorial(tutorial.main, *args).returncode == 0
+    assert run_export(tutorial.main, *args).returncode == 0
     for mode, other in (("do", "watch"), ("watch", "do")):
         page = (site / mode / "step-01.qmd").read_text()
         assert page.startswith('---\ntitle: "step-01: Three moves"\n---\n')
@@ -2494,32 +2499,35 @@ def test_timewalk_tutorial_writes_a_website_with_a_section_for_each_mode(tutoria
     assert 'render: ["index.qmd", "do/*.qmd", "watch/*.qmd"]' in config and "theme: cosmo" in config
     assert "href: do/step-01.qmd#step-01.1" in config and "href: watch/step-02.qmd" in config
     assert "- [step-01: Three moves](do/step-01.qmd)" in (site / "index.qmd").read_text()
-    (site / "do" / "step-09.qmd").write_text("<!-- Made by timewalk-tutorial from the notes of the walk. Do not edit it by hand: run timewalk-tutorial again. -->\n")
+    (site / "do" / "step-09.qmd").write_text("<!-- Made by timewalk-export from the notes of the walk. Do not edit it by hand: run timewalk-export again. -->\n")
     (site / "do" / "mine.qmd").write_text("a page of mine\n")
-    assert run_tutorial(tutorial.main, *args).returncode == 0
+    assert run_export(tutorial.main, *args).returncode == 0
     assert not (site / "do" / "step-09.qmd").exists() and (site / "do" / "mine.qmd").exists(), "only its own old pages go"
-    assert run_tutorial(tutorial.main, *args, "--quarto").returncode == 0
+    assert run_export(tutorial.main, *args, "--quarto").returncode == 0
     assert "format:\n  html:\n    theme: cosmo" in (site / "_quarto.yml").read_text()
 
 
-def test_timewalk_tutorial_never_writes_over_files_it_did_not_make(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
+def test_timewalk_export_never_writes_over_files_it_did_not_make(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
     "A file of the same name that it did not write, or a folder inside the project, stops it with nothing written."
     (tutorial_class / "notes.md").write_text(BLOCK_NOTES)
     out = tutorial_class / "out"
     out.mkdir()
     (out / "TUTORIAL-do.md").write_text("my own tutorial\n")
-    done = run_tutorial(tutorial.main, "--toc", str(tutorial_class / "toc.toml"), "--markdown", str(out), "--github", "https://github.com/o/t")
+    done = run_export(tutorial.main, "--toc", str(tutorial_class / "toc.toml"), "--markdown", str(out), "--github", "https://github.com/o/t")
     assert done.returncode != 0 and "did not make it" in done.stderr
     assert (out / "TUTORIAL-do.md").read_text() == "my own tutorial\n" and not (out / "TUTORIAL-watch.md").exists()
-    done = run_tutorial(tutorial.main, "--toc", str(tutorial_class / "toc.toml"), "--markdown", str(tutorial.main / "docs"), "--github", "https://github.com/o/t")
+    done = run_export(tutorial.main, "--toc", str(tutorial_class / "toc.toml"), "--markdown", str(tutorial.main / "docs"), "--github", "https://github.com/o/t")
     assert done.returncode != 0 and "inside the project" in done.stderr and not (tutorial.main / "docs").exists()
-    done = run_tutorial(tutorial.main, "--toc", str(tutorial_class / "toc.toml"), "--markdown", str(out))
+    done = run_export(tutorial.main, "--toc", str(tutorial_class / "toc.toml"), "--markdown", str(out))
     assert done.returncode != 0 and "--github" in done.stderr, "with no origin on GitHub, it asks for the address"
+    (out / "TUTORIAL-do.md").write_text("<!-- Made by timewalk-tutorial from the notes of the walk. Do not edit it by hand: run timewalk-tutorial again. -->\n")
+    done = run_export(tutorial.main, "--toc", str(tutorial_class / "toc.toml"), "--markdown", str(out), "--github", "https://github.com/o/t")
+    assert done.returncode == 0 and "timewalk-export" in (out / "TUTORIAL-do.md").read_text(), "a file made under its old name is its own"
 
 
-def test_timewalk_tutorial_drops_every_form_of_private_line_and_keeps_code(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
+def test_timewalk_export_drops_every_form_of_private_line_and_keeps_code(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
     "The cue rule is the walk skill's: fences as CommonMark reads them, the whole blockquote, a comment kept closed; code as written."
-    from timewalk.tutorial import for_mode
+    from timewalk.export import for_mode
 
     cases = {
         "a fence of four holding three": "````\n```\n````\n\n> Say: LEAK-A\n",
@@ -2536,13 +2544,15 @@ def test_timewalk_tutorial_drops_every_form_of_private_line_and_keeps_code(tutor
         assert "LEAK" not in out and "Say" not in out and "Note" not in out and "time:" not in out, (what, out)
     kept = for_mode("## step-01\n\nBefore.\n\n<!--\n> Say: x\n-->\n\nVisible after.\n", "do")
     assert "<!--\n-->" in kept and "Visible after." in kept, "a comment that a kept line opened is closed again"
+    closed = for_mode("## step-01\n\n::: do\nDo this.\n\n> Say: x\n:::\nShared after.\n\n$ just test\n", "do")
+    assert "Shared after." in closed and "Say" not in closed, "a block's fence ends a cue's blockquote, so the text after it stays"
     code = "## step-01\n\n```python\ndef f():\n\n\n    return 1\n> Say: in code, kept\n```\n"
     assert for_mode(code, "watch").endswith("def f():\n\n\n    return 1\n> Say: in code, kept\n```"), "fenced code is kept exactly"
 
 
-def test_timewalk_tutorial_links_items_to_the_right_change(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
+def test_timewalk_export_links_items_to_the_right_change(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
     "An item naming another move links there; a diff item of a step links to the step's whole change; paths are quoted in links."
-    from timewalk.tutorial import build, read_sections
+    from timewalk.export import build, read_sections
 
     steps = {s.name: s for s in tutorial.steps}
     moves = {m.name: m for found in tutorial.moves for m in found}
@@ -2563,32 +2573,32 @@ def test_timewalk_tutorial_links_items_to_the_right_change(tutorial: timewalk.Re
     assert "ghost" not in "".join(s.body for s in found) and "step-07" not in [s.name for s in found], "a section of no step is left out"
 
 
-def test_timewalk_tutorial_writes_nothing_when_one_file_is_not_its_own(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
+def test_timewalk_export_writes_nothing_when_one_file_is_not_its_own(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
     "Every file is checked first: a foreign TUTORIAL-watch.md, a folder in a file's place, a link into the project or the replay copy."
     (tutorial_class / "notes.md").write_text(BLOCK_NOTES)
     out, site = tutorial_class / "out", tutorial_class / "site"
     args = ["--toc", str(tutorial_class / "toc.toml"), "--markdown", str(out), "--site", str(site), "--github", "https://github.com/o/t"]
     out.mkdir()
     (out / "TUTORIAL-watch.md").write_text("mine\n")
-    done = run_tutorial(tutorial.main, *args)
+    done = run_export(tutorial.main, *args)
     assert done.returncode != 0 and not (out / "TUTORIAL-do.md").exists() and not site.exists()
     (out / "TUTORIAL-watch.md").unlink()
     (out / "TUTORIAL-watch.md").mkdir()
-    assert run_tutorial(tutorial.main, *args).returncode != 0 and not (out / "TUTORIAL-do.md").exists()
+    assert run_export(tutorial.main, *args).returncode != 0 and not (out / "TUTORIAL-do.md").exists()
     (out / "TUTORIAL-watch.md").rmdir()
     site.mkdir()
     (site / "do").symlink_to(tutorial.main)
-    done = run_tutorial(tutorial.main, *args)
+    done = run_export(tutorial.main, *args)
     assert done.returncode != 0 and "inside the project" in done.stderr and not list(tutorial.main.glob("*.qmd"))
     (site / "do").unlink()
-    done = run_tutorial(tutorial.main, "--toc", str(tutorial_class / "toc.toml"), "--markdown", str(tutorial.work / "out"), "--github", "x")
+    done = run_export(tutorial.main, "--toc", str(tutorial_class / "toc.toml"), "--markdown", str(tutorial.work / "out"), "--github", "x")
     assert done.returncode != 0 and not (tutorial.work / "out").exists(), "nor the replay copy"
-    assert run_tutorial(tutorial.main, *args).returncode == 0
+    assert run_export(tutorial.main, *args).returncode == 0
 
 
-def test_timewalk_tutorial_finds_the_github_address_of_the_origin(tutorial: timewalk.Repo) -> None:
+def test_timewalk_export_finds_the_github_address_of_the_origin(tutorial: timewalk.Repo) -> None:
     "Every form of a GitHub remote gives the same address."
-    from timewalk.tutorial import github_url
+    from timewalk.export import github_url
 
     for origin in ("git@github.com:o/p.git", "https://github.com/o/p", "https://user@github.com/o/p.git", "ssh://git@github.com:22/o/p.git",
                    "ssh://git@github.com/o/p", "https://github.com/o/p/"):
@@ -2704,7 +2714,7 @@ def test_timewalk_notes_drafts_what_a_small_walk_takes_into_the_notes_of_the_who
     assert "### step-01.1" not in text
 
 
-def test_timewalk_tutorial_writes_a_small_walk_and_a_narrative(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
+def test_timewalk_export_writes_a_small_walk_and_a_narrative(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
     "A small step starts at the commit before its first move, with its step's setup; a narrative has one file and one site."
     shas = {m.name: m.sha for found in tutorial.moves for m in found}
     (tutorial_class / "notes.md").write_text("# The whole\n\nThe opening.\n\n## step-00 Start\n\n## step-01 Three moves\n\n$ just setup\n\n"
@@ -2716,7 +2726,7 @@ def test_timewalk_tutorial_writes_a_small_walk_and_a_narrative(tutorial: timewal
                    'select = ["step-01.2..step-01.3"]\n\n[[walk]]\nid = "story"\ntitle = "Story"\nkind = "narrative"\nnotes = "notes.md"\n'
                    'select = ["step-01.2", "step-01"]\n')
     url = "https://github.com/o/t"
-    done = run_tutorial(tutorial.main, "--toc", str(toc), "--walk", "part", "--markdown", str(tutorial_class / "part"),
+    done = run_export(tutorial.main, "--toc", str(toc), "--walk", "part", "--markdown", str(tutorial_class / "part"),
                         "--site", str(tutorial_class / "part-site"), "--github", url)
     assert done.returncode == 0, done.stderr
     do = (tutorial_class / "part" / "TUTORIAL-do.md").read_text()
@@ -2724,7 +2734,7 @@ def test_timewalk_tutorial_writes_a_small_walk_and_a_narrative(tutorial: timewal
     assert f"## step-01.2 to step-01.3\n\n[The code at its Start]({url}/tree/{shas['step-01.1']}), the commit before step-01.2." in do
     assert "```bash\njust setup\n```" in do and "About all three." not in do and "move a" not in do and "move b" in do
     assert (tutorial_class / "part-site" / "do" / "step-01.2-to-step-01.3.qmd").exists()
-    done = run_tutorial(tutorial.main, "--toc", str(toc), "--walk", "story", "--markdown", str(tutorial_class / "story"),
+    done = run_export(tutorial.main, "--toc", str(toc), "--walk", "story", "--markdown", str(tutorial_class / "story"),
                         "--site", str(tutorial_class / "story-site"), "--github", url)
     assert done.returncode == 0, done.stderr
     story = (tutorial_class / "story" / "TUTORIAL.md").read_text()
@@ -2819,7 +2829,58 @@ def test_the_pdf_of_a_walk_that_selects_has_its_stops() -> None:
 
 def test_a_narrative_site_names_its_pages_whatever_the_tags() -> None:
     "A narrative on tags of its own has its pages, by name, in the list of pages to build."
-    from timewalk.tutorial import Section, site_files
+    from timewalk.export import Section, site_files
 
     files = site_files("T", "", {None: [Section("parts-01", "One", "a\n", []), Section("parts-02", "", "b\n", [])]}, False)
     assert 'render: ["index.qmd", "parts-01.qmd", "parts-02.qmd"]' in files["_smalldocs.yml"]
+
+
+def test_timewalk_export_fences_a_change_that_holds_backticks() -> None:
+    "A change with a fence of its own in it gets a longer fence, so the diff block is not cut short."
+    from timewalk.export import render
+
+    seen = []
+
+    def diff(base: str, sha: str, path: str) -> str:
+        seen.append((base, sha, path))
+        return "diff --git a/n.md b/n.md\nindex 1..2 100644\n--- a/n.md\n+++ b/n.md\n@@ -1 +1,3 @@\n-old\n+```\n+new\n+```"
+
+    lines = ["files:", "- diff `n.md`: the notes.", "", "Then more."]
+    body = "\n".join(line for line, _ in render(lines, "step-01.1", "https://github.com/o/t", {"step-01.1": "abc"}, {}, diff))
+    assert seen == [("abc^", "abc", "n.md")], "a move's change is from its parent"
+    assert "````diff\n@@ -1 +1,3 @@\n-old\n+```\n+new\n+```\n````" in body and "index 1..2" not in body and "+++ b/n.md" not in body
+    assert body.index("````diff") < body.index("Then more.")
+
+
+def test_timewalk_export_shows_changes_after_their_list_and_only_what_can_be_read() -> None:
+    "Fenced code ends a files: list; a binary change has no block; a long change is cut; an item naming a step changes from its Start."
+    from timewalk.export import DIFF_LINES, render
+
+    changes = {"x.py": "@@ -1 +1 @@\n-a\n+b", "pic.png": "Binary files /dev/null and b/pic.png differ",
+               "long.txt": "@@ -0,0 +1,500 @@\n" + "\n".join(f"+{i}" for i in range(500))}
+    seen = []
+
+    def diff(base: str, sha: str, path: str) -> str:
+        seen.append((base, path))
+        return changes[path]
+
+    lines = ["files:", "- diff `x.py`: x.", "- diff `pic.png`: a picture.", "- diff step-02 `long.txt`: long.", "```python", "code()", "```"]
+    body = "\n".join(line for line, _ in render(lines, "step-02.1", "https://github.com/o/t",
+                                                 {"step-02.1": "m1", "step-02": "t2"}, {"step-02": "t1"}, diff))
+    assert body.index("The change of `x.py`") < body.index("```python"), "the changes come before the code that ends the list"
+    assert "The change of `pic.png`" not in body, "a binary file has nothing to read"
+    assert ("t1", "long.txt") in seen, "an item that names a step changes from the step's Start"
+    assert f"+{DIFF_LINES - 2}\n" in body and f"+{DIFF_LINES + 5}\n" not in body and "more lines: see its change on GitHub" in body
+
+
+def test_timewalk_export_keeps_cues_out_whatever_the_line_breaks_and_in_the_intro() -> None:
+    "Line breaks that splitlines knows do not shift the private lines; a line that only starts with ::: does not end a cue; an intro loses its cues."
+    from timewalk.export import for_mode, public_text
+
+    for brk in ["\x0c", "\r", "\u2028", "\x85"]:
+        out = for_mode(f"## step-01 A\n\nx{brk}y\n\n> Say: SECRET\n\nPublic.\n", "do")
+        assert "SECRET" not in out and "Public." in out, repr(brk)
+    out = for_mode("## step-01 A\n\n> Say: the answer is\n  :::42 SECRET\n\nPublic.\n", "do")
+    assert "SECRET" not in out and "Public." in out
+    intro = public_text("An intro.\n\n> Say: INTROSECRET\n\ntime: 1:00\n\nThe end.\n")
+    assert "INTROSECRET" not in intro and "time:" not in intro and "An intro." in intro and "The end." in intro

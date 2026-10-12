@@ -93,9 +93,10 @@ The last commands of a move section are its anchor commands. The notes column sh
 it safe to run again, and keep it from changing tracked files. A test that fails is a good anchor command,
 if the notes say that it fails. See [Anchor commands](walks.md#anchor-commands).
 
-A move section can hold a block for each mode. The `do` block gives the lines to type, and the `watch`
-block says what the move changed. The page shows only the block of the mode on show. Keep the list of
-files, the items and the anchor commands outside the blocks. See
+A move section can hold blocks for one mode. The shared text first says what we do now. Then the `do`
+block gives the lines to type, and the `watch` block says what to look at. The page shows only the blocks
+of the mode on show. Keep the list of files, the items, the explanation and the anchor commands outside
+the blocks. See
 [What a narrative and a tutorial need](authoring.md#write-for-both-modes).
 
 ## The notes column

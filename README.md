@@ -56,7 +56,7 @@ Keep the notes file outside the repository. timewalk refuses a notes file inside
   move by hand from the notes, and in watch mode timewalk checks out each commit. `timewalk-notes` drafts
   the notes of each move from its diff. The notes point at the files of a move, and quote its main lines.
   The reader shows the last change and the next one, and **Apply** types the git command that makes it.
-  A block `::: do` or `::: watch` in the notes shows in one mode only. `timewalk-tutorial` writes a copy
+  A block `::: do` or `::: watch` in the notes shows in one mode only. `timewalk-export` writes a copy
   of a tutorial for each mode, as Markdown for GitHub and as a website, to read without timewalk.
 - **Small walks** out of a big tutorial. `select` in `toc.toml` names the steps and moves that a walk
   takes. The walk reads the notes and slides of the whole tutorial.

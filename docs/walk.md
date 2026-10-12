@@ -41,7 +41,7 @@ Make a repository called `bla-walk` with these files, and push it to GitHub.
 | `slides/` | The slides and the manifest, if the walk has slides. See [Slides and documents](slides.md) |
 | `.gitignore` | The two folders that the kit makes on each machine, `repo/` and `worktree/`, and the PDF of the student, `walk.pdf` |
 | `bla.pdf` | Optional. A PDF of the walk as you wrote it, for students who only want to read |
-| `TUTORIAL-do.md`, `TUTORIAL-watch.md` | Optional, for a tutorial. Copies of the tutorial to read on GitHub, one for each mode, from `timewalk-tutorial`. See [Copies of a tutorial for GitHub and a website](walks.md#copies-of-a-tutorial-for-github-and-a-website) |
+| `TUTORIAL-do.md`, `TUTORIAL-watch.md` | Optional, for a tutorial. Copies of the tutorial to read on GitHub, one for each mode, from `timewalk-export`. See [Copies of a tutorial for GitHub and a website](walks.md#copies-of-a-tutorial-for-github-and-a-website) |
 | `justfile` | The recipes `present`, `setup` and `pdf` |
 
 The `.gitignore` has three lines:

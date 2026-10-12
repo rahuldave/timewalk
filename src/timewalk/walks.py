@@ -516,8 +516,9 @@ def move_section(
     summary = move_summary(main, move.sha)
     lead = "The move changes one file:" if len(summary) == 1 else "The move changes these files:"   # then one item for each file
     items = [f"- {'file' if status == 'A' else 'diff'} `{path}`: " for path, status in statuses.items() if status != "D"]
-    modes = ["::: do", "<!-- Do mode: every line to type, every command and every file of the move. -->", ":::", "",
-             "::: watch", "<!-- Watch mode: what the move changed, and why. -->", ":::", ""] if blocks else []
+    modes = ["<!-- For both modes: what we do now, in one sentence. -->", "",
+             "::: do", "<!-- Do mode: the lines to type and the commands to run, and only those. -->", ":::", "",
+             "::: watch", "<!-- Watch mode: what to look at. -->", ":::", ""] if blocks else []
     return "\n".join([f"### {move.name} {title}", "", *modes, lead, "", *summary, "", "files:", *items, "",
                       "<!-- Add a command that shows what this move did, for example: $ just test -->", ""])
 

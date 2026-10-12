@@ -135,7 +135,10 @@ moves do together.
 Give each move a `### step-NN.k Title` section, in the order of the commits. Each section has these
 parts:
 
-- **The instructions** to make the move by hand, with the code to type.
+- **The plan,** in the shared text before the instructions. It says in a sentence what we do now, in
+  both modes.
+- **The instructions** to make the move by hand, with the code to type, in a `do` block. In a `watch`
+  block, say what to look at. See [Write for both modes](#write-for-both-modes).
 - **The files changed, as a list.** Start it with "The move changes these files:", or "The move changes one
   file:" for one. Give each file an item of its own. Write its path as it is, in code. Then say what
   happened to it, for example "- `src/tally/__init__.py`: 7 lines added; adds `count`." Do not put the
@@ -145,8 +148,9 @@ parts:
 - **A line `files:`, with items.** Give every item words that say what to look for in the file.
 - **A `show:` line for the main line of the move.** Under its item, quote that line of the change. The
   notes draw it as an excerpt, and the reader marks it.
-- **One or more anchor commands at the end.** An anchor command shows what the move did. Make it safe to
-  run again, and say what it gives. A test that fails is a good anchor, if the notes say that it fails.
+- **One or more anchor commands at the end, in the shared text.** An anchor command shows what the move
+  did. Make it safe to run again, and say what it gives. A test that fails is a good anchor, if the notes
+  say that it fails.
 
 ```markdown
 files:
@@ -167,17 +171,29 @@ A tutorial has two modes, and the class can change the mode at any time.
 - **Watch mode:** timewalk checks out the commit of each move. The code jumps. So the notes and "What
   changed" must say what happened.
 
-The two modes need different words for the same move. Put the words of one mode in a block for that
-mode, `::: do` or `::: watch`, closed by a line `:::`. The page shows a block only in its mode.
+Most of a move reads the same in both modes. Only the doing and the showing differ. Put the words of one
+mode in a block for that mode, `::: do` or `::: watch`, closed by a line `:::`. The page shows a block only
+in its mode, and the text outside the blocks in both modes. Call that text the shared text.
 
-- **In the `do` block,** give every line to type. Give the code, each file to make, and each command
-  that makes the move.
-- **In the `watch` block,** say what the move changed, and why.
-- **Outside the blocks,** keep what both modes need. Keep the list "The move changes these files:", the
-  line `files:` with its items and `show:` lines, and the anchor commands there.
+Put as much as you can in the shared text, as long as it reads well in both modes. Keep the blocks short,
+with only what differs between the modes.
+
+- **In the shared text,** keep what both modes need:
+  - the plan before each block, which says what we do now, for example "Now we teach `main` an option,
+    `--top N`."
+  - the list "The move changes these files:", and the line `files:` with its items and `show:` lines
+  - the explanation of the change
+  - the commands that check what happened, for example `$ just test` and
+    `$ uv run tally --top 3 data/corpus.txt`. The checks at the end of the move are its anchor commands.
+- **In a `do` block,** give the commands and the edits that carry out the plan. Give the code, each file
+  to make, and each command that makes the move.
+- **In a `watch` block,** say what to look at. The code is already there, so point to it. Name the file
+  or the line.
 
 ````markdown
 ### step-02.2 A test of an empty text
+
+Now we add a test that counts the words of an empty text.
 
 ::: do
 Make `tests/test_empty.py`:
@@ -188,7 +204,7 @@ Make `tests/test_empty.py`:
 :::
 
 ::: watch
-The move adds one test. It counts the words of an empty text.
+Open `tests/test_empty.py`.
 :::
 
 files:
@@ -197,6 +213,97 @@ files:
 
 $ uv run python -m unittest discover -s tests -q
 ````
+
+#### How large to make a block
+
+A move section can hold several blocks, with shared text between them. The page shows the blocks of the
+mode and the shared text in the order of the notes. Let the importance of a command set the size of its
+block:
+
+- **Give an important command a `do` block of its own.** An important command needs a paragraph or more
+  to explain. Put the explanation in the shared text before the block, and the command in the block.
+  After the block, put a shared command that checks its result.
+- **Put two or three commands that are less important in one `do` block.** Give them one line of plan
+  in the shared text, and a shared check after the block.
+- **Divide the `watch` blocks in the same places.** Give a `do` block a `watch` block beside it, about
+  the same commands, when there is something to look at. A `do` block with nothing to look at, for
+  example `mkdir` and a first test run, needs no `watch` block.
+
+So a move with several commands has neither a block for each command, nor one block for the whole move.
+A move of one edit has one `do` block for the whole move.
+
+````markdown
+### step-06.1 The formatter
+
+The move changes these files:
+
+- `pyproject.toml`: 5 lines added; adds the group `dev`.
+- `uv.lock`: ruff and its version.
+- `src/tally/__init__.py`: 4 lines added, 4 removed; the formatter's changes.
+
+files:
+- diff `pyproject.toml`: ruff, a tool of development only.
+  show: `"ruff>=0.17.0",`
+- diff `src/tally/__init__.py`: double quotes and blank lines. The code does the same.
+
+Now we add ruff, the formatter and linter, to the group `dev`. `uv add` writes ruff into
+`pyproject.toml` and `uv.lock`, and installs it in `.venv`. The group `dev` is for the people who work
+on tally. A user who installs tally does not get ruff.
+
+::: do
+$ uv add --dev ruff
+:::
+
+::: watch
+Read the diff of `pyproject.toml`.
+:::
+
+$ uv run ruff --version
+
+Now we format the code, and fix what the linter can fix.
+
+::: do
+$ uv run ruff format src tests
+$ uv run ruff check --fix src tests
+$ git diff --stat
+:::
+
+::: watch
+Read the diff of `src/tally/__init__.py`.
+:::
+
+The formatter changed the quotes and the blank lines, and nothing else.
+
+$ just test
+$ uv run tally --top 3 data/corpus.txt
+
+The tests pass, and the command prints the same three lines as before.
+````
+
+In do mode, the page shows both `do` blocks and every command, in order. In watch mode, it shows the
+shared text and the `watch` blocks, and the learner runs only the checks. Most of the move is shared
+text, and each block has one to three lines. The two shared commands at the end are the anchor commands
+of the move. `$ uv run ruff --version` checks the first block only, and is not an anchor command.
+
+The example is one move in two parts. It installs ruff, then runs it. timewalk checks the files only at
+the end of the move. If the class needs that check after `uv add` too, make the two parts two moves. See
+the next section.
+
+#### Checks by timewalk, once for each move
+
+timewalk compares the files of the learner with the commit of the move, and never with a place inside
+the move. The page asks every two seconds, but each answer is about the whole move.
+
+- **Your files match** marks the move done as soon as the files match. A later block of the move can
+  change no file, for example a block that only runs commands. The page can then mark the move done
+  before the learner runs that block.
+- **Apply this file** and **Apply the whole move** both take their change from the commit of the move.
+- **A shared command after a block** checks only what that command shows. timewalk does not check the
+  files there.
+
+If an important command needs its own check by timewalk, give it a move of its own, that is a commit of
+its own. If not, a shared command after its block is enough. See
+[Your files match](walks.md#your-files-match) and [Apply](walks.md#apply).
 
 If an anchor command is in a `do` block, the move has no command in watch mode, and `timewalk-check` warns
 of it. `timewalk-notes --blocks` drafts both blocks in each new move. See

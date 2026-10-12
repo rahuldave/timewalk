@@ -16,7 +16,7 @@ dependencies = [
 [project.scripts]
 timewalk = "timewalk:main"
 timewalk-pdf = "timewalk.slides_pdf:main"
-timewalk-tutorial = "timewalk.tutorial:main"
+timewalk-export = "timewalk.export:main"
 timewalk-check = "timewalk.walks:main"
 timewalk-notes = "timewalk.walks:notes_main"
 

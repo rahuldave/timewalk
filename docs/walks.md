@@ -237,6 +237,11 @@ The last commands of a move section are its anchor commands. An anchor command s
 for example a test run or a run of the program. The notes column shows them under the label "After this
 move, run:".
 
+A run of commands ends where the mode changes. So the last command of a `do` block and a shared command
+after it are two runs. Only the last run of shared commands in a move is its anchor. A move with all its
+commands in blocks has no anchor. See
+[Blocks for one mode](#do-mode-and-watch-mode).
+
 - **Make each anchor command safe to run again.** It must not change files that git tracks.
 - **Say what the command gives.** A test that fails is a good anchor, if the notes say that it fails and
   why.
@@ -284,13 +289,18 @@ has a grey **Shown ✓** button in its place, which does nothing.
 
 #### Blocks for one mode
 
-The two modes need different words. In do mode, the notes must give every line to type. In watch mode,
-the notes explain the change, and the lines to type get in the way. So the notes of a tutorial can hold
-a block for one mode. A block is a fenced div, as Pandoc, Quarto and smalldocs read it. A line `::: do`
-or `::: watch` opens it, and a line `:::` closes it.
+The two modes need some different words. In do mode, the notes must give every line to type. In watch
+mode, the code is already there. The notes point to what to look at, and the lines to type get in the
+way. But the plan of the move, the items and the explanation are the same in both modes.
+
+So the notes of a tutorial can hold a block for one mode, for only the words that differ. A block is a
+fenced div, as Pandoc, Quarto and smalldocs read it. A line `::: do` or `::: watch` opens it, and a line
+`:::` closes it.
 
 ````markdown
 ### step-02.1 A test of counting
+
+Now we add two tests. The second asks for something that the code cannot do yet.
 
 ::: do
 Make `tests/test_count.py` with two tests:
@@ -301,7 +311,7 @@ Make `tests/test_count.py` with two tests:
 :::
 
 ::: watch
-The move adds two tests. The second asks for something that the code cannot do yet.
+Open `tests/test_count.py`.
 :::
 
 files:
@@ -318,6 +328,10 @@ shows the notes in this way:
 - **The switch Do / Watch** changes the blocks on show, in every window. The step and the move stay.
 - **A narrative** has no mode. It shows the `watch` blocks, and `timewalk-check` warns of a `do` block.
 
+A move section can hold several blocks, with shared text between them. For what goes in a block, what
+goes in the shared text, and how large to make a block, see
+[Write for both modes](authoring.md#write-for-both-modes).
+
 A block has these rules:
 
 - **Close each block with a line `:::`.**
@@ -327,14 +341,14 @@ A block has these rules:
 - **A `files:` line, its items and the `$` commands in a block count only in the mode of the block.** The
   checks read each mode as its reader sees it. See [The checks](#the-checks). The items of one `files:` line
   can go on into a block. Each item in the block is then for its mode only.
-- **Cues work in a block.** The copies of `timewalk-tutorial` leave out a private cue in a block too.
+- **Cues work in a block.** The copies of `timewalk-export` leave out a private cue in a block too.
 
 A fenced div of another name, for example `::: callout-note`, is not a block for one mode. Both modes show
 it as it is written, and `timewalk-check` warns of it. Such a div can go inside a block. Its closing `:::`
 then closes the div, and the block goes on.
 
 The PDF with `--with-notes` has no mode. It prints both blocks, each under a line "In do mode:" or "In
-watch mode:". `timewalk-tutorial` writes one copy for each mode, with only the blocks of that mode. See
+watch mode:". `timewalk-export` writes one copy for each mode, with only the blocks of that mode. See
 [Copies of a tutorial for GitHub and a website](#copies-of-a-tutorial-for-github-and-a-website).
 
 ### Moves on the page
@@ -543,25 +557,30 @@ parts:
 The list names only what the diff shows. Finish each draft by hand. Write the instructions and the words
 of each item. Quote the main line of each change with `show:`, and add the anchor commands.
 
-With `--blocks`, each new move starts with two blocks, `::: do` and `::: watch`. Each block has a comment
-that says what goes in it. Write the lines to type in the `do` block, and what the move changed in
-the `watch` block. See [Blocks for one mode](#do-mode-and-watch-mode).
+With `--blocks`, each new move starts with a comment for both modes, and then two blocks, `::: do` and
+`::: watch`. Each has a comment that says what goes in it:
+
+- **Before the blocks,** for both modes, what we do now, in one sentence.
+- **In the `do` block,** the lines to type and the commands to run, and only those.
+- **In the `watch` block,** what to look at.
+
+See [Write for both modes](authoring.md#write-for-both-modes).
 
 ## Copies of a tutorial for GitHub and a website
 
-`timewalk-tutorial` writes copies of a tutorial walk that a reader can read without timewalk. It writes
+`timewalk-export` writes copies of a tutorial walk that a reader can read without timewalk. It writes
 a Markdown file for each mode, for GitHub. It also writes a website, with a page for each step in each
 mode. For a narrative, it writes one Markdown file and one website. See
 [The copies of a small walk](#the-copies-of-a-small-walk).
 
 ```
-timewalk-tutorial ~/code/project --toc my-class/toc.toml --walk tutorial --markdown out
-timewalk-tutorial ~/code/project --toc my-class/toc.toml --walk tutorial --site site
+timewalk-export ~/code/project --toc my-class/toc.toml --walk tutorial --markdown out
+timewalk-export ~/code/project --toc my-class/toc.toml --walk tutorial --site site
 smalldocs render site
 ```
 
 The links go to the project on GitHub. The address comes from the remote `origin` of the project, or from
-`--github`. [Reference](reference.md#timewalk-tutorial) lists every option.
+`--github`. [Reference](reference.md#timewalk-export) lists every option.
 
 ### What a copy holds
 
@@ -579,6 +598,16 @@ Each copy is for one mode. It changes the notes in these ways:
 - **Each item under `files:` links to its file at the commit.** A `diff` item also links to its change in
   the commit. A `diff` item of a step, before its first move, links to the whole change of the step. A
   `show:` line becomes a sub-item, "look at:", with the quoted line.
+- **After each `files:` list, the change of each `diff` item follows as a `diff` code block,** under a line
+  "The change of `path`:". A `file` item shows no change. The blocks come before the commands after the
+  list, and the links to GitHub stay.
+  - The change of a move goes from the commit before the move to the commit of the move.
+  - A block shows at most 200 lines of the change. The link to GitHub has the rest. A binary file, or a
+    change of its mode alone, shows no block.
+  - The change of an item of a step goes from the **Start** of the step. For the first commit, every line
+    of the file is added.
+  - GitHub and smalldocs 0.1.4 or later colour a `diff` block, with the removed lines in red and the added lines in green.
+    Quarto colours it only with its common colours for code.
 - **A sentence about Apply goes to the commit instead.** A reader without timewalk has no **Apply** bar.
   "with **Apply this file** in timewalk, or from the move's commit on GitHub" becomes "from the move's
   commit", as a link. Any other **Apply this file** or **Apply the whole move** becomes a link to the
@@ -610,13 +639,15 @@ build. Each page links to the same step in the other mode, as the switch Do / Wa
 
 smalldocs builds the folder with `smalldocs render DIR`. With `--quarto`, the command writes `_quarto.yml`
 in place of `_smalldocs.yml`, and `quarto render DIR` builds it. The settings list the pages to build, and
-only the pages that `timewalk-tutorial` writes. A notes file in the folder never becomes a page.
+only the pages that `timewalk-export` writes. A notes file in the folder never becomes a page.
 
-### What timewalk-tutorial writes over
+### What timewalk-export writes over
 
-- **Every file that it writes starts with a line "Made by timewalk-tutorial".**
+- **Every file that it writes starts with a line "Made by timewalk-export".**
 - **It writes over only a file with that line.** If the folder has a file of the same name without it,
   the command stops. It checks every file before it writes the first, so it then writes nothing.
+- **It also writes over a file with the line "Made by timewalk-tutorial".** `timewalk-tutorial` was the
+  old name of the command, so it writes over the old copies and does not refuse them.
 - **It removes its own old step pages,** for example the page of a step that the walk no longer has.
 - **It refuses a folder inside the project, its replay copy or a worktree of it,** also through a link.
 
@@ -773,10 +804,10 @@ timewalk-notes ~/code/project --toc my-class/toc.toml --walk linting --write
 
 ### The copies of a small walk
 
-`timewalk-tutorial --walk ID` writes the copies of any walk with notes, small walks too:
+`timewalk-export --walk ID` writes the copies of any walk with notes, small walks too:
 
 ```
-timewalk-tutorial ~/code/project --toc my-class/toc.toml --walk linting --markdown out --site site
+timewalk-export ~/code/project --toc my-class/toc.toml --walk linting --markdown out --site site
 ```
 
 - **A tutorial** gets `TUTORIAL-do.md`, `TUTORIAL-watch.md`, and one website with **Watch** and **Do**.
