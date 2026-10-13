@@ -59,7 +59,8 @@ Keep the notes file outside the repository. timewalk refuses a notes file inside
   A block `::: do` or `::: watch` in the notes shows in one mode only. `timewalk-export` writes a copy
   of a tutorial for each mode, as Markdown for GitHub and as a website, to read without timewalk.
 - **Small walks** out of a big tutorial. `select` in `toc.toml` names the steps and moves that a walk
-  takes. The walk reads the notes and slides of the whole tutorial.
+  takes. The walk reads the notes and slides of the whole tutorial. A small tutorial can also have notes of
+  its own, with its own words at each stop. Its `{{include step-NN.k}}` lines take the sections of its moves.
 - **Shell.** One button, or Alt+Enter, gives the terminals the space of the slides and the files, in every window.
 - **Keyboard.** Left and Right change the step, and Up and Down change the slide.
 - **GitHub's theme,** light or dark, for the page, the code and the terminals.

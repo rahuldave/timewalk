@@ -92,6 +92,9 @@ A walk with `select` is checked on the sections that it takes. A section that it
 not have is an error, for example "step-05.3 to step-05.6 takes the section ### step-05.4, and notes.md
 has none". See [The checks of a small walk](walks.md#the-checks-of-a-small-walk).
 
+A walk with notes of its own is checked on its stops and their include lines. See
+[The checks of a walk with notes of its own](walks.md#the-checks-of-a-walk-with-notes-of-its-own).
+
 The blocks for one mode give these problems:
 
 - **An error:** a block `::: do` or `::: watch` that is not closed, a heading in a block, or a block in a
@@ -124,6 +127,7 @@ comment that asks for a command. Sections already in the notes stay as they are.
 A step without a section gets a heading `## step-NN Title`, with the first line of its tag's message as
 the title, steps without moves too. A walk whose folder has no `notes.md` yet gets one. For a walk with
 `select`, it drafts only the sections that the walk takes, into the notes of the whole tutorial, in order.
+For a walk with notes of its own, it drafts the move sections that its stops include, into its `shared` notes.
 
 The draft also has a line `files:`, with one item for each file of the commit. A new file gets a `file`
 item, and a changed file a `diff` item. You write the words of each item. The draft has no `show:` lines. See
@@ -197,6 +201,7 @@ In the timewalk folder, `just` lists these:
 | `notes`, `slides`, `folder` | The notes file and the manifest, or a folder that holds `notes.md` and `slides/slides.toml` |
 | `steps`, `tags` | Some of the steps by name, or a glob for tags of its own |
 | `select` | The steps, moves and ranges of moves that the walk takes from a bigger walk, in the order of the history, for example `["step-04", "step-05.3..step-05.6", "step-10.3"]`. An entry `{ range = "step-05.3..step-05.6", title = "Types" }` gives its stop a title. Not with `steps` |
+| `shared` | In a tutorial with notes of its own: the notes of the big tutorial, where its include lines take the sections of its moves. Its `notes` then hold its intro and a `## Title` section for each stop. Not with `select`, `steps` or `intro` |
 | `intro` | A Markdown file about the walk. The notes column shows it at the first stop, under "About this walk". The copies of `timewalk-export` put it before the first step, in place of the text of the notes before it |
 | `loose` | In a tutorial: the files, or globs, that do mode compares by the names of their packages, for example `["pyproject.toml", "uv.lock"]`. Another file that it names is not compared by its contents, but must be there when the move makes it |
 | `moves` | In a tutorial: the mode it starts in, `"do"` or `"watch"`. Default: `"do"` |
@@ -221,6 +226,8 @@ In the timewalk folder, `just` lists these:
 | ``- diff step-02.1 `path`: words`` | An item of another move |
 | ``  show: `a line` `` | Under an item: a line of the change, drawn as an excerpt in the notes and marked in the reader. A click on the excerpt opens the change |
 | ```  show: ``a `b` c`` ``` | The same, for a line with a backtick in it. See [Quote a line with backticks](walks.md#quote-a-line-with-backticks) |
+| `## Title` | In the notes of a walk with notes of its own: starts a stop. The text before the first one is the intro of the walk |
+| `{{include step-NN.k}}` | In the notes of a walk with notes of its own, on a line of its own: puts in the section of a move of the shared notes. `{{include step-NN}}` puts in a whole step, and `{{include step-NN.j..step-NN.k}}` a range of moves. Not in a block `::: do` or `::: watch`. See [A walk with notes of its own](walks.md#a-walk-with-notes-of-its-own) |
 | `::: do`, `::: watch` | In a tutorial: opens a block for one mode, up to a line `:::`. The page shows it only in that mode. A narrative shows the `watch` blocks |
 | The last commands of a move section | The anchor commands of the move, under "After this move, run:". They show what the move did. A `do$` line is never one. `timewalk-check` warns of a move section with no command |
 

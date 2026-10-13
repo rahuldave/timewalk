@@ -1192,14 +1192,25 @@ def walk_notes(
     moves: list[list[Move]],  # The moves of each step
     tutorial: bool,  # Whether the walk is a tutorial
     selects: bool = False,  # Whether the walk takes part of a bigger one, with select: a narrative then shows a step before its moves
+    own: list[str | None] | None = None,  # A walk with notes of its own: each stop's section, with its includes put in, or None; see Walk.own_sections
 ) -> dict[str, dict]:  # The notes by step, with an entry for each small step and each stop at a move
     """Give each stop of a walk the notes it shows, from the sections of a bigger walk.
 
     A small step shows the commands at the top of its step's section, such as `$ just setup`, which every Start needs,
     then the sections of its moves; the text of the step before its first move is about the whole step, and is left out.
     A narrative shows a step's text before its first move, and at a move, that move's section. An entry made this way
-    has "derived": True, and no `raw`: it is edited in the sections it comes from.
+    has "derived": True, and no `raw`: it is edited in the sections it comes from. A walk with its own notes shows each
+    stop's section of them, under the stop's title.
     """
+    if own is not None:
+        out = {}
+        for index, (step, section) in enumerate(zip(steps, own, strict=False)):   # a place no stop walks now shows nothing
+            entry = next(iter(parse_notes(section).values()), None) if section else None
+            if entry is not None:
+                alone = moves[index][0].name if index < len(moves) and len(moves[index]) == 1 else None   # a stop of one move, with no title of its own
+                title = step.title or next((p["title"] for p in entry["parts"] if p["kind"] == "move" and p["name"] == alone), "")
+                out[step.name] = {**entry, "title": title, "raw": "", "derived": True}
+        return out
     out = dict(notes)
     for index, step in enumerate(steps):
         source = notes.get(step.section or step.name)
@@ -1226,6 +1237,135 @@ def walk_notes(
         out[step.name] = {"time": None, "title": title, "commands": [p for p in lead + taken if p["kind"] == "command"],
                           "text": "", "raw": "", "parts": lead + taken, "derived": True}
     return out
+
+
+# A line of a walk's own notes that brings in move sections from the shared notes: {{include step-05.3..step-05.6}}
+INCLUDE = re.compile(r"^\s*\{\{\s*include\s+(\S+?)\s*\}\}\s*$")
+
+
+@dataclass
+class OwnStop:
+    "A stop of a walk's own notes: a `## Title` section, with its includes of shared move sections."
+
+    title: str  # The words of its heading
+    line: int  # The line of its heading, from 1
+    body: list[str]  # Its lines below the heading, as written
+    includes: list[tuple[int, str]]  # Each include: its line, from 1, and the step, move or range of moves it names
+
+
+def own_stops(
+    text: str,  # A walk's own notes file
+) -> tuple[str, list[OwnStop]]:  # The text before the first stop, its intro, and the stops
+    "Read a walk's own notes: its intro, then a stop at each `## Title`. Fenced code holds no heading and no include."
+    intro: list[str] = []
+    stops: list[OwnStop] = []
+    fence: str | None = None
+    for at, line in enumerate(text.splitlines(), 1):
+        mark = re.match(r"^\s*(```+|~~~+)", line)
+        heading = re.match(r"^##(?!#)\s*(.*)$", line) if fence is None and not mark else None
+        include = INCLUDE.match(line) if fence is None and not mark else None
+        if mark:
+            fence = mark.group(1)[0] if fence is None else (None if mark.group(1)[0] == fence else fence)
+        if heading:
+            stops.append(OwnStop(heading.group(1).strip(), at, [], []))
+            continue
+        if not stops:
+            intro.append(line)
+            continue
+        stops[-1].body.append(line)
+        if include:
+            stops[-1].includes.append((at, include.group(1)))
+    return "\n".join(intro).strip("\n"), stops
+
+
+def include_span(
+    entry: str,  # What an include names: "step-05", "step-05.3" or "step-05.3..step-05.6"
+) -> tuple[str, int, int] | None:  # The step, and its first and last move; a whole step is 0 to 0; None if it is not one of these forms
+    "Read what an include names, by its form alone; the history says whether the step and moves are there."
+    first, ranged, end = entry.partition("..")
+    one, two = re.fullmatch(r"(.+)\.(\d+)", first), re.fullmatch(r"(.+)\.(\d+)", end) if end else None
+    if not ranged:
+        return (one.group(1), int(one.group(2)), int(one.group(2))) if one else ((first, 0, 0) if first else None)
+    if one and two and one.group(1) == two.group(1) and int(one.group(2)) <= int(two.group(2)):
+        return one.group(1), int(one.group(2)), int(two.group(2))
+    return None
+
+
+def stop_range(
+    stop: OwnStop,  # A stop of a walk's own notes
+) -> tuple[str, str]:  # The step, move or range of moves that its includes make together, as select names it, or "" and why not
+    """Join the includes of a stop into the one place it walks: a whole step, or moves of one step with no move left out,
+    since do mode makes the moves one at a time from the Start. A stop with no include has none."""
+    if not stop.includes:
+        return "", "has no {{include ...}} line, so it has no moves and the walk leaves it out"
+    spans = []
+    for line, entry in stop.includes:
+        span = include_span(entry)
+        if span is None:
+            return "", (f"includes {{{{include {entry}}}}} at line {line}, which is not a step, a move or a range of moves of one step, "
+                        "for example {{include step-05}}, {{include step-05.3}} or {{include step-05.3..step-05.6}}")
+        spans.append(span)
+    if any(first == 0 for _, first, _ in spans):
+        if len(spans) > 1:
+            return "", "includes a whole step and something more; a stop is one whole step, or moves of one step"
+        return spans[0][0], ""
+    if len({step for step, _, _ in spans}) > 1:
+        return "", "includes moves of more than one step; a stop is one whole step, or moves of one step"
+    for (_, _, last), (step, first, _) in itertools.pairwise(spans):
+        if first != last + 1:
+            gap = "leaves out a move" if first > last + 1 else "goes back, or takes a move twice"
+            return "", (f"{gap} at {step}.{first}: its includes must follow on, one move after another, as do mode makes them; "
+                        "start a new ## stop for moves after a gap")
+    step, first, last = spans[0][0], spans[0][1], spans[-1][2]
+    return (f"{step}.{first}" if first == last else f"{step}.{first}..{step}.{last}"), ""
+
+
+def split_section(
+    raw: str,  # A step's section of the notes, as written
+    step: str,  # The step
+) -> tuple[list[str], dict[str, list[str]]]:  # Its lines before the first move, and each move's lines, its heading first
+    "Cut a step's section into the text before its moves and the section of each move. Fenced code holds no heading."
+    before: list[str] = []
+    moves: dict[str, list[str]] = {}
+    now, fence = before, None
+    for line in raw.split("\n"):
+        mark = re.match(r"^\s*(```+|~~~+)", line)
+        if mark:
+            fence = mark.group(1)[0] if fence is None else (None if mark.group(1)[0] == fence else fence)
+        heading = re.match(rf"^###\s+({re.escape(step)}\.\d+)(\s|$)", line) if fence is None and not mark else None
+        if heading:
+            now = moves.setdefault(heading.group(1), [])
+        now.append(line)
+    return before, moves
+
+
+def expand_stop(
+    stop: OwnStop,  # A stop of a walk's own notes, whose includes make one place; see stop_range
+    shared: dict[str, dict],  # The shared notes, as parse_notes reads them
+) -> str:  # The stop as a section of notes: `## step Title`, its own text, and in place of each include the sections it names
+    """Put a stop's includes in its text: a move's include brings its `### step-05.3` section, and a whole step's brings
+    the step's text before its moves and every move's section. The walk's own text stays where it is written."""
+    spans = [include_span(entry) for _, entry in stop.includes]
+    step = spans[0][0]
+    before, moves = split_section(shared.get(step, {}).get("raw", ""), step)
+    included = iter(spans)
+    lines = [f"## {step} {stop.title}".rstrip()]
+    fence: str | None = None
+    for line in stop.body:
+        mark = re.match(r"^\s*(```+|~~~+)", line)
+        if mark:
+            fence = mark.group(1)[0] if fence is None else (None if mark.group(1)[0] == fence else fence)
+        if fence is not None or mark or not INCLUDE.match(line):
+            lines.append(line)
+            continue
+        _, first, last = next(included)
+        lines.append("")   # a blank line first, so the text above, a cue's blockquote or a paragraph, does not run on into it
+        if first == 0:
+            lines += [*before, *(line for name in moves for line in moves[name])]
+        else:
+            lines += [line for number in range(first, last + 1) for line in moves.get(f"{step}.{number}", [])]
+        lines.append("")
+    return "\n".join(lines).rstrip("\n") + "\n"
 
 
 def replace_section(
@@ -1255,14 +1395,10 @@ def replace_section(
 
 
 def intro_of(
-    intro: Path | None,  # The intro file of a walk of the table of contents, if it has one
-) -> dict[str, str]:  # Its Markdown for each mode, do and watch; empty if there is none, or it cannot be read
-    """Read a walk's intro, for the notes of its first stop: what a small walk leaves out, for example. Each mode keeps
+    text: str,  # The intro of a walk of the table of contents, in Markdown, or ""; see Walk.intro_text
+) -> dict[str, str]:  # Its Markdown for each mode, do and watch; empty if there is none
+    """Make a walk's intro, for the notes of its first stop: what a small walk leaves out, for example. Each mode keeps
     its own blocks, as in the notes, and the planned times go. Cues stay: the page hides them where it hides the notes'."""
-    try:
-        text = intro.read_text(encoding="utf-8") if intro else ""
-    except (OSError, UnicodeDecodeError):
-        text = ""
     if not text.strip():
         return {}
     blocks, lines = note_blocks(text), text.splitlines()
@@ -1662,9 +1798,10 @@ def content_marks(
     notes_path: Path | None,  # The notes file, if there is one
     slides_path: Path | None,  # The slides manifest, if there is one
     root: Path | None = None,  # The folder slides are served from; default: the manifest's folder
+    shared: Path | None = None,  # The shared notes that a walk's own notes include, if it has them
 ) -> tuple:  # Each file with its modification time and size
     "Fingerprint the notes, the manifest and every slide file it names, to see when one of them is edited."
-    files = [path for path in (notes_path, slides_path) if path is not None]
+    files = [path for path in (notes_path, slides_path, shared) if path is not None]
     if slides_path is not None and slides_path.is_file():
         base = root or slides_path.parent
         try:
@@ -1879,7 +2016,7 @@ def make_app(
     # With several walks, slides are served from the class folder, but only from the walks' slides folders: the
     # class folder also holds the notes, with their private cues, and the table of contents.
     slide_folders = [os.path.realpath(w.slides.parent) for w in walks if w.slides is not None]
-    private = {os.path.realpath(w.notes) for w in walks if w.notes is not None}  # never served, wherever they are
+    private = {os.path.realpath(path) for w in walks for path in (w.notes, w.shared) if path is not None}  # never served, wherever they are
 
     def slides_only(files: StaticFiles):
         "Serve a file of the class folder only if it lies in a slides folder of a walk."
@@ -1911,7 +2048,8 @@ def make_app(
                 "slide_moves": owners, "sync": synced(), "mode": showing["mode"], "done": showing["done"], "of": showing["of"],
                 "changes": changes_now(), "at": showing.get("at"),
                 "walk": {"id": active["walk"].id, "title": active["walk"].title, "kind": active["walk"].kind, "mode": active["walk"].mode,
-                         "description": active["walk"].description, "intro": intro_of(active["walk"].intro)} if active["walk"] else None,
+                         "description": active["walk"].description, "intro": intro_of(active["walk"].intro_text()),
+                         "own": active["walk"].shared is not None} if active["walk"] else None,
                 "walks": [{"id": w.id, "title": w.title, "kind": w.kind} for w in walks]}
 
     @guarded
@@ -2103,10 +2241,11 @@ def make_app(
         "The notes, read afresh, so the file can be edited while the class runs."
         if active["notes"] is None or not active["notes"].is_file():
             return {"notes": {}, "path": str(active["notes"]) if active["notes"] else None}
-        parsed = parse_notes(active["notes"].read_text(encoding="utf-8"))
-        tutorial = active["walk"] is not None and active["walk"].kind == "tutorial"
-        selects = bool(active["walk"] and active["walk"].select)
-        return {"notes": walk_notes(parsed, repo.steps, repo.moves, tutorial, selects), "path": str(active["notes"])}
+        walk = active["walk"]
+        own = walk.own_sections() if walk else None   # a walk with notes of its own reads the shared notes through its includes
+        parsed = parse_notes(active["notes"].read_text(encoding="utf-8")) if own is None else {}
+        tutorial = walk is not None and walk.kind == "tutorial"
+        return {"notes": walk_notes(parsed, repo.steps, repo.moves, tutorial, bool(walk and walk.select), own), "path": str(active["notes"])}
 
     @guarded
     async def save_notes(request: Request) -> dict:
@@ -2114,6 +2253,8 @@ def make_app(
         notes_file = active["notes"]
         if notes_file is None:
             raise GitError("this walk has no notes file to save to")
+        if active["walk"] is not None and active["walk"].shared is not None:
+            raise GitError(f"the notes of {active['walk'].title} are made from {notes_file.name} and the sections it includes; edit them in your editor")
         body = await request.json()
         began = next((w for w in walks if w.id == body.get("walk")), None)
         if active["walk"] is not None and body.get("walk") != active["walk"].id and (began is None or began.notes != active["notes"]):
@@ -2149,8 +2290,10 @@ def make_app(
         try:
             title = active["walk"].title if active["walk"] else repo.main.name
             walk = active["walk"]
-            data = await asyncio.to_thread(slides_pdf.make_pdf, active["slides"], active["notes"], title, False, None, active["root"],
-                                           walk.select if walk else None, not walk or walk.kind == "tutorial")
+            data = await asyncio.to_thread(slides_pdf.make_pdf, active["slides"], walk.shared if walk and walk.shared else active["notes"],
+                                           title, False, None, active["root"],
+                                           walk.select if walk else None, not walk or walk.kind == "tutorial",
+                                           walk.own_sections() if walk else None)
         except SystemExit as exc:
             return JSONResponse({"error": str(exc)}, status_code=500)
         except Exception as exc:  # a browser that fails to start, a page that fails to draw: say what happened
@@ -2319,7 +2462,8 @@ def make_app(
         "Watch the working copy for edits, and the notes and slides for changes, while the server runs."
         watchers = [asyncio.create_task(watch_edits(repo, hub, watch_every))]
         if any(w.notes or w.slides for w in walks) or active["notes"] is not None or active["slides"] is not None:
-            watchers.append(asyncio.create_task(watch_content(lambda: (active["notes"], active["slides"], active["root"]), hub, watch_every)))
+            watchers.append(asyncio.create_task(watch_content(lambda: (active["notes"], active["slides"], active["root"],
+                                                                           active["walk"].shared if active["walk"] else None), hub, watch_every)))
         try:
             yield
         finally:
@@ -2391,15 +2535,20 @@ def main() -> None:
     try:
         repo = Repo(args.repo.resolve(), tags=start.tags if start else args.tags, commits=args.commits, in_place=args.in_place,
                     discard=args.discard_edits, replay=args.replay)
+    except GitError as exc:
+        raise SystemExit(f"timewalk: {exc}") from None
+    try:
         if start is not None and (start.steps is not None or start.select or start.kind == "tutorial"):
             repo.select(start.tags, start.steps, tutorial=start.kind == "tutorial", select=start.select)
     except GitError as exc:
-        raise SystemExit(f"timewalk: {exc}") from None
+        from timewalk.walks import own_errors_text  # imported here: walks imports this module
+
+        raise SystemExit(f"timewalk: {own_errors_text(start, repo.main, root, exc)}") from None
     if args.discard_edits and repo.branch:
         print("timewalk: --discard-edits is no longer needed: a move keeps edits on a branch timewalk/saved/<place>, without asking")
     notes_path = args.notes.resolve() if args.notes else None
     slides_path = args.slides.resolve() if args.slides else None
-    for path in [notes_path, *(w.notes for w in walks)]:
+    for path in [notes_path, *(path for w in walks for path in (w.notes, w.shared))]:
         if path is not None and notes_inside(repo, path):
             raise SystemExit(f"timewalk: the notes file {path} is inside the repository or its replay copy. Keep the notes "
                              "outside it: a move would change them, or throw your edits away.")

@@ -28,6 +28,7 @@ starting; a warning is printed and does not.
 import argparse
 import dataclasses
 import fnmatch
+import itertools
 import os
 import re
 import subprocess
@@ -39,28 +40,33 @@ from pathlib import Path
 from timewalk import (
     FILES_ITEM,
     HOME,
+    INCLUDE,
     MODES,
     SHOW_LINE,
     GitError,
     code_span,
     expand_entry,
+    expand_stop,
     git,
     loose_match,
     name_status,
     note_blocks,
+    own_stops,
     parse_notes,
     pick_steps,
     replace_section,
+    select_entry,
     select_steps,
     shown_line,
     split_slides,
     step_moves,
+    stop_range,
     tag_steps,
     walk_notes,
 )
 
 KINDS = ("narrative", "tutorial")
-WALK_KEYS = ("id", "title", "description", "kind", "folder", "notes", "slides", "steps", "select", "intro", "tags", "setup", "sync", "moves", "loose")
+WALK_KEYS = ("id", "title", "description", "kind", "folder", "notes", "slides", "steps", "select", "intro", "tags", "setup", "sync", "moves", "loose", "shared")
 SLIDE_FILES = (".md", ".markdown", ".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".pdf", ".html")
 
 
@@ -83,6 +89,37 @@ class Walk:
     select: list[str | dict] | None = None  # Steps, moves and ranges of moves it takes from a bigger walk, in order; see timewalk.select_entry
     intro: Path | None = None  # What its copies say before the first step, in place of the text of the notes before it
     loose: list[str] = dataclasses.field(default_factory=list)  # In do mode, globs of the files to match loosely; see timewalk.loosely_same
+    shared: Path | None = None  # A walk with notes of its own: the notes its includes come from. Its select is made from its ## stops
+
+    def intro_text(
+        self,
+    ) -> str:  # Its intro, in Markdown; "" if it has none, or it cannot be read
+        "Read what the walk says before its first stop: the text of its own notes before the first ##, or its intro file."
+        try:
+            if self.shared is not None:
+                return own_stops(self.notes.read_text(encoding="utf-8"))[0] if self.notes else ""
+            return self.intro.read_text(encoding="utf-8") if self.intro else ""
+        except (OSError, UnicodeDecodeError):
+            return ""
+
+    def own_sections(
+        self,
+    ) -> list[str | None] | None:  # For each entry of its select, the section of the stop that walks that place now, or None; None for a walk without notes of its own
+        """Read a walk's own notes afresh, so they can be edited while the class runs, and put in the shared sections they include.
+        Each stop is found by the place it walks, so a stop added, taken out or changed since the walk was read never shows
+        another stop's text: its place shows nothing until timewalk starts again."""
+        if self.shared is None:
+            return None
+        try:
+            own, shared = self.notes.read_text(encoding="utf-8"), self.shared.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError, AttributeError):
+            return [None for _ in self.select or []]
+        parsed, found = parse_notes(shared), {}
+        for stop in own_stops(own)[1]:
+            place = stop_range(stop)[0]
+            if place and place not in found:
+                found[place] = expand_stop(stop, parsed)
+        return [found.get(select_entry(entry)[0]) for entry in self.select or []]
 
 
 class TocError(ValueError):
@@ -121,7 +158,7 @@ def load_toc(
         kind = entry.get("kind", "narrative")
         if kind not in KINDS:
             raise TocError(f"{where}: kind = {kind!r}; this version of timewalk knows only {', '.join(repr(k) for k in KINDS)}")
-        for key in ("title", "description", "folder", "notes", "slides", "intro", "tags", "setup"):
+        for key in ("title", "description", "folder", "notes", "slides", "intro", "tags", "setup", "shared"):
             if key in entry and not isinstance(entry[key], str):
                 raise TocError(f"{where}: {key} must be text in quotes")
         steps = entry.get("steps")
@@ -166,10 +203,46 @@ def load_toc(
         intro = toc.parent / entry["intro"] if "intro" in entry else None
         if intro is not None and not intro.is_file():
             raise TocError(f"{where}: its intro {entry['intro']} does not exist")
+        shared = toc.parent / entry["shared"] if "shared" in entry else None
+        if shared is not None:
+            select = own_select(where, kind, entry, notes, shared)
         walks.append(Walk(ident, entry.get("title", ident), kind, notes.resolve() if notes else None, slides.resolve() if slides else None,
                           entry.get("tags", "step-*"), steps, "manual", entry.get("sync", True), entry.get("moves", "do"),
-                          entry.get("description", "").strip(), folder.resolve() if folder else None, select, intro.resolve() if intro else None, loose))
+                          entry.get("description", "").strip(), folder.resolve() if folder else None, select, intro.resolve() if intro else None, loose,
+                          shared.resolve() if shared else None))
     return walks
+
+
+def own_select(
+    where: str,  # The table and the walk, for an error
+    kind: str,  # The walk's kind
+    entry: dict,  # The walk's table in toc.toml
+    notes: Path | None,  # Its own notes
+    shared: Path,  # The notes its includes come from
+) -> list[dict]:  # Its select: for each ## stop with an include, the place its includes make, and its title
+    """Make the select of a walk with notes of its own from its ## stops, each the place its includes make. A stop with no
+    include, or whose includes make no one place, is left out, and timewalk-check says why; the order of the stops is
+    checked against the history, there and when the walk starts."""
+    if kind != "tutorial":
+        raise TocError(f"{where}: shared is for a tutorial that walks part of a bigger one, with notes of its own; this walk is a {kind}")
+    for key, why in (("select", "its ## stops and their includes are its select"), ("steps", "its ## stops and their includes are its select"),
+                     ("intro", "its intro is the text of its notes before the first ## stop")):
+        if key in entry:
+            raise TocError(f"{where}: has shared and {key}; leave out {key}: {why}")
+    if notes is None:
+        raise TocError(f"{where}: has shared, but no notes of its own; add notes = \"walks/{entry.get('id', 'part')}/notes.md\"")
+    for label, path in (("notes", notes), ("shared notes", shared)):
+        if not path.is_file():
+            raise TocError(f"{where}: its {label} {path} do not exist")
+    try:
+        _, stops = own_stops(notes.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError) as error:
+        raise TocError(f"{where}: its notes {notes} cannot be read ({error})") from None
+    select = [{"range": place, "title": stop.title} for stop in stops if (place := stop_range(stop)[0])]
+    if not select:
+        raise TocError(f"{where}: {notes.name} has no ## stop whose {{{{include ...}}}} lines make a place to walk, so the walk has no steps; "
+                       "timewalk-check says what is wrong with each stop")
+    return select
 
 
 def steps_of(
@@ -228,6 +301,12 @@ def check_walk(
     warnings: list[str] = []
     used: set[Path] = set()
     name = f"walk {walk.id}"
+    if walk.shared is not None:
+        own_errors, own_warnings = own_problems(walk, main, root)
+        errors += [f"{name}: {problem}" for problem in own_errors]
+        warnings += [f"{name}: {problem}" for problem in own_warnings]
+        if own_errors:
+            return errors, warnings, used
     try:
         steps = steps_of(walk, main)
     except GitError as error:
@@ -259,23 +338,23 @@ def check_walk(
                 loose_match(path, blob_at(main, move.sha, path), blob_at(main, f"{move.sha}^", path)) for path in touched):
             warnings.append(f"{name}: {move.name} changes only what loose does not compare, such as versions, so do mode marks it "
                             "done before the learner makes it; take its files out of loose, or put the move with one that changes more")
-    for label, path in (("notes", walk.notes), ("slides", walk.slides)):
+    for label, path in (("notes", walk.notes), ("slides", walk.slides), ("shared notes", walk.shared)):
         if path is not None and any(inside(path, folder) for folder in (main, replay) if folder):
             errors.append(f"{name}: its {label}, {path}, are inside the repository or its replay copy; keep them in the class folder")
-    if walk.intro is not None and walk.intro.is_file():
+    if walk.intro is not None and walk.intro.is_file() and walk.shared is None:
         errors += [f"{name}: {walk.intro.name}:{line}: {problem}" for line, problem in cue_problems(walk.intro.read_text(encoding="utf-8"))]
     if walk.notes is not None:
         if not walk.notes.is_file():
             errors.append(f"{name}: the notes file {walk.notes} does not exist")
         else:
             text = walk.notes.read_text(encoding="utf-8")
-            sections = parse_notes(text)
+            sections = parse_notes(text if walk.shared is None else walk.shared.read_text(encoding="utf-8"))
             blocks = note_blocks(text)
             errors += [f"{name}: {walk.notes.name}:{line}: {problem}" for line, problem in blocks.errors]
             warnings += [f"{name}: {walk.notes.name}:{line}: {problem}" for line, problem in blocks.warnings]
             errors += [f"{name}: {walk.notes.name}:{line}: {problem}" for line, problem in cue_problems(text)]
             warnings += [f"{name}: {walk.notes.name}:{line}: {problem}" for line, problem in show_problems(text)]
-            if walk.kind == "tutorial" or not walk.select:   # a walk that selects shares notes that its tutorial checks
+            if (walk.kind == "tutorial" or not walk.select) and walk.shared is None:   # a walk that selects shares notes that its tutorial checks
                 warnings += [f"{name}: {walk.notes.name}: {problem}" for step, found in sections.items()
                              for problem in do_line_problems(step, found.get("parts", []), walk.kind == "tutorial")]
             if walk.kind != "tutorial" and not walk.select and "do" in blocks.mode:   # a walk that selects shares a tutorial's notes
@@ -283,7 +362,7 @@ def check_walk(
                 warnings.append(f"{name}: {walk.notes.name}:{line}: a narrative has no do mode, so its ::: do blocks never show; "
                                 "it shows the ::: watch blocks")
             if walk.select:
-                problems = selection_problems(walk, main, sections, taken, taken_moves, history)
+                problems = selection_problems(walk, main, sections, taken, taken_moves, history, root)
                 errors += [f"{name}: {problem}" for problem in problems[0]]
                 warnings += [f"{name}: {problem}" for problem in problems[1]]
             for section in sections if not walk.select else []:
@@ -357,6 +436,104 @@ def check_walk(
     return errors, warnings, used
 
 
+def own_problems(
+    walk: Walk,  # A walk with notes of its own
+    main: Path,  # The repository
+    root: Path,  # The class folder, which the messages name the files from
+) -> tuple[list[str], list[str]]:  # Errors and warnings
+    """Check a walk's own notes. Each include is a line of its own, outside a block, and names a step or moves of the
+    history; a stop's includes make one place, and the stops follow the history without taking a move twice. The walk's
+    own text has no files: list, do$ line or move heading, since its moves and their files come only from the shared notes,
+    and each stop, with what it includes, reads as notes do. Warn of a stop with no include, of a stop that leaves out the
+    commands, such as `$ just setup`, that its step runs at every Start, and of a stop that runs them twice."""
+    from timewalk.export import cue_problems  # here, as timewalk.export imports this module
+
+    errors, warnings = [], []
+    file, shared_file = os.path.relpath(walk.notes, root), os.path.relpath(walk.shared, root)
+    every = tag_steps(main, walk.tags)
+    found_moves = step_moves(main, every)
+    order = {step.name: (i, 0) for i, step in enumerate(every)} | {m.name: (i, k) for i, moves in enumerate(found_moves) for k, m in enumerate(moves, 1)}
+    text = walk.notes.read_text(encoding="utf-8")
+    blocks = note_blocks(text)
+    _, stops = own_stops(text)
+    shared = parse_notes(walk.shared.read_text(encoding="utf-8"))
+    last = None   # where the stop before ends in the history: (step, move), a whole step at its last move
+    for stop in stops:
+        missing = False
+        for line, entry in stop.includes:
+            if line - 1 < len(blocks.mode) and blocks.mode[line - 1]:
+                errors.append(f"{file}:{line}: {{{{include {entry}}}}} is inside a ::: {blocks.mode[line - 1]} block; "
+                              "an include brings moves for both modes, so put it outside the block")
+            first, _, end = entry.partition("..")
+            for named in filter(None, (first, end)):
+                kind = "move" if re.fullmatch(r".+\.\d+", named) else "step"   # as include_span reads it
+                if named not in order or (order[named][1] == 0) != (kind == "step"):
+                    errors.append(f"{file}:{line}: {{{{include {entry}}}}} names {named}, which is not a {kind} of the history")
+                    missing = True
+        fence = None
+        for at, line in enumerate(stop.body, stop.line + 1):
+            mark = re.match(r"^\s*(```+|~~~+)", line)
+            if mark:
+                fence = mark.group(1)[0] if fence is None else (None if mark.group(1)[0] == fence else fence)
+            if fence is not None or mark:
+                continue
+            if line.strip() == "files:":
+                errors.append(f"{file}:{at}: a files: list in the walk's own text; the files come with the moves that it includes")
+            elif re.match(r"^\s*do\$\s", line):
+                errors.append(f"{file}:{at}: a do$ line in the walk's own text; the command that makes a move comes with the move it includes")
+            elif re.match(r"^###\s+\S+\.\d+(\s|$)", line):
+                errors.append(f"{file}:{at}: a move's heading in the walk's own text; a move comes only from an include, "
+                              "for example {{include step-05.3}}")
+            elif "{{" in line and re.search(r"\{\{\s*include\b", line) and not INCLUDE.match(line):
+                errors.append(f"{file}:{at}: {line.strip()} is not an include line; write it alone on its line, as {{{{include step-05.3}}}}")
+        place, problem = stop_range(stop)
+        if not stop.includes:
+            warnings.append(f"{file}:{stop.line}: the stop ## {stop.title} {problem}")
+            continue
+        if not place:
+            errors.append(f"{file}:{stop.line}: the stop ## {stop.title} {problem}")
+            continue
+        if missing:
+            continue
+        first, _, end = place.partition("..")
+        span = (order[first], order[end or first]) if order[first][1] else ((order[first][0], 0), (order[first][0], len(found_moves[order[first][0]])))
+        if last is not None and span[0] <= last:
+            errors.append(f"{file}:{stop.line}: the stop ## {stop.title} includes {place}, which comes before the stop above it in the "
+                          "history, or takes a move it took; put the stops in the order of the history")
+        last = span[1]
+        section = expand_stop(stop, shared)
+        problems = note_blocks(section).errors + cue_problems(section)
+        for _, problem in dict.fromkeys(problems):
+            errors.append(f"the stop ## {stop.title} at {file}:{stop.line}, with the sections it includes from {shared_file}: {problem}")
+        step = first.rpartition(".")[0] if order[first][1] else first
+        parts = shared.get(step, {}).get("parts", [])
+        lead = [p["text"] for p in itertools.takewhile(lambda p: p["kind"] == "command", parts) if not p.get("makes")]
+        first_include = stop.includes[0][0] - stop.line - 1
+        runs = {p["text"] for p in parse_notes("## x\n" + "\n".join(stop.body[:first_include])).get("x", {}).get("commands", [])}
+        if not order[first][1]:   # a whole step brings the commands at its top with it
+            for command in (c for c in lead if c in runs):
+                warnings.append(f"{file}:{stop.line}: the stop ## {stop.title} runs {command} twice: it includes all of {step}, "
+                                f"whose section in {shared_file} runs it first; take $ {command} out of the stop")
+            continue
+        for command in (c for c in lead if c not in runs):
+            warnings.append(f"{file}:{stop.line}: the stop ## {stop.title} starts at a Start of {step}, and does not run "
+                            f"{command}, which the section of {step} in {shared_file} runs first; add $ {command} above its first include")
+    return errors, warnings
+
+
+def own_errors_text(
+    walk: Walk,  # A walk that timewalk could not take its steps from
+    main: Path,  # The repository
+    root: Path,  # The class folder
+    error: GitError,  # What select_steps said
+) -> str:  # What to tell the user: the errors in the walk's own notes, else the error itself
+    "Say a mistake in a walk's own notes as timewalk-check says it, and not as a mistake in a select that the user never wrote."
+    if walk.shared is None:
+        return str(error)
+    found = own_problems(walk, main, root)[0]
+    return f"walk {walk.id} has mistakes in its notes:\n" + "\n".join(f"  {line}" for line in found) if found else str(error)
+
+
 def selection_problems(
     walk: Walk,  # A walk with select
     main: Path,  # The repository
@@ -364,16 +541,17 @@ def selection_problems(
     taken: list,  # Its steps, from select_steps
     taken_moves: list[list],  # The moves of each
     history: set[str],  # The steps and moves of the whole history
+    root: Path | None = None,  # The class folder: a walk with notes of its own names its shared notes from it, as its own are often called notes.md too
 ) -> tuple[list[str], list[str]]:  # Errors and warnings
     """Check the notes of a walk that takes part of a bigger walk: each section it takes must be there, and the items and
     commands of each are checked as its readers see them. A section it does not take is checked with the whole walk."""
     errors, warnings = [], []
-    file = walk.notes.name
+    file = os.path.relpath(walk.shared, root) if walk.shared and root else (walk.shared or walk.notes).name
     tutorial = walk.kind == "tutorial"
     for section in sections:
         if section not in history:
             errors.append(f"{file} has a section ## {section}, which is not a step of the history")
-    view = walk_notes(sections, taken, taken_moves, tutorial, True)
+    view = walk_notes(sections, taken, taken_moves, tutorial, True, walk.own_sections())
     every = {m.name: m for found in step_moves(main, tag_steps(main, walk.tags)) for m in found}
     for step, found in zip(taken, taken_moves, strict=True):
         source = step.section or step.name
@@ -742,11 +920,13 @@ def notes_main() -> None:
         raise SystemExit(f"timewalk-notes: {error}") from None
     if walk is not None and walk.notes is None and walk.folder is not None:
         walk = dataclasses.replace(walk, notes=walk.folder / "notes.md")   # a walk's folder without notes yet: start them
+    if walk is not None and walk.shared is not None:
+        walk = dataclasses.replace(walk, notes=walk.shared)   # its moves' sections are in the shared notes, where it drafts them
     if walk is None or walk.kind != "tutorial" or walk.notes is None:
         raise SystemExit(f"timewalk-notes: {args.walk} is not a tutorial walk with a notes file or a folder in {args.toc}")
     text, added, drafts = add_move_sections(walk, main_repo, args.blocks)
     if not added:
-        print(f"timewalk-notes: every step and move has a section in {walk.notes.name}")
+        print(f"timewalk-notes: every step and move has a section in {os.path.relpath(walk.notes, args.toc.resolve().parent)}")
         return
     if args.write:
         if in_a_copy(walk.notes, main_repo):

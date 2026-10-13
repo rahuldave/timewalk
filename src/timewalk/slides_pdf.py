@@ -43,7 +43,7 @@ from starlette.responses import FileResponse, JSONResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from timewalk import HERE, load_slides, note_blocks, parse_notes, select_entry
+from timewalk import HERE, load_slides, note_blocks, parse_notes, select_entry, split_section
 
 COMMAND = re.compile(r"^\s*(main|runs[2-9]?|do)?\$\s+(.+)$")
 COLOUR = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$")
@@ -152,12 +152,13 @@ def deck_of(
     root: Path | None = None,  # The folder slides are named from; default: the manifest's folder
     select: list[str | dict] | None = None,  # A walk that takes part of a bigger one: its steps, moves and ranges of moves
     tutorial: bool = True,  # With select: whether the walk is a tutorial, whose steps have moves
+    own: list[str | None] | None = None,  # A walk with notes of its own: each stop's section, with its includes put in, or None
 ) -> dict:  # The deck: its title, its brand and, per step, the step's title, slides and notes
     "Describe the whole deck, step by step."
     parsed = parse_notes(notes.read_text(encoding="utf-8")) if notes and notes.is_file() else {}
     slides = load_slides(manifest, root) if manifest else {}
     if select:
-        stops = selected_stops(select, tutorial, parsed, slides, with_notes)
+        stops = selected_stops(select, tutorial, parsed, slides, with_notes, own)
         return {"title": title, "steps": stops, "brand": {k: v for k, v in brand.items() if k != "folder"} if brand else None}
     names = set(slides) | (set(parsed) if with_notes else set())
     # In step-name order, as timewalk orders the steps, so a step under [docs] falls among the [slides] steps.
@@ -166,37 +167,20 @@ def deck_of(
     return {"title": title, "steps": steps, "brand": {k: v for k, v in brand.items() if k != "folder"} if brand else None}
 
 
-def split_section(
-    raw: str,  # A step's section of the notes, as written
-    step: str,  # The step
-) -> tuple[list[str], dict[str, list[str]]]:  # Its lines before the first move, and each move's lines, its heading first
-    "Cut a step's section into the text before its moves and the section of each move. Fenced code holds no heading."
-    before: list[str] = []
-    moves: dict[str, list[str]] = {}
-    now, fence = before, None
-    for line in raw.split("\n"):
-        mark = re.match(r"^\s*(```+|~~~+)", line)
-        if mark:
-            fence = mark.group(1)[0] if fence is None else (None if mark.group(1)[0] == fence else fence)
-        heading = re.match(rf"^###\s+({re.escape(step)}\.\d+)(\s|$)", line) if fence is None and not mark else None
-        if heading:
-            now = moves.setdefault(heading.group(1), [])
-        now.append(line)
-    return before, moves
-
-
 def selected_stops(
     select: list[str | dict],  # The steps, moves and ranges of moves of a walk, in order; see timewalk.select_entry
     tutorial: bool,  # Whether the walk is a tutorial
     parsed: dict[str, dict],  # The notes, as parse_notes reads them
     slides: dict[str, list[str]],  # The slides of each step and move
     with_notes: bool,  # Print the notes of each stop
+    own: list[str | None] | None = None,  # A walk with notes of its own: each stop's section, with its includes put in, or None; it prints them
 ) -> list[dict]:  # Each stop of the walk: its name, title, slides and notes
     """Make the deck of a walk that takes part of a bigger one, from the names of its selection: a whole step, with its
     moves in a tutorial; a small step of some moves, with the setup commands at the top of its step; a narrative's stop
-    at a move. A stop with no slides of its own, nor of its moves, shows its step's."""
+    at a move. A stop with no slides of its own, nor of its moves, shows its step's. A walk with notes of its own prints
+    each stop's section of them."""
     out = []
-    for given in select:
+    for place, given in enumerate(select):
         entry, titled = select_entry(given)
         first, _, end = entry.partition("..")
         whole = not end and (first in parsed or not re.match(r"^.+\.\d+$", first))
@@ -204,9 +188,11 @@ def selected_stops(
         raw = parsed.get(step, {}).get("raw", "")
         before, moves = split_section(raw, step)
         if whole:
-            own = [f"{step}.{k}" for k in sorted(int(n.rsplit(".", 1)[1]) for n in slides if re.fullmatch(rf"{re.escape(step)}\.\d+", n))]
-            deck = slides.get(step, []) + ([s for name in own for s in slides[name]] if tutorial else [])
+            its_moves = [f"{step}.{k}" for k in sorted(int(n.rsplit(".", 1)[1]) for n in slides if re.fullmatch(rf"{re.escape(step)}\.\d+", n))]
+            deck = slides.get(step, []) + ([s for name in its_moves for s in slides[name]] if tutorial else [])
             text = raw if tutorial else "\n".join(before)
+            if own is not None:
+                text = (own[place] or "\n").split("\n", 1)[1] if place < len(own) else ""
             out.append({"name": step, "title": titled or parsed.get(step, {}).get("title", ""), "slides": deck,
                         "notes": notes_markdown(text) if with_notes and text.strip() else ""})
             continue
@@ -218,6 +204,8 @@ def selected_stops(
         heading = re.match(r"^###\s+\S+\s*(.*)$", moves.get(names[0], [""])[0])
         deck = [s for name in names for s in slides.get(name, [])] or slides.get(step, [])
         text = "\n".join([*lead, "", *chunks])
+        if own is not None:
+            text = (own[place] or "\n").split("\n", 1)[1] if place < len(own) else ""
         out.append({"name": names[0] if len(names) == 1 else f"{names[0]} to {names[-1]}",
                     "title": titled or (heading.group(1).strip() if heading and len(names) == 1 else ""),
                     "slides": deck, "notes": notes_markdown(text) if with_notes and text.strip() else ""})
@@ -347,10 +335,11 @@ def make_pdf(
     root: Path | None = None,  # The class folder, when a walk names slides from other slides folders; default: the manifest's folder
     select: list[str | dict] | None = None,  # A walk that takes part of a bigger one: its steps, moves and ranges of moves
     tutorial: bool = True,  # With select: whether the walk is a tutorial
+    own: list[str | None] | None = None,  # A walk with notes of its own: each stop's section, with its includes put in, or None
 ) -> bytes:  # The PDF
     "Make the whole PDF: draw it in a browser, copy in PDF pages, and join the parts in step order."
     look = load_brand(brand) if brand else None
-    deck = deck_of(manifest, notes, title, with_notes, look, root, select, tutorial)
+    deck = deck_of(manifest, notes, title, with_notes, look, root, select, tutorial, own)
     if not any(step["slides"] or step["notes"] for step in deck["steps"]):
         raise SystemExit("slides_pdf: there is nothing to print: no slides, and no notes")
     folder = root or (manifest.parent if manifest else None)
@@ -384,7 +373,7 @@ def main() -> None:
     parser.add_argument("--walk", help="with --toc: the id of the walk (default: the first)")
     args = parser.parse_args()
 
-    root, select, tutorial = None, None, True
+    root, select, tutorial, own = None, None, True, None
     if args.toc:
         from timewalk.walks import TocError, load_toc
 
@@ -397,9 +386,9 @@ def main() -> None:
         walk = next((w for w in walks if w.id == args.walk), None) if args.walk else walks[0]
         if walk is None:
             raise SystemExit(f"slides_pdf: {args.toc} has no walk called {args.walk}; it has {', '.join(w.id for w in walks)}")
-        args.manifest, args.notes, root = walk.slides, walk.notes, args.toc.resolve().parent
+        args.manifest, args.notes, root = walk.slides, walk.shared or walk.notes, args.toc.resolve().parent   # own notes come in through `own`
         args.title = args.title or walk.title
-        select, tutorial = walk.select, walk.kind == "tutorial"
+        select, tutorial, own = walk.select, walk.kind == "tutorial", walk.own_sections()
     elif args.walk:
         raise SystemExit("slides_pdf: --walk needs --toc")
     manifest = args.manifest.resolve() if args.manifest else None
@@ -409,7 +398,7 @@ def main() -> None:
     if manifest is None and not (notes and args.with_notes):
         raise SystemExit("slides_pdf: give a slides manifest, or --notes with --with-notes, or both")
     brand = args.brand.resolve() if args.brand else None
-    data = make_pdf(manifest, notes, args.title or (manifest or notes).parent.name, args.with_notes, brand, root, select, tutorial)
+    data = make_pdf(manifest, notes, args.title or (manifest or notes).parent.name, args.with_notes, brand, root, select, tutorial, own)
     output = (args.output or Path("build") / ("slides.pdf" if manifest else "notes.pdf")).resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_bytes(data)

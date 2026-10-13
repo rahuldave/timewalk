@@ -68,6 +68,9 @@ Keep the text of these headings. A link from another page uses each one as an an
 | walks.md | One notes file for several walks |
 | walks.md | The checks of a small walk |
 | walks.md | The copies of a small walk |
+| walks.md | A walk with notes of its own |
+| walks.md | The checks of a walk with notes of its own |
+| authoring.md | What a small walk needs |
 
 ## Glossary
 
@@ -120,7 +123,10 @@ only that page could not know it.
 | tutorial | A walk of tagged steps and the small commits between them |
 | move | One small commit of a step in a tutorial, named `step-NN.k`. Its notes are a `### step-NN.k` section |
 | Start | The place before the first move of a step, where the step starts. A whole step starts at the tag before it, and a small step at the commit before its first move |
-| small walk | A walk that names, with `select`, the steps and moves that it takes from a bigger walk |
+| small walk | A walk that takes some steps and moves from a bigger walk: with `select`, or with notes of its own |
+| notes of its own | The notes file of a small walk with `shared`: its intro, and a `## Title` section for each stop, with include lines |
+| shared notes | The notes of the big tutorial, named by `shared`, that the include lines of a walk with notes of its own take move sections from |
+| include line | A line `{{include step-NN.k}}`, `{{include step-NN}}` or `{{include step-NN.j..step-NN.k}}` in notes of its own. It puts in sections of the shared notes |
 | small step | A step of a small walk that holds one move, or a range of moves, of a step of the history. The page names it by its moves, for example "step-05.3 to step-05.6" |
 | stop | One place of a walk in the step bar: a step, a small step, or in a narrative a move |
 | do mode | The mode of a tutorial where the learner makes each move by hand from the notes, and marks it done. The code does not move |

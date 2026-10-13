@@ -12,8 +12,8 @@ To build a class with several walks, see [Build a class with several walks](buil
 [What a narrative and a tutorial need](authoring.md) lists what each kind of walk needs, as checklists.
 
 Try it on the demo. In a clone of timewalk, run `just demo-walks`. The demo has two walks. "The demo, step
-by step" has all five steps, and "Only the checks" has two of them. The class timewalk-test has seven
-walks, three of them tutorials. Two of its walks are small walks, taken out of its big tutorial.
+by step" has all five steps, and "Only the checks" has two of them. The class timewalk-test has nine
+walks, five of them tutorials. Four of its walks are small walks, taken out of its big tutorial.
 
 ![The step bar of timewalk-test in a tutorial: the walk menu, the label Tutorial, the switch between Do and Watch, and the row of moves](images/walks.png)
 
@@ -47,6 +47,7 @@ steps = ["step-01", "step-02", "step-05"]
 | `description` | Optional. What the walk is about, in a sentence or two. The status band shows it at the first step of the walk. See [The status band](page.md#the-status-band) |
 | `kind` | `"narrative"`: the tagged steps, and nothing between them. `"tutorial"`: the tagged steps, and the small commits between them. See [Tutorial walks](#tutorial-walks). Default: `"narrative"` |
 | `notes` | The notes file of the walk |
+| `shared` | Optional. In a tutorial with notes of its own, the notes of the big tutorial, where its include lines take the sections of its moves. Not with `select`, `steps` or `intro`. See [A walk with notes of its own](#a-walk-with-notes-of-its-own) |
 | `slides` | The slides manifest of the walk |
 | `folder` | A folder for the walk. Its notes are `notes.md`, and its manifest is `slides/slides.toml`, in this folder |
 | `steps` | Optional. Some of the steps, by name. Without it, the walk has every step. A tutorial cannot have `steps`. It takes `select` |
@@ -162,6 +163,7 @@ problem, and exits with code 1 when it finds an error.
 | An entry of `loose` that no move of the walk changes | A warning |
 | A public cue, for example `> Try:`, in the blockquote of a private cue, for example `> Say:`, in the notes or in the intro file of a walk | An error |
 | A slide file in a slides folder that no walk uses | A warning |
+| In a walk with notes of its own, a mistake in its stops or its include lines | An error or a warning. See [The checks of a walk with notes of its own](#the-checks-of-a-walk-with-notes-of-its-own) |
 
 A picture that a Markdown slide shows counts as used.
 
@@ -709,7 +711,7 @@ Each copy is for one mode. It changes the notes in these ways:
 
 The text of the notes before the first step goes first, under the title. `--no-opening` leaves it out.
 `--intro` puts a Markdown file of your own before it. The key `intro` of the walk in `toc.toml` takes the
-place of the text of the notes before the first step.
+place of the text of the notes before the first step. So does the intro of a walk with notes of its own.
 
 ### The Markdown files
 
@@ -776,7 +778,7 @@ intro = "walks/linting/intro.md"               # what the walk says at its first
 select = ["step-04.1..step-04.7", "step-04.9..step-04.10", { range = "step-05.3..step-05.6", title = "Types" }, "step-10.3"]
 ```
 
-The class timewalk-test has two small walks, `small` and `story`. Open them with `just present small`
+The class timewalk-test has two small walks with `select`, `small` and `story`. Open them with `just present small`
 and `just present story`.
 
 ### What select names
@@ -970,6 +972,206 @@ that the page shows for it.
 
 A topic is a label on moves, for example `topic = "lint"`, that would make a walk of every move with
 that label. timewalk does not have topics. For now, write the list of moves in `select`.
+
+## A walk with notes of its own
+
+A small walk with `select` shows the sections of the big tutorial as they are. It has no text of its own
+between its stops. A walk with notes of its own has a notes file of its own, with its own words at each
+stop. It takes the sections of its moves from the notes of the big tutorial, the shared notes. So each
+section of a move is still written once.
+
+Use notes of its own when the walk needs words that the big tutorial does not have:
+
+- text at a stop, before its moves, between them or after them
+- what the walk leaves out since the stop before, for example "this walk skips the types"
+- a recap after the moves of a stop, for example what three tests now say
+
+For a walk that needs none of these, `select` and `intro` are enough. See
+[What a small walk needs](authoring.md#what-a-small-walk-needs).
+
+Only a tutorial can have notes of its own. In `toc.toml`, give the walk two notes files:
+
+```toml
+[[walk]]
+id = "testing"
+title = "The tests of tally, with notes of its own"
+description = "A small tutorial with its own words at each stop: what it leaves out, and what the moves did."
+kind = "tutorial"
+notes = "walks/testing/notes.md"    # its own notes: an intro, and a ## stop for each place, with its includes
+shared = "walks/tutorial/notes.md"  # the notes that its {{include ...}} lines take move sections from
+slides = "walks/tutorial/slides/slides.toml"
+```
+
+| Key | Holds |
+|---|---|
+| `notes` | The notes of the walk itself: its intro, and a `##` section for each stop |
+| `shared` | The notes of the big tutorial. The include lines of the walk take move sections from this file |
+
+Both files must exist. A walk with `shared` cannot have `select`, `steps` or `intro`. timewalk does not
+start after either mistake. The stops of its notes take the place of `select`, and the text before its first stop takes the
+place of `intro`. A walk with `select` and no `shared` works as before.
+
+The class timewalk-test has two such walks. Open them with `just present testing` and `just present finish`:
+
+- **`testing`** has two stops of moves, each with `$ just setup`, and text between and after its includes.
+- **`finish`** has a stop with a whole step, `{{include step-04}}`, and a stop of one move after a gap,
+  `{{include step-05.3}}`. Its own text has a block `::: do` and a block `::: watch`.
+
+### The notes of the walk itself
+
+```markdown
+This walk takes only the tests of tally. It starts after step-01, where tally can count the words of a
+text. It leaves out the formatting, the types and the report.
+
+## Three tests of counting
+
+$ just setup
+
+tally counts words already: step-01 made the function `count` and the command. This walk starts there.
+
+{{include step-02.1}}
+
+The first test is the pattern for the next two. A test gives `count` a text, and compares what it gives back.
+
+{{include step-02.2..step-02.3}}
+
+Three tests now say what `count` does: it counts words, it gives nothing for an empty text, and it ignores case.
+
+## A test of the most common words
+
+$ just setup
+
+Since the last stop, the walk leaves out step-03 and step-04. They add ruff, the corpus, the types and a
+docstring, and they change no test. This stop starts with their code.
+
+{{include step-05.1}}
+```
+
+The file has these parts:
+
+- **The text before the first `##` is the intro of the walk.** The notes column shows it at the first stop,
+  under "About this walk", as it shows an `intro` file. The copies of `timewalk-export` put it first,
+  without its cues. See [The intro of a walk](#the-intro-of-a-walk).
+- **Each `## Title` starts a stop.** The words after `##` are the title of the stop. A stop has no step name
+  in its heading. Its includes give its place. A stop of one move with an empty heading, `##`, shows the
+  title of the move.
+- **An include line puts in sections of the shared notes.** It is a line of its own, for example
+  `{{include step-02.1}}`. The page shows the sections in place of the line. Each include starts after a
+  blank line, so a cue or a paragraph just above it never takes in the included text.
+- **The rest is the text of the walk.** It can hold prose, cues, commands such as `$ just setup`, and
+  blocks `::: do` and `::: watch`.
+
+A line in fenced code is never a heading or an include. The text of the walk cannot have a `files:` list,
+a `do$` line, or a move heading such as `### step-05.3`. The moves and their files come only from the
+includes. An include cannot be in a block `::: do` or `::: watch`, because it brings moves for both modes.
+`timewalk-check` gives an error for each of these lines.
+
+### What an include takes
+
+| Include | Example | Puts in |
+|---|---|---|
+| A step | `{{include step-04}}` | The whole step: the text of its section before its moves, and the section of each move |
+| A move | `{{include step-05.3}}` | The section of the move, `### step-05.3` |
+| A range of moves | `{{include step-05.3..step-05.6}}` | The sections of the moves from the first to the last. Both moves are in one step |
+
+An include reads a name that ends in a dot and a number as a move. So an include cannot take a whole step whose tag
+ends that way, such as `v1.1.0`. Give such a walk `select`.
+
+The includes of a stop make one place of the history. These rules apply:
+
+- **A stop is one whole step, or moves of one step that follow on.** Do mode makes the moves one at a time
+  from the **Start**, so a stop cannot leave out a move. For moves after a gap, start a new stop.
+- **A stop can have several includes, with its own text between them and after them.** Text after an
+  include comes after that move, and the page shows it with that move.
+- **A whole step is alone in its stop.** A stop with `{{include step-04}}` has no other include.
+- **The stops follow the order of the history.** A stop does not take a move that a stop before it took.
+  timewalk compares places by the history, and not by the names of the tags. So `step-9` before `step-10`
+  is in order.
+
+From the includes of each stop, timewalk makes an entry of `select`, with the place and the title of the
+stop. The walk `testing` above is the same as `select = [{ range = "step-02.1..step-02.3", title = "Three
+tests of counting" }, { range = "step-05.1", title = "A test of the most common words" }]`. So everything
+works as for a small walk:
+
+- The **Start** of a stop of moves is the commit before its first move. The **Start** of a whole step is
+  the tag before it. See [The Start of a small step](#the-start-of-a-small-step).
+- Do mode and watch mode work as in the big tutorial.
+- The slides follow [Slides of a small walk](#slides-of-a-small-walk).
+- `timewalk-export` writes the copies of the walk, with its own text. See
+  [The copies of a small walk](#the-copies-of-a-small-walk).
+- `timewalk-pdf --with-notes` prints the section of each stop, its own text and its includes.
+
+### The commands at the Start of a stop
+
+A small walk with `select` puts the commands at the top of a step's section, for example `$ just setup`,
+at the **Start** of each small step. A walk with notes of its own does not. Write them in the stop itself,
+above its first include, as the example does.
+
+An include of a whole step brings these commands with it, in the text of the step before its moves.
+`timewalk-check` warns of a stop of moves that leaves out a command that the section of its step runs
+first. Without its line `$ just setup`, the first stop of `testing` gives this warning:
+
+```
+warning: walk testing: walks/testing/notes.md:7: the stop ## Three tests of counting starts at a Start of step-02, and does not run just setup, which the section of step-02 in walks/tutorial/notes.md runs first; add $ just setup above its first include
+```
+
+A stop that includes a whole step, and also runs one of the first commands of that step, runs the command
+twice. `timewalk-check` warns of it. Take the command out of the stop.
+
+### The checks of a walk with notes of its own
+
+timewalk reads `toc.toml` when it starts. These mistakes stop it there:
+
+- `shared` in a narrative, or `shared` with `select`, `steps` or `intro`.
+- A walk with `shared` and no `notes`, or a file of the two that does not exist.
+- A notes file with no `##` stop whose includes make a place. The message tells you to run
+  `timewalk-check`, which says what is wrong with each stop.
+
+`timewalk-check` gives each of these mistakes as an error, one for each stop. The other stops of the walk
+stay. timewalk does not start while the checks find an error.
+
+- A line that looks like an include but is not one, for example `{{ include: step-05.3 }}`. Write an
+  include alone on its line, as `{{include step-05.3}}`.
+- An include in a block `::: do` or `::: watch`.
+- An include that names a step or a move that is not in the history.
+- A stop whose includes are not one of the forms, or leave out a move, or go back.
+- A stop whose includes take moves of two steps, or join a whole step with more.
+- Stops out of the order of the history, or two stops that take one move.
+- A `files:` list, a `do$` line or a move heading in the text of the walk.
+- A stop that fails the checks of blocks and cues, read together with what it includes. These checks are
+  the same as for any notes. For example, a block `::: watch` must not open above an include and close
+  after it.
+
+The messages name each file by its path from the class folder, for example `walks/testing/notes.md` and
+`walks/tutorial/notes.md`. Both files often have the name `notes.md`.
+
+`timewalk-check` gives these warnings:
+
+- A stop with no include. The walk leaves it out, as it has no place in the history.
+- A stop of moves that leaves out the commands at the top of its step's section.
+- A stop that includes a whole step, and runs one of the first commands of that step itself.
+
+See [The commands at the Start of a stop](#the-commands-at-the-start-of-a-stop).
+
+The shared notes are checked as the notes of a small walk are. A move section that a stop includes and
+the shared notes do not have is an error. See [The checks of a small walk](#the-checks-of-a-small-walk).
+
+### Edit the notes of a walk with notes of its own
+
+The page reads both files again when one of them changes, so an edit of the words shows in every window.
+The page finds the text of each stop by the place that the stop walks. timewalk makes the places of the
+walk only when it starts, as it reads `select` in `toc.toml`. So restart timewalk after you add or remove a
+stop, or change its includes or its title. Until the restart, a place whose stop changed shows no notes. It
+never shows the text of another stop.
+
+The notes column has no **✎ Edit** button for such a walk, and the server refuses **Save**. Each section of
+the page comes from two files. Edit them in your editor.
+
+timewalk never serves either file. Both must be outside your repository and its replay copy, as every notes
+file must. See [Where the notes file goes](notes.md#where-the-notes-file-goes).
+
+`timewalk-notes --walk testing --write` drafts the move sections that the walk includes and the shared notes
+do not have yet. It writes them into the shared notes. See [Draft the notes of the moves](#draft-the-notes-of-the-moves).
 
 ## A PDF of one walk
 

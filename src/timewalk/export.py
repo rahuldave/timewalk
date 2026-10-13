@@ -27,7 +27,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 from timewalk import GitError, Move, Step, code_span, git, note_blocks, pick_steps, select_steps, shown_line, step_moves, tag_steps
-from timewalk.walks import TocError, Walk, in_a_copy, inside, load_toc
+from timewalk.walks import TocError, Walk, in_a_copy, inside, load_toc, own_errors_text
 
 MADE = "Made by timewalk-export from the notes of the walk. Do not edit it by hand: run timewalk-export again."
 OLD_MADE = "Made by timewalk-tutorial from the notes of the walk. Do not edit it by hand: run timewalk-tutorial again."   # its line before it was renamed
@@ -259,18 +259,21 @@ def build(
     diff: Callable[[str, str, str], str] | None = None,  # The change of a file from one commit to another; None shows no changes
     watch: bool = False,  # For a reader who watches: a do$ line is what the move ran; see render
     tutorial: bool = False,  # A tutorial: a whole step with moves, like a small step, stands first on its Start
+    own: list[Source | None] | None = None,  # A walk with notes of its own: each stop's section, with its includes put in, or None, in place of `sources`
 ) -> list[Section]:  # The stops, each with its text and its links
     """Make each stop of the walk from the sections of the notes: a whole step is its section; a small step is the
     commands at the top of its step's section, such as `$ just setup`, and its moves; a narrative's stop is the text of a
     step before its first move, or one move's section. In a tutorial every stop with moves links first to the code at its Start, as
-    the page stands it there, and a whole step then to the code at its tag, after its moves."""
+    the page stands it there, and a whole step then to the code at its tag, after its moves. A stop of a walk with notes
+    of its own is its section of them, with all of its own text."""
     starts = {**(history_starts or {}), **{step.name: step.start or (steps[i - 1].sha if i else "") for i, step in enumerate(steps)}}
     shas = {**(history or {}), **{step.name: step.sha for step in steps}, **{m.name: m.sha for found in moves for m in found}}
     out = []
-    for step, found in zip(steps, moves, strict=True):
-        source = sources.get(step.section or step.name)
+    for at, (step, found) in enumerate(zip(steps, moves, strict=True)):
+        source = sources.get(step.section or step.name) if own is None else own[at] if at < len(own) else None
         if source is None:
-            warnings.add(f"the notes have no section ## {step.section or step.name}, which {step.name} takes")
+            warnings.add(f"the notes have no section ## {step.section or step.name}, which {step.name} takes" if own is None else
+                         f"no stop of the walk's own notes walks {step.name} now, as it did when the walk was read; run timewalk-check")
             source = Source("", [], {})
         names = [m.name for m in found] or ([step.name] if step.section else [])
         if step.section and found:   # a small step of a tutorial stands first on its Start
@@ -281,7 +284,7 @@ def build(
         else:   # a step at its tag; a narrative's stop at a move, at the move's commit
             link = f"[The code at {step.name}]({url}/tree/{step.sha if step.section else quote(step.name)})"
         body: list[tuple[str, str | None]] = [(link, None), ("", None)]
-        body += render(lead(source.before) if step.section else source.before, step.name, url, shas, starts, diff, watch)
+        body += render(lead(source.before) if step.section and own is None else source.before, step.name, url, shas, starts, diff, watch)
         section = Section(step.name, source.title, "", [])
         for name in names:
             if name not in source.moves:
@@ -630,13 +633,13 @@ def main() -> None:
             steps = pick_steps(tag_steps(main_repo, walk.tags), walk.steps)
             moves = step_moves(main_repo, steps) if tutorial else [[] for _ in steps]
     except GitError as error:
-        raise SystemExit(f"timewalk-export: {error}") from None
+        raise SystemExit(f"timewalk-export: {own_errors_text(walk, main_repo, args.toc.resolve().parent if args.toc else main_repo, error)}") from None
     if not steps:
         raise SystemExit(f"timewalk-export: no tags match {walk.tags!r} in {main_repo}")
     every = tag_steps(main_repo, walk.tags)
     history = {**{s.name: s.sha for s in every}, **{m.name: m.sha for found in step_moves(main_repo, every) for m in found}}
     history_starts = {s.name: every[i - 1].sha for i, s in enumerate(every) if i}
-    text = walk.notes.read_text(encoding="utf-8")
+    text = (walk.shared or walk.notes).read_text(encoding="utf-8")   # a walk with notes of its own reads them through own_sections
     url = github_url(main_repo, args.github)
     warned: set[str] = set()
 
@@ -658,17 +661,24 @@ def main() -> None:
     except NotesError as error:
         raise SystemExit(f"timewalk-export: {walk.notes}: {error}") from None
     intros = []
-    for path in (args.intro, walk.intro):
+    for path, written in ((args.intro, args.intro.read_text(encoding="utf-8") if args.intro else ""),
+                          (walk.notes if walk.shared else walk.intro, walk.intro_text())):
         try:
-            intros.append(public_text(path.read_text(encoding="utf-8")) if path else "")
+            intros.append(public_text(written))
         except NotesError as error:
             raise SystemExit(f"timewalk-export: {path}: {error}") from None
+    own_texts = walk.own_sections()
+    try:   # a walk with notes of its own: each stop's section in each mode, its own text and the sections it includes
+        owns = None if own_texts is None else {mode: [next(iter(read_sections(for_mode(text, mode))[2].values())) if text else None for text in own_texts]
+                                               for mode in (None, *(["do", "watch"] if tutorial else ["watch"]))}
+    except NotesError as error:
+        raise SystemExit(f"timewalk-export: {walk.notes} or {walk.shared}: {error}") from None
     named, opening, sources = read_sections(texts[None])
-    for name in sources:
+    for name in sources if owns is None else []:
         if name not in history:
             warned.add(f"the notes have ## {name}, which is not a step of the history; it is left out")
     title = args.title or (walk.title if walk.select or not named else named) or "Tutorial"
-    head = "\n\n".join(part.strip() for part in [intros[0], intros[1] if walk.intro else "" if args.no_opening else opening]
+    head = "\n\n".join(part.strip() for part in [intros[0], intros[1] if walk.intro or walk.shared else "" if args.no_opening else opening]
                          if part.strip())
     modes: list[str | None] = ["do", "watch"] if tutorial else [None]
     plan: list[tuple[Path, dict[str, str], list[str]]] = []
@@ -676,12 +686,12 @@ def main() -> None:
         files = {}
         for mode in modes:
             found = build(read_sections(texts[mode or "watch"])[2], steps, moves, url, 3, warned, history, history_starts, diff, mode != "do",
-                          tutorial)
+                          tutorial, owns and owns[mode or "watch"])
             files[FILE_NAME[mode] if mode else "TUTORIAL.md"] = markdown_file(mode, title, head, found)
         plan.append((args.markdown, files, ["TUTORIAL-do.md", "TUTORIAL-watch.md", "TUTORIAL.md"]))
     if args.site:
         by_mode = {mode: build(read_sections(texts[mode or "watch"])[2], steps, moves, url, 2, warned, history, history_starts, diff, mode != "do",
-                                  tutorial)
+                                  tutorial, owns and owns[mode or "watch"])
                    for mode in modes}
         plan.append((args.site, site_files(title, head, by_mode, args.quarto), ["watch/*.qmd", "do/*.qmd", "*.qmd"]))
     for warning in sorted(warned):

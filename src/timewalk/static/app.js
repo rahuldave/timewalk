@@ -1276,7 +1276,8 @@ function drawNotes() {
     title.append(name, " " + (mine?.title || here.subject));
     title.title = `${here.name} ${mine?.title || here.subject}`;   // the whole title, when the column cuts it
   } else title.textContent = "between steps";
-  $("notes-edit").hidden = !!ui.editing || !here || !!mine?.derived;   // a small step's notes are edited in the step they come from
+  // a small step's notes are edited in the step they come from; a walk's own notes, in an editor, as they are made from two files
+  $("notes-edit").hidden = !!ui.editing || !here || !!mine?.derived || !!ui.state.walk?.own;
   // The prose and the commands, in the order of the notes file: each command is a button where it is written.
   const box = $("notes");
   box.replaceChildren();

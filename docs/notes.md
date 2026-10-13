@@ -48,6 +48,7 @@ main$ git log --oneline
 | `::: do` | In a tutorial walk: opens a block for do mode. The page shows the lines up to the next `:::` only in do mode. See [Do mode and watch mode](walks.md#do-mode-and-watch-mode) |
 | `::: watch` | The same, for watch mode. A narrative shows the `watch` blocks |
 | `:::` | Closes a block. A block holds no heading and no other block |
+| `{{include step-NN.k}}` | Only in the notes of a walk with notes of its own: puts in a move section of the shared notes. See [A walk with notes of its own](walks.md#a-walk-with-notes-of-its-own) |
 | other lines | Markdown text to read |
 
 timewalk shows every line of the notes, cues included. If some cues are only for you, remove them from the
@@ -169,6 +170,9 @@ them.
 Every window shows the new notes at once. If somebody changed the same section in the file after you
 clicked **✎ Edit**, timewalk refuses to save, so that it does not overwrite their change. Copy your text,
 reload the page, and edit again.
+
+A walk with notes of its own has no **✎ Edit** button. Its sections come from two files, so edit them in
+your editor. See [A walk with notes of its own](walks.md#edit-the-notes-of-a-walk-with-notes-of-its-own).
 
 ![The notes of step-02 in the text box, ready to save](images/notes-edit.png)
 

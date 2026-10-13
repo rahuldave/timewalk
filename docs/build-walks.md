@@ -4,9 +4,9 @@ This page builds a class kit with several walks, from the history of the project
 is one path through the history, with its own notes and slides. [Several walks](walks.md) describes each
 part in detail. Here the parts come together, in the order that you make them.
 
-The repository timewalk-test, at github.com/rahuldave/timewalk-test, is a complete example. It has seven
+The repository timewalk-test, at github.com/rahuldave/timewalk-test, is a complete example. It has nine
 walks. Three are narratives, on every step, on some steps and on tags of its own. Two are tutorials, and
-two are small walks taken out of the big tutorial. Clone it and run `just present` to see each feature.
+four are small walks taken out of the big tutorial. Two small walks, `testing` and `finish`, have notes of their own. Clone it and run `just present` to see each feature.
 
 Its README is a tour. [What a narrative and a tutorial need](authoring.md) gives the same demands as
 checklists.

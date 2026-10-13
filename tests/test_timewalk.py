@@ -3085,11 +3085,11 @@ def test_the_intro_keeps_its_modes_blocks_and_drops_its_times(tmp_path: Path) ->
     "The page gets the intro once for each mode, with that mode's blocks, without the fences and the planned times."
     intro = tmp_path / "intro.md"
     intro.write_text("Both.\n\n::: do\nDO ONLY\n:::\n\n::: watch\nWATCH ONLY\n:::\n\ntime: 1:30\n\n```\ntime: 2:00\n```\n> Say: a cue\n")
-    found = timewalk.intro_of(intro)
+    found = timewalk.intro_of(intro.read_text())
     assert "DO ONLY" in found["do"] and "WATCH ONLY" not in found["do"] and "WATCH ONLY" in found["watch"]
     assert ":::" not in found["do"] + found["watch"] and "time: 1:30" not in found["do"]
     assert "time: 2:00" in found["do"] and "> Say: a cue" in found["do"], "code stays, and cues are hidden by the page"
-    assert timewalk.intro_of(None) == {} and timewalk.intro_of(tmp_path / "gone.md") == {}
+    assert timewalk.intro_of("") == {} and timewalk.intro_of("\n  \n") == {}
 
 
 def test_a_titled_whole_step_without_notes_and_titles_in_the_copies(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
@@ -3189,3 +3189,219 @@ def test_a_do_line_makes_the_move_runs_in_do_mode_and_is_shown_in_watch_mode(tut
     parsed = timewalk.parse_notes((tutorial_class / "notes.md").read_text())
     start = timewalk.walk_notes(parsed, steps, moves, True, True)["step-01.2 to step-01.3"]["parts"]
     assert [p["text"] for p in start if p["kind"] == "command"][:1] == ["just setup"], "a do$ line before the moves joins no Start"
+
+
+SHARED_NOTES = ("# The whole\n\nThe opening.\n\n## step-00 Start\n\n## step-01 Three moves\n\n$ just setup\n\nAbout all three.\n\n"
+                "### step-01.1 A\nmove a\n$ ls\n\n### step-01.2 B\nmove b\n$ ls\n\n### step-01.3 C\nmove c\n$ ls\n\n## step-02 D\n\nThe last.\n")
+OWN_NOTES = ("This walk leaves out step-01.1.\n\n> Say: a cue in the intro\n\n## The middle two\n\n$ just setup\n\n"
+             "We skipped step-01.1, which makes a.\n\n{{include step-01.2}}\n\nBetween the two.\n\n::: do\nDO ONLY\n:::\n\n"
+             "{{include step-01.3}}\n\nSo far: b and c.\n\n## The end\n\n{{include step-02}}\n\nRecap of D.\n")
+
+
+def own_walk(
+    folder: Path,  # A class folder
+    own: str = OWN_NOTES,  # The walk's own notes
+    extra: str = "",  # More lines for the walk's table in toc.toml
+) -> Path:  # Its toc.toml, with a walk "own" whose notes include sections of the shared notes.md
+    "Write a class folder with shared notes and a walk with notes of its own."
+    (folder / "notes.md").write_text(SHARED_NOTES)
+    (folder / "walks" / "own").mkdir(parents=True, exist_ok=True)
+    (folder / "walks" / "own" / "notes.md").write_text(own)
+    toc = folder / "toc.toml"
+    toc.write_text(f'[[walk]]\nid = "own"\ntitle = "Own"\nkind = "tutorial"\nnotes = "walks/own/notes.md"\nshared = "notes.md"\n{extra}')
+    return toc
+
+
+def test_a_walk_with_its_own_notes_makes_its_stops_from_them(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
+    "Each ## stop is a place of the walk under its title; its text stays around the move sections that it includes."
+    from timewalk.walks import load_toc
+
+    walk = load_toc(own_walk(tutorial_class))[0]
+    assert walk.select == [{"range": "step-01.2..step-01.3", "title": "The middle two"}, {"range": "step-02", "title": "The end"}]
+    assert walk.intro_text().startswith("This walk leaves out step-01.1.") and "## " not in walk.intro_text()
+    first, second = walk.own_sections()
+    order = ["We skipped step-01.1", "### step-01.2 B", "move b", "Between the two.", "DO ONLY", "### step-01.3 C", "move c", "So far: b and c."]
+    assert [first.index(text) for text in order] == sorted(first.index(text) for text in order)
+    assert "move a" not in first and "About all three." not in first and "{{include" not in first
+    assert "The last." in second and second.index("The last.") < second.index("Recap of D.")
+    tutorial.select("step-*", None, tutorial=True, select=walk.select)
+    shown = timewalk.walk_notes({}, tutorial.steps, tutorial.moves, True, True, walk.own_sections())
+    stop = shown["step-01.2 to step-01.3"]
+    assert stop["title"] == "The middle two" and stop["derived"] and [c["text"] for c in stop["commands"]] == ["just setup", "ls", "ls"]
+    assert [p["name"] for p in stop["parts"] if p["kind"] == "move"] == ["step-01.2", "step-01.3"]
+    assert shown["step-02"]["title"] == "The end" and "Recap of D." in shown["step-02"]["text"]
+
+
+def test_a_stops_includes_make_one_place(tutorial_class: Path) -> None:
+    "Includes follow on inside one step; a stop with none is left out; the forms and their mistakes are read as written."
+    stop = timewalk.OwnStop("x", 1, [], [(2, "step-01.1"), (4, "step-01.2..step-01.3")])
+    assert timewalk.stop_range(stop) == ("step-01.1..step-01.3", "")
+    assert timewalk.stop_range(timewalk.OwnStop("x", 1, [], [(2, "step-01.2")])) == ("step-01.2", "")
+    assert "leaves out a move" in timewalk.stop_range(timewalk.OwnStop("x", 1, [], [(2, "step-01.1"), (3, "step-01.3")]))[1]
+    assert "goes back" in timewalk.stop_range(timewalk.OwnStop("x", 1, [], [(2, "step-01.2"), (3, "step-01.2")]))[1]
+    assert "more than one step" in timewalk.stop_range(timewalk.OwnStop("x", 1, [], [(2, "step-01.3"), (3, "step-02.1")]))[1]
+    assert "whole step and something more" in timewalk.stop_range(timewalk.OwnStop("x", 1, [], [(2, "step-01"), (3, "step-02.1")]))[1]
+    assert "is not a step, a move" in timewalk.stop_range(timewalk.OwnStop("x", 1, [], [(2, "step-01.3..step-01.1")]))[1]
+    assert timewalk.stop_range(timewalk.OwnStop("x", 1, [], []))[0] == ""
+    intro, stops = timewalk.own_stops("Intro\n\n## A\n\n```\n{{include step-01.1}}\n## not a stop\n```\n\n{{include step-01.2}}\n### Why\n")
+    assert intro == "Intro" and [s.title for s in stops] == ["A"] and stops[0].includes == [(10, "step-01.2")], "fenced code holds neither"
+
+
+@pytest.mark.parametrize("own, extra, says", [
+    (OWN_NOTES, 'select = ["step-01"]\n', "leave out select"),
+    (OWN_NOTES, 'intro = "notes.md"\n', "leave out intro"),
+    ("Only an intro.\n## A\nNo include.\n", "", "has no ## stop whose"),
+    ("## A\n{{include step-01.3..step-01.1}}\n", "", "has no ## stop whose"),
+])
+def test_a_walk_with_its_own_notes_and_a_mistake_says_which(tutorial_class: Path, own: str, extra: str, says: str) -> None:
+    "A walk with no place to walk, or keys that its own notes replace, stops timewalk at the start."
+    from timewalk.walks import TocError, load_toc
+
+    with pytest.raises(TocError, match=says):
+        load_toc(own_walk(tutorial_class, own, extra))
+
+
+def test_shared_is_for_a_tutorial_with_both_files(tutorial_class: Path) -> None:
+    "A narrative cannot include moves, and both files must be there."
+    from timewalk.walks import TocError, load_toc
+
+    toc = own_walk(tutorial_class)
+    toc.write_text(toc.read_text().replace('kind = "tutorial"', 'kind = "narrative"'))
+    with pytest.raises(TocError, match="shared is for a tutorial"):
+        load_toc(toc)
+    toc = own_walk(tutorial_class)
+    (tutorial_class / "notes.md").unlink()
+    with pytest.raises(TocError, match=r"its shared notes .* do not exist"):
+        load_toc(toc)
+
+
+def test_the_checks_of_a_walk_with_its_own_notes(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
+    "Includes name moves of the history; the walk's own text has no files:, do$ or move heading; a stop needs an include and the setup."
+    from timewalk.walks import check, load_toc
+
+    errors, warnings = check(load_toc(own_walk(tutorial_class)), tutorial.main, tutorial_class)
+    assert errors == [] and not any("own/notes.md" in w for w in warnings), (errors, warnings)
+    own = ("## A\n\n{{include step-01.2}}\n\nfiles:\n- file `a.txt`: a\n\ndo$ touch b\n\n### step-01.3 C\n\n## Recap\n\nNo include.\n\n"
+           "## Gone\n\n{{include step-01.9}}\n")
+    errors, warnings = check(load_toc(own_walk(tutorial_class, own)), tutorial.main, tutorial_class)
+    assert any("notes.md:18: {{include step-01.9}} names step-01.9, which is not a move of the history" in e for e in errors), errors
+    assert any("notes.md:5: a files: list" in e for e in errors) and any("notes.md:8: a do$ line" in e for e in errors)
+    assert any("notes.md:10: a move's heading" in e for e in errors)
+    assert any("notes.md:12: the stop ## Recap has no {{include" in w for w in warnings), warnings
+    assert any("the stop ## A starts at a Start of step-01, and does not run just setup" in w for w in warnings), warnings
+
+
+def test_the_page_shows_a_walk_with_its_own_notes(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
+    "The page gets its intro and each stop's section; a save there is refused, since its sections are made from two files."
+    from timewalk.walks import load_toc
+
+    walks = load_toc(own_walk(tutorial_class))
+    tutorial.select("step-*", None, tutorial=True, select=walks[0].select)
+    client = TestClient(timewalk.make_app(tutorial, TOKEN, PORT, assistant="", walks=walks, root=tutorial_class), headers=HOST)
+    state = client.get("/api/state", params={"t": TOKEN}).json()
+    assert state["walk"]["intro"]["do"].startswith("This walk leaves out step-01.1.") and state["walk"]["own"], "the page hides Edit for it"
+    notes = client.get("/api/notes", params={"t": TOKEN}).json()["notes"]
+    assert notes["step-01.2 to step-01.3"]["title"] == "The middle two" and "We skipped step-01.1" in notes["step-01.2 to step-01.3"]["text"]
+    done = client.post("/api/notes", params={"t": TOKEN}, json={"walk": "own", "step": "step-02", "text": "x", "base": ""})
+    assert "edit them in your editor" in done.json()["error"]
+    assert "Recap of D." in (tutorial_class / "walks" / "own" / "notes.md").read_text()
+    assert "walks/own/notes.md" not in client.get("/static/../walks/own/notes.md", params={"t": TOKEN}).text
+
+
+def test_timewalk_export_writes_a_walk_with_its_own_notes(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
+    "Each copy has the walk's intro, then each stop under its title with the walk's own text around the moves it includes."
+    toc, url = own_walk(tutorial_class), "https://github.com/o/t"
+    shas = {m.name: m.sha for found in tutorial.moves for m in found}
+    done = run_export(tutorial.main, "--toc", str(toc), "--walk", "own", "--markdown", str(tutorial_class / "out"),
+                      "--site", str(tutorial_class / "site"), "--github", url)
+    assert done.returncode == 0, done.stderr
+    do, watch = ((tutorial_class / "out" / name).read_text() for name in ("TUTORIAL-do.md", "TUTORIAL-watch.md"))
+    for text in (do, watch):
+        assert text.index("# Own") < text.index("This walk leaves out step-01.1.") and "Say:" not in text and "The opening." not in text
+        assert f"## step-01.2 to step-01.3 The middle two\n\n[The code at its Start]({url}/tree/{shas['step-01.1']})" in text
+        order = ["We skipped step-01.1", "### step-01.2 B", "move b", "Between the two.", "### step-01.3 C", "So far: b and c.", "Recap of D."]
+        assert [text.index(t) for t in order] == sorted(text.index(t) for t in order)
+        assert "move a" not in text and "About all three." not in text and "{{include" not in text
+    assert "DO ONLY" in do and "DO ONLY" not in watch
+    assert "We skipped step-01.1" in (tutorial_class / "site" / "do" / "step-01.2-to-step-01.3.qmd").read_text()
+
+
+def test_the_slides_pdf_prints_a_walk_with_its_own_notes(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
+    "With --with-notes, each stop prints its section of the walk's own notes, with what it includes."
+    from timewalk.slides_pdf import deck_of
+    from timewalk.walks import load_toc
+
+    walk = load_toc(own_walk(tutorial_class))[0]
+    deck = deck_of(None, walk.notes, "t", True, None, None, walk.select, True, walk.own_sections())
+    assert [stop["title"] for stop in deck["steps"]] == ["The middle two", "The end"]
+    assert "We skipped step-01.1" in deck["steps"][0]["notes"] and "move b" in deck["steps"][0]["notes"]
+    assert "move a" not in deck["steps"][0]["notes"] and "Recap of D." in deck["steps"][1]["notes"]
+
+
+@pytest.mark.parametrize("own, says", [
+    ("## A\n{{include step-01.1}}\n{{include step-01.3}}\n## B\n{{include step-02}}\n", "own/notes.md:1: the stop ## A leaves out a move at step-01.3"),
+    ("## A\n{{include step-01.3}}\n## B\n{{include step-01.1}}\n", "own/notes.md:3: the stop ## B includes step-01.1, which comes before"),
+    ("## A\n{{include step-01}}\n## B\n{{include step-01.2}}\n", "own/notes.md:3: the stop ## B includes step-01.2, which comes before"),
+    ("## A\n{{include step-01.1}}\n## B\n{{include step-01.3..step-01.1}}\n", "own/notes.md:3: the stop ## B includes {{include step-01.3..step-01.1}} at line 4, which is not"),
+    ("## A\n::: do\n{{include step-01.1}}\n:::\n", "own/notes.md:3: {{include step-01.1}} is inside a ::: do block"),
+    ("## A\n{{include step-01.1}}\n{{ include: step-01.2 }}\n", "own/notes.md:3: {{ include: step-01.2 }} is not an include line"),
+    ("## A\n{{include step-01.1}}\n\n::: watch\nnot closed\n", "the stop ## A at walks/own/notes.md:1, with the sections it includes from notes.md: the block ::: watch is not closed"),
+    ("## A\n{{include step-01.1}}\n## B\n{{include step-01.1.2}}\n", "{{include step-01.1.2}} names step-01.1.2, which is not a move"),
+])
+def test_a_walk_with_its_own_notes_has_its_mistakes_found_by_the_check(tutorial: timewalk.Repo, tutorial_class: Path, own: str, says: str) -> None:
+    "Each mistake in a walk's own notes is an error of timewalk-check, with the file from the class folder and the line; the other stops stay."
+    from timewalk.walks import check, load_toc
+
+    errors, _ = check(load_toc(own_walk(tutorial_class, own)), tutorial.main, tutorial_class)
+    assert any(says in error for error in errors), errors
+
+
+def test_a_live_edit_of_a_walks_own_notes_never_moves_text_to_another_stop(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
+    "Each stop is found by the place it walks: a stop added above, or one whose includes change, takes no other stop's text."
+    from timewalk.walks import load_toc
+
+    toc = own_walk(tutorial_class)
+    walk = load_toc(toc)[0]
+    own = tutorial_class / "walks" / "own" / "notes.md"
+    own.write_text(OWN_NOTES.replace("## The middle two", "## New\n\nNEW STOP\n\n{{include step-01.1}}\n\n## The middle two"))
+    first, second = walk.own_sections()
+    assert "We skipped step-01.1" in first and "NEW STOP" not in first + second and "Recap of D." in second
+    own.write_text(OWN_NOTES.replace("{{include step-01.3}}", ""))
+    assert walk.own_sections()[0] is None, "its place is no stop's now: it shows nothing until timewalk starts again"
+    tutorial.select("step-*", None, tutorial=True, select=walk.select)
+    shown = timewalk.walk_notes({}, tutorial.steps, tutorial.moves, True, True, walk.own_sections())
+    assert "step-01.2 to step-01.3" not in shown and "Recap of D." in shown["step-02"]["text"]
+
+
+def test_a_cue_above_an_include_keeps_the_included_text(tutorial_class: Path) -> None:
+    "An include starts after a blank line, so a cue's blockquote, or a paragraph, above it never takes in the shared text."
+    from timewalk.export import for_mode
+    from timewalk.walks import load_toc
+
+    own_walk(tutorial_class, "## End\n\n> Say: a private cue\n{{include step-02}}\n")
+    section = load_toc(tutorial_class / "toc.toml")[0].own_sections()[0]
+    assert "The last." in for_mode(section, "do") and "a private cue" not in for_mode(section, "do")
+
+
+def test_a_stop_of_one_move_without_a_title_takes_the_moves(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
+    "An empty ## heading over one move shows the move's title, as a select walk does; a whole step that runs its setup twice is warned of."
+    from timewalk.walks import check, load_toc
+
+    walk = load_toc(own_walk(tutorial_class, "##\n\n$ just setup\n\n{{include step-01.2}}\n\n## All\n\n$ just setup\n\n{{include step-02}}\n"))[0]
+    tutorial.select("step-*", None, tutorial=True, select=walk.select)
+    assert timewalk.walk_notes({}, tutorial.steps, tutorial.moves, True, True, walk.own_sections())["step-01.2"]["title"] == "B"
+    own_walk(tutorial_class, "## All\n\n$ just setup\n\n{{include step-01}}\n")
+    _, warnings = check(load_toc(tutorial_class / "toc.toml"), tutorial.main, tutorial_class)
+    assert any("the stop ## All runs just setup twice" in w for w in warnings), warnings
+
+
+def test_a_walk_with_its_own_notes_says_its_mistakes_at_the_start(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
+    "Started on a walk whose stops are out of order, or name a move that is not there, timewalk says so as timewalk-check does."
+    for own, says in (("## A\n{{include step-02}}\n## B\n{{include step-01.1}}\n", "the stop ## B includes step-01.1, which comes before"),
+                      ("## A\n{{include step-01.9}}\n", "{{include step-01.9}} names step-01.9, which is not a move of the history")):
+        toc = own_walk(tutorial_class, own)
+        done = subprocess.run([sys.executable, "-m", "timewalk", str(tutorial.main), "--in-place", "--toc", str(toc), "--no-open", "--port", "8792"],
+                              capture_output=True, text=True, timeout=60)
+        assert done.returncode != 0 and says in done.stderr and "select names" not in done.stderr, done.stderr
+        done = run_export(tutorial.main, "--toc", str(toc), "--markdown", str(tutorial_class / "out"), "--github", "https://github.com/o/t")
+        assert done.returncode != 0 and says in done.stderr, done.stderr

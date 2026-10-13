@@ -7,11 +7,11 @@ with its own notes and slides. A walk is one of two kinds:
 - **A tutorial** also stops at each small commit between two tags. Each small commit is a move. The class
   makes a step one move at a time.
 
-The first part of the page holds for every walk. The second part adds what a tutorial needs. The last
-part gives the checks, in the order to run them.
+The first part of the page holds for every walk. The second part adds what a tutorial needs, and the
+third what a small walk needs. The last part gives the checks, in the order to run them.
 
-The class timewalk-test, at github.com/rahuldave/timewalk-test, is a complete example. It has three
-narratives and two tutorials, and it meets every demand on this page. To see a feature, clone it and
+The class timewalk-test, at github.com/rahuldave/timewalk-test, is a complete example. It has four
+narratives and five tutorials, and it meets every demand on this page. To see a feature, clone it and
 run `just present`.
 
 ## For every walk
@@ -385,6 +385,42 @@ sentence about ty.
 - **Set `sync`** for each walk. With `sync = true`, the default, the slides follow the moves.
 - **Quote the slide keys of moves**, for example `"step-02.1" = ["moves.md#1"]`.
 
+## What a small walk needs
+
+A small walk takes some steps and moves out of a big tutorial. It uses the notes and the slides of the big
+tutorial, so you write each section of a move once. A small walk has one of two forms.
+
+**With `select` and `intro`,** the walk names its stops in `toc.toml`. The notes column shows the sections
+of the big tutorial as they are. See [Take a small walk out of a big one](walks.md#take-a-small-walk-out-of-a-big-one).
+
+- **Name the stops in `select`, in the order of the history.** Give a stop a title with `{ range, title }`.
+- **Write an `intro` file** that says which parts the walk leaves out.
+- **Write each move section to read alone.** See [Write a move to read alone](#write-a-move-to-read-alone).
+
+**With notes of its own,** the walk has a notes file of its own. Its include lines take its moves from
+the notes of the big tutorial. See
+[A walk with notes of its own](walks.md#a-walk-with-notes-of-its-own).
+
+- **Set `notes` and `shared`** in `toc.toml`, and leave out `select`, `steps` and `intro`. Only a tutorial
+  can have them.
+- **Write the intro before the first `##`.**
+- **Give each stop a heading `## Title`, and one include line or more,** for example
+  `{{include step-02.2..step-02.3}}`. The includes of a stop make one whole step, or moves of one step
+  with no move left out.
+- **Write `$ just setup` above the first include of a stop of moves.** Also write there each other command
+  that the section of its step runs first.
+- **Put no `files:` list, no `do$` line and no move heading in the walk's own text.** The moves bring them.
+- **Keep each include outside the blocks `::: do` and `::: watch`.** An include brings moves for both modes.
+
+Choose notes of its own when the walk needs words at its stops that the big tutorial does not have:
+
+- **Text at a stop,** before its moves, between them or after them.
+- **What the walk skipped** since the stop before, for example "this stop starts with the code of step-03
+  and step-04".
+- **A recap** after the moves of a stop, for example what the three tests now say.
+
+If the sections of the big tutorial are enough, choose `select` and `intro`. They have fewer parts to keep up.
+
 ## How to check a walk
 
 Run the checks in this order:
@@ -429,12 +465,15 @@ Run the checks in this order:
 | A walk with a key that a walk does not have |
 | An `id` that is missing, has other characters than letters, digits, `-` and `_`, or is used twice |
 | A `kind` other than `"narrative"` or `"tutorial"` |
-| A `title`, `description`, `folder`, `notes`, `slides`, `intro`, `tags` or `setup` that is not text |
+| A `title`, `description`, `folder`, `notes`, `slides`, `intro`, `tags`, `setup` or `shared` that is not text |
 | `steps` that is not a list of names, names a step twice, or comes with `tags` |
 | `steps` in a tutorial. The message points to `select` |
 | `select` that is not a list of names and entries in braces, or comes with `steps` |
 | An entry of `select` in braces with a key other than `range` and `title`, or with a value that is not text |
 | An `intro` that does not exist |
+| `shared` in a narrative, `shared` with `select`, `steps` or `intro`, or `shared` with no `notes` |
+| With `shared`, a notes file or a shared notes file that does not exist |
+| With `shared`, a notes file with no `##` stop whose includes make a place. The checks of the walk say what is wrong with each stop |
 | `loose` that is not a list of text, or `loose` in a narrative |
 | A `moves` value other than `"do"` or `"watch"` |
 | A `sync` value other than `true` or `false` |
@@ -448,6 +487,16 @@ Then it checks each walk, and reports every problem that it finds:
 | No tag matches the glob of the walk, or a name in `steps` is not a tag | An error |
 | In `select`, a name that is not a step or a move, an entry out of order or over a part taken before, a range across steps, or a range in a narrative | An error |
 | In a walk with `select`, a section that the walk takes and the notes do not have | An error |
+| In a walk with notes of its own, a line that looks like an include but is not one alone on its line, for example `{{ include: step-05.3 }}` | An error |
+| In a walk with notes of its own, an include line in a block `::: do` or `::: watch` | An error |
+| In a walk with notes of its own, an include line that names a step or a move that is not in the history | An error |
+| In a walk with notes of its own, a stop whose includes are not one of the forms, leave out a move, go back, take moves of two steps, or join a whole step with more | An error |
+| In a walk with notes of its own, stops out of the order of the history, or two stops that take one move | An error |
+| In a walk with notes of its own, a `files:` list, a `do$` line or a move heading in its own text | An error |
+| In a walk with notes of its own, a stop that fails the checks of blocks and cues, read together with what it includes | As in any notes |
+| In a walk with notes of its own, a stop with no include line. The walk leaves it out | A warning |
+| In a walk with notes of its own, a stop of moves that does not run a command that the section of its step runs first, for example `$ just setup` | A warning |
+| In a walk with notes of its own, a stop that includes a whole step and runs one of the first commands of the step itself | A warning |
 | In a tutorial, a move whose subject does not start with its name and a colon | An error |
 | A notes file or a manifest inside the repository or its replay copy | An error |
 | A notes file that does not exist | An error |
