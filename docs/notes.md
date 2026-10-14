@@ -57,30 +57,52 @@ copy of the notes that you give to students.
 ## The notes of a move
 
 In a tutorial walk, each move of a step has a section of its own, under the `## step` section. A move is
-one small commit between two tags. A move section gives the instructions to make the move by hand, a
-list of what changed, a line `files:` with items, and commands. `timewalk-notes` drafts the sections from the
-commits. See [Draft the notes of the moves](walks.md#draft-the-notes-of-the-moves).
+one small commit between two tags. A move section says what problem the change solves, gives the
+change, and gives the commands that check it. It ends with a line `files:` and its items.
+`timewalk-notes` drafts the sections from the commits. See
+[Draft the notes of the moves](walks.md#draft-the-notes-of-the-moves).
 
 The text of a step before its first move section is about the whole step. Put `$ just setup` there, and
-say what the moves of the step do together.
+say what the step builds, and why.
 
-```markdown
+Write the notes for a reader who knows the program, and not timewalk. Do not write "step", "move" or
+"commit" in the text. See
+[Write for a reader who has never heard of timewalk](authoring.md#write-for-a-reader-who-has-never-heard-of-timewalk).
+
+````markdown
 ### step-02.2 A test of an empty text
 
-Make `tests/test_empty.py`, with one test that counts the words of an empty text.
+An empty file is a text with no words. `count` must give an empty dictionary for it, and not fail. A
+test in a file of its own, `tests/test_empty.py`, says so, and keeps it true after later changes.
 
-The move changes one file:
+::: do
+Make the file `tests/test_empty.py`, with these lines:
 
-- `tests/test_empty.py`: a new file of 8 lines; adds `class Empty` and `test_empty`.
+```python
+import unittest
+
+from tally import count
+
+
+class Empty(unittest.TestCase):
+    def test_empty(self):
+        self.assertEqual(count(""), {})
+```
+:::
+
+::: watch
+The new file `tests/test_empty.py` holds one test, `test_empty`. It gives `count` the empty text `""`,
+and expects the empty dictionary `{}`.
+:::
+
+$ uv run python -m unittest discover -s tests -q
+
+The new test passes at once. `split()` finds no words in an empty text, so `count` gives `{}`.
 
 files:
 - diff `tests/test_empty.py`: an empty text counts nothing.
   show: `self.assertEqual(count(""), {})`
-
-$ uv run python -m unittest discover -s tests -q
-
-The new test passes at once.
-```
+````
 
 An item is one file to look at, with words that say why. On the page, each item is one button, **± See
 diff** or **▤ See file** with the path, and the words go on the line under it.
@@ -91,14 +113,14 @@ from the commits each time, so the notes never hold a copy of the diff. See
 [The items under files](walks.md#the-items-under-files).
 
 The last commands of a move section are its anchor commands. The notes column shows them under the label
-"After this move, run:". An anchor command shows what the move did, and the notes say what it gives. Make
+"Check it". An anchor command shows what the move did, and the notes say what it gives. Make
 it safe to run again, and keep it from changing tracked files. A test that fails is a good anchor command,
 if the notes say that it fails. See [Anchor commands](walks.md#anchor-commands).
 
-A move section can hold blocks for one mode. The shared text first says what we do now. Then the `do`
-block gives the lines to type, and the `watch` block says what to look at. The page shows only the blocks
-of the mode on show. Keep the list of files, the items, the explanation and the anchor commands outside
-the blocks. See [What a narrative and a tutorial need](authoring.md#write-for-both-modes).
+A move section can hold blocks for one mode. The shared text first says what problem the change solves,
+and what the change is. Then the `do` block gives the exact lines to type, and the `watch` block says what
+the change does and where to see it. The page shows only the blocks of the mode on show. Keep the
+explanation, the anchor commands and the items outside the blocks. See [What a narrative and a tutorial need](authoring.md#write-for-both-modes).
 
 A command that makes the move, for example `uv add`, goes in a `do$` line in the shared text. Do mode
 runs it, and watch mode shows it as what the move ran. A `do$` line is never an anchor command. See
@@ -143,8 +165,9 @@ If the screen is less than about 1000 pixels wide, the notes column moves under 
 
 In a tutorial, the notes column draws a step with moves in sections:
 
-- **Before the moves.** The text before the first move section is a section of its own, with this label.
-  The text is about the whole step.
+- **The title of the step.** The text before the first move section is a section of its own, under the
+  title of the step. The title comes from the `##` heading, or else from the subject of the step's
+  commit. The text is about the whole step.
 - **A section for each move.** The sections have no boxes. Each one runs from edge to edge of the column,
   with a bar on its left. The bar is dark for the move on show and blue for the next move. A move made
   has a grey bar and a check. The page fades the moves after the next one.
@@ -158,7 +181,7 @@ In a tutorial, the notes column draws a step with moves in sections:
 
 See [Moves on the page](walks.md#moves-on-the-page).
 
-![The notes of step-01 in watch mode, with both moves shown: the text before the moves, two moves with Shown and Restart step, and Next step at the end](images/tutorial-next.png)
+![The notes of step-01 in watch mode, with both moves shown: the text of the step under its title, two moves with Shown and Restart step, and Next step at the end](images/tutorial-next.png)
 
 ## Edit the notes
 

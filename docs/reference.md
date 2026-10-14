@@ -118,26 +118,34 @@ timewalk-notes REPO --toc toc.toml --walk ID [--write] [--blocks]
 | `--toc` | The table of contents |
 | `--walk` | The `id` of a tutorial walk with a notes file, or with a folder |
 | `--write` | Write the drafts into the notes file. Without it, print only the drafts |
-| `--blocks` | In each new move, draft a block `::: do` and a block `::: watch`, each with a comment that says what goes in it |
+| `--blocks` | Kept for old scripts. It does nothing, because every draft has both blocks |
 
 Drafts a `### step-NN.k` section for each move that the notes do not have yet, at the end of its step. A
-draft has the subject of the commit as its title, and a list "The move changes these files:" from the diff. It ends with a
-comment that asks for a command. Sections already in the notes stay as they are.
+draft has the subject of the commit as its title. Then it has these parts, each a comment for you to
+replace:
+
+- the problem that the change solves, and the change, for both modes, with **Apply this file** for a
+  file to take whole
+- a block `::: do`, for the exact lines to type and where they go
+- a block `::: watch`, for what the change does and where to see it
+- the check, a command and what it prints
+
+Sections already in the notes stay as they are.
 
 A step without a section gets a heading `## step-NN Title`, with the first line of its tag's message as
 the title, steps without moves too. A walk whose folder has no `notes.md` yet gets one. For a walk with
 `select`, it drafts only the sections that the walk takes, into the notes of the whole tutorial, in order.
 For a walk with notes of its own, it drafts the move sections that its stops include, into its `shared` notes.
 
-The draft also has a line `files:`, with one item for each file of the commit. A new file gets a `file`
-item, and a changed file a `diff` item. You write the words of each item. The draft has no `show:` lines. See
+The draft ends with a line `files:`, with one item for each file of the commit, `uv.lock` too. A new file
+gets a `file` item, and every other file a `diff` item. You write the words of each item. The draft has no `show:` lines. See
 [Draft the notes of the moves](walks.md#draft-the-notes-of-the-moves).
 
 ## timewalk-export
 
 ```
-timewalk-export REPO --toc toc.toml [--walk ID] (--markdown DIR | --site DIR) [options]
-timewalk-export REPO --notes notes.md [--tags GLOB] (--markdown DIR | --site DIR) [options]
+timewalk-export REPO --toc toc.toml [--walk ID] (--markdown DIR | --site DIR | --json FILE) [options]
+timewalk-export REPO --notes notes.md [--tags GLOB] (--markdown DIR | --site DIR | --json FILE) [options]
 ```
 
 | Option | Does |
@@ -154,14 +162,73 @@ timewalk-export REPO --notes notes.md [--tags GLOB] (--markdown DIR | --site DIR
 | `--markdown` | The folder for `TUTORIAL-do.md` and `TUTORIAL-watch.md`. For a narrative: `TUTORIAL.md` |
 | `--site` | The folder for the website: `index.qmd`, `watch/step-NN.qmd`, `do/step-NN.qmd`, `_smalldocs.yml` and `styles.css`. For a narrative: `step-NN.qmd` at the top of the folder, in place of `watch/` and `do/`. A small step's page has its name, for example `watch/step-05.3-to-step-05.6.qmd` |
 | `--quarto` | With `--site`: write `_quarto.yml` in place of `_smalldocs.yml` |
+| `--json` | The file for the facts of the walk, in JSON, for a class to make its own pages from. See [The facts file](#the-facts-file) |
+| `--private` | With `--json`: keep the private lines, for a copy for the presenter. Without it, the facts leave them out, as the copies do |
 
-Give `--markdown`, `--site` or both. Each copy of a tutorial has the text outside the blocks and the blocks
+Give one or more of `--markdown`, `--site` and `--json`. Each copy of a tutorial has the text outside the blocks and the blocks
 of one mode, without the private lines. A narrative has one copy, with the `watch` blocks. Each step, move
 and item links to the code on GitHub. In a tutorial, a small step, and a whole step with moves, link to the code at
 their **Start**, the commit before the first move. Build the website with `smalldocs render DIR`, or with `quarto render DIR` after `--quarto`.
 
 The command writes over only the files that it made. It refuses a folder inside the project or inside its
 replay copy. See [Copies of a tutorial for GitHub and a website](walks.md#copies-of-a-tutorial-for-github-and-a-website).
+
+### The facts file
+
+`timewalk-export --json FILE` writes the facts of one walk, its history and its notes, in one JSON file.
+A class makes its own pages from the file, for example with the `walk` skill of walk-kit. The file holds
+no words or layout of timewalk. The exact layout is a JSON Schema, `src/timewalk/facts.schema.json` in the
+timewalk repository. The same notes and history give the same bytes. The file has no time of day, and no
+path of your machine.
+
+| Field | Holds |
+|---|---|
+| `format` | The version of the layout, now `1`. A change that a renderer must know of raises it |
+| `timewalk` | The version of timewalk that wrote the file |
+| `made` | The line "Made by timewalk-export". The command writes over only a file with this line |
+| `walk` | `id`, `title`, `description`, `kind` (`tutorial` or `narrative`), `mode` (the mode that a tutorial starts in, and `watch` for a narrative) and `github`, the address of the project |
+| `intro` | The parts of the text before the first stop |
+| `stops` | The stops of the walk, in order |
+| `slides` | `null`, or the path of the manifest from the class folder, its `deck`, and its `slides` and `docs` for the stops and moves of the walk |
+| `history` | The commit of every step and move of the whole history, by name. An item that names another part links to the file at that commit |
+| `errors`, `warnings` | What `timewalk-check` reports for this walk, with paths from the class folder |
+
+A stop has these fields:
+
+| Field | Holds |
+|---|---|
+| `name`, `title` | The name of the stop, for example `step-02` or `step-05.3 to step-05.6`, and its title |
+| `tag` | For a whole step, its tag: `name`, `title` (the first line of the message) and `text` (the rest). `null` for any other stop, for example a small step |
+| `commit`, `start` | The commit of the stop, and the commit where it starts: the tag before it, or the commit before its first move. `start` is `null` at the first commit of the history |
+| `own` | In a walk with notes of its own: the `title` and the `text` of the section of the stop, with its includes put in. Else `null` |
+| `parts` | The text of the stop before its first move |
+| `moves` | The moves of the stop, in order. Empty in a narrative, and in a step without moves |
+| `files` | For a stop with no moves, each file of its change from `start`. Empty for a stop with moves |
+
+A move has a `name`, a `title`, its `commit`, the commit before it (`parent`), its `parts` and its `files`.
+
+The text of a stop or a move is a list of parts, in the order of the notes. Each part has a `kind`, and a
+`mode`, which is `shared`, `do` or `watch`.
+
+| Kind | Holds |
+|---|---|
+| `prose` | `text`: Markdown, as written. Fenced code stays whole |
+| `command` | `text`, the command. `track` is `""` for the shell at the step, `main`, or `runs` to `runs9`. `makes` is true for a `do$` line |
+| `item` | An item under `files:`. `item` is `diff` or `file`. It also has `path`, `move` (the move that the item names, or `null` for its own move), `words`, and `show`, the lines that its `show:` lines quote |
+| `apply` | A sentence with **Apply this file** or **Apply the whole move**, as written, in `text`. `whole` is true for the whole move. `path` is the file that the sentence names, or the file named last before it |
+
+A file of a change has these fields:
+
+| Field | Holds |
+|---|---|
+| `path`, `old_path` | The path after the change, and for a rename the path before it. Else `old_path` is `null` |
+| `status` | `added`, `modified`, `deleted` or `renamed` |
+| `added`, `removed`, `binary` | The count of lines added and removed, and whether git sees the file as binary |
+| `diff` | The whole diff of the file, from its first hunk, never cut. `""` for a binary file, or for a change of its mode alone |
+| `names` | `added`, `removed` and `changed`: the Python functions and classes that the change adds, removes or changes, and the recipes that it adds to a `justfile` |
+
+Without `--private`, the facts leave out the private lines. A private line is a `time:` line, a cue in an
+HTML comment, or a cue `> Say:` or `> Note:`.
 
 ## Recipes
 
@@ -229,7 +296,7 @@ In the timewalk folder, `just` lists these:
 | `## Title` | In the notes of a walk with notes of its own: starts a stop. The text before the first one is the intro of the walk |
 | `{{include step-NN.k}}` | In the notes of a walk with notes of its own, on a line of its own: puts in the section of a move of the shared notes. `{{include step-NN}}` puts in a whole step, and `{{include step-NN.j..step-NN.k}}` a range of moves. Not in a block `::: do` or `::: watch`. See [A walk with notes of its own](walks.md#a-walk-with-notes-of-its-own) |
 | `::: do`, `::: watch` | In a tutorial: opens a block for one mode, up to a line `:::`. The page shows it only in that mode. A narrative shows the `watch` blocks |
-| The last commands of a move section | The anchor commands of the move, under "After this move, run:". They show what the move did. A `do$` line is never one. `timewalk-check` warns of a move section with no command |
+| The last commands of a move section | The anchor commands of the move, under "Check it". They show what the move did. A `do$` line is never one. `timewalk-check` warns of a move section with no command |
 
 ## The views of the reader
 

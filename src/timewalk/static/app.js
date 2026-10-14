@@ -1325,7 +1325,7 @@ function drawNotes() {
     into.className = "p-bridge";
     const label = document.createElement("div");
     label.className = "p-bridge-label";
-    label.textContent = "Before the moves";
+    label.textContent = mine?.title || here.subject;   // the text is about the whole step: it goes under the step's title
     into.append(label);
     box.append(into);
   }
@@ -1341,7 +1341,7 @@ function drawNotes() {
       last.classList.add("p-anchor");
       const label = document.createElement("div");
       label.className = "p-anchor-label";
-      label.textContent = "After this move, run:";
+      label.textContent = "Check it";
       section.insertBefore(label, last);
     }
     if (movesReached() > 0 && (section.classList.contains("done") || section.classList.contains("here"))) {

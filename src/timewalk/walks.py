@@ -49,7 +49,6 @@ from timewalk import (
     expand_stop,
     git,
     loose_match,
-    name_status,
     note_blocks,
     own_stops,
     parse_notes,
@@ -688,7 +687,7 @@ def item_problems(
                 if subprocess.run(["git", "cat-file", "-e", f"{move.sha}:{path}"], cwd=main, capture_output=True).returncode:
                     problems.append(f"{move.name}: the file item {path} is not in the move's commit")
                 continue
-            diff = git(main, "diff", "--no-color", f"{move.sha}^", move.sha, "--", path)
+            diff = git(main, "--literal-pathspecs", "diff", "--no-color", f"{move.sha}^", move.sha, "--", path)
             if not diff:
                 problems.append(f"{move.name}: the diff item {path} is not changed by the move")
                 continue
@@ -736,100 +735,39 @@ def unquote_path(
     return out.decode("utf-8", errors="replace")
 
 
-def move_summary(
-    main: Path,  # The repository
-    sha: str,  # A move's commit
-) -> list[str]:  # Markdown lines: one item for each file the commit touched
-    """Say what one commit changed, from its diff alone: each file, its lines added and removed, and for Python the
-    functions and classes it adds, removes or changes, and for a justfile the recipes it adds. No guessing: only names."""
-    sha = git(main, "rev-parse", f"{sha}^{{commit}}")   # an annotated tag names its commit
-    status = name_status(main, "diff-tree", "--no-commit-id", "--name-status", "-r", "--no-renames", sha)
-    counts = {}
-    for line in git(main, "show", "--numstat", "-z", "--format=", "--no-renames", sha).split("\x00"):
-        line = line.lstrip("\n")   # the empty format leaves a newline before the first entry
-        if line.count("\t") >= 2:
-            added, removed, path = line.split("\t", 2)
-            counts[path] = (added, removed)
-    names: dict[str, dict[str, set[str]]] = {}
-    path, context, defines = None, None, False   # the hunk's enclosing function, and whether the hunk defines one itself
-
-    def close_hunk() -> None:
-        # git names the function above a hunk, even when the hunk lies after it: only a hunk that defines nothing changes it.
-        if path is not None and context and not defines:
-            names[path]["~"].add(context)
-
-    for line in git(main, "-c", "core.quotePath=false", "show", "-U0", "--format=", "--no-renames", sha).splitlines():
-        if line.startswith("+++ "):
-            close_hunk()
-            name = unquote_path(line[4:].rstrip("\t"))   # git ends a name with a space by a tab, and quotes an odd one
-            path, context, defines = (name[2:] if name.startswith("b/") else None), None, False
-            continue
-        if line.startswith("--- ") or path is None:
-            continue
-        found = names.setdefault(path, {"+": set(), "-": set(), "~": set()})
-        if line.startswith("@@"):
-            close_hunk()
-            hunk = re.match(r"^@@ [^@]* @@\s*(?:async\s+)?(?:def|class)\s+(\w+)", line)
-            context, defines = (hunk.group(1) if hunk else None), False
-            continue
-        if line[:1] in "+-" and path.endswith(".py"):
-            named = re.match(r"^[+-]\s*(?:async\s+)?(def|class)\s+(\w+)", line)
-            if named:
-                defines = True
-                found[line[0]].add(("class " if named.group(1) == "class" else "") + named.group(2))
-        elif line[:1] == "+" and path.rsplit("/", 1)[-1].lower() == "justfile":
-            recipe = re.match(r"^\+([A-Za-z][\w-]*)(?:\s+[^:=]*)?:(?!=)", line)
-            if recipe:
-                found["+"].add(f"recipe {recipe.group(1)}")
-    close_hunk()
-    items = []
-    for path in sorted(status):
-        kind = status[path][0]
-        added, removed = counts.get(path, ("-", "-"))
-        if kind == "D":
-            items.append(f"- `{path}`: removed")
-            continue
-        found = names.get(path, {"+": set(), "-": set(), "~": set()})
-        adds = sorted(found["+"] - found["-"])
-        removes = sorted(found["-"] - found["+"])
-        # A name on both sides changed its own line, for example a signature; a hunk inside a function changed its body.
-        touched = {n.removeprefix("class ") for n in found["+"] & found["-"]} | found["~"]
-        changes = sorted(touched - {a.removeprefix("class ") for a in adds} - {r.removeprefix("class ") for r in removes})
-        def lines(count: str) -> str:   # "1 line", "3 lines"; git counts a binary file as "-"
-            return f"{count} line" if count == "1" else f"{count} lines"
-
-        if kind == "A":
-            size = f"a new file of {lines(added)}"
-        elif added in ("0", "-"):
-            size = f"{lines(removed)} removed"
-        else:
-            size = f"{lines(added)} added" + (f", {removed} removed" if removed not in ("0", "-") else "")
-        what = [part for part in (
-            "adds " + ", ".join(f"`{n}`" for n in adds) if adds else "",
-            "removes " + ", ".join(f"`{n}`" for n in removes) if removes else "",
-            "changes " + ", ".join(f"`{n}`" for n in changes) if changes else "") if part]
-        items.append(f"- `{path}`: {size}" + ("; " + "; ".join(what) if what else ""))
-    return items
-
-
 def move_section(
     main: Path,  # The repository
     move,  # A move of a tutorial
-    blocks: bool = False,  # Also draft a block for each mode, for the words that differ between do and watch
+    blocks: bool = True,  # Kept for old callers: every draft now has a block for each mode
 ) -> str:  # A ### section for it, for the author to finish
-    "Write a first draft of a move's notes: its title from the commit, what changed, the files, and a place for a command."
+    """Write a first draft of a move's notes, in the order a reader needs them: the problem and the change, for both
+    modes; the lines to type, in do mode; what to look at, in watch mode; the command that checks it; and last, an item
+    for every file of the commit, for the author's words."""
     step = move.name.rsplit(".", 1)[0]
     prefixed = move.subject.startswith((f"{move.name}:", f"{step}:"))   # a move's subject, or the step's own on its last move
     title = move.subject.split(":", 1)[1].strip() if prefixed else move.subject
-    statuses = name_status(main, "diff-tree", "--no-commit-id", "--name-status", "-r", "--no-renames", move.sha)
-    summary = move_summary(main, move.sha)
-    lead = "The move changes one file:" if len(summary) == 1 else "The move changes these files:"   # then one item for each file
-    items = [f"- {'file' if status == 'A' else 'diff'} `{path}`: " for path, status in statuses.items() if status != "D"]
-    modes = ["<!-- For both modes: what we do now, in one sentence. -->", "",
-             "::: do", "<!-- Do mode: the lines to type and the commands to run, and only those. -->", ":::", "",
-             "::: watch", "<!-- Watch mode: what to look at. -->", ":::", ""] if blocks else []
-    return "\n".join([f"### {move.name} {title}", "", *modes, lead, "", *summary, "", "files:", *items, "",
-                      "<!-- Add a command that shows what this move did, for example: $ just test -->", ""])
+    # Renames found as the facts find them, so each item names a file that the pages list: a renamed file by its new path
+    fields = git(main, "diff-tree", "-z", "-M", "--no-commit-id", "--name-status", "-r", move.sha).split("\x00")
+    statuses, at = {}, 0
+    while at < len(fields) and fields[at]:
+        width = 3 if fields[at][0] in "RC" else 2
+        statuses[fields[at + width - 1]] = fields[at][0]
+        at += width
+    items = [f"- {'file' if status in 'AC' else 'diff'} `{path}`: " for path, status in sorted(statuses.items())]
+    return "\n".join([
+        f"### {move.name} {title}", "",
+        "<!-- For both modes: the problem this change solves, and the change. A reader who has never heard of",
+        "timewalk reads it. Do not write \"step\", \"move\" or \"commit\". A file to take whole, a new one or one too",
+        "long to type: say so here, with **Apply this file**, so that both ways of reading link the whole file. -->", "",
+        "::: do",
+        "<!-- The exact lines to type and where they go, in a code block, or the command to run. Never an edit",
+        "described only in words. -->",
+        ":::", "",
+        "::: watch",
+        "<!-- What the change does, and where to see it. Say it; do not only send the reader to a diff. -->",
+        ":::", "",
+        "<!-- A command that checks the result, and what it prints, for example: $ just test -->", "",
+        "files:", *items, ""])
 
 
 def add_move_sections(
@@ -910,8 +848,7 @@ def notes_main() -> None:
     parser.add_argument("--toc", type=Path, required=True, help="the table of contents, toc.toml")
     parser.add_argument("--walk", required=True, help="the id of a tutorial walk")
     parser.add_argument("--write", action="store_true", help="write the sections into the notes file; without it, print them")
-    parser.add_argument("--blocks", action="store_true", help="in each new move, draft a block ::: do and a block ::: watch, "
-                                                              "for the words that differ between the modes")
+    parser.add_argument("--blocks", action="store_true", help="kept for old scripts: every draft now has a block ::: do and a block ::: watch")
     args = parser.parse_args()
     main_repo = Path(git(args.repo.resolve(), "rev-parse", "--show-toplevel"))
     try:

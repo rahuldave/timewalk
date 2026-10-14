@@ -1,0 +1,167 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "https://rahuldave.com/timewalk/facts.schema.json",
+ "title": "The facts of a timewalk walk",
+ "description": "What timewalk-export --json writes: one walk's history and notes, for a class to render its own pages from. Format 1. docs/reference.md explains each field.",
+ "type": "object",
+ "required": ["format", "timewalk", "made", "walk", "intro", "stops", "slides", "history", "errors", "warnings"],
+ "additionalProperties": false,
+ "properties": {
+  "format": {"const": 1, "description": "The version of this layout. A change that a renderer must know of raises it."},
+  "timewalk": {"type": "string", "description": "The version of timewalk that wrote the file."},
+  "made": {"type": "string", "description": "The line that marks the file as made by timewalk-export, which writes over only its own files."},
+  "walk": {
+   "type": "object",
+   "required": ["id", "title", "description", "kind", "mode", "github"],
+   "additionalProperties": false,
+   "properties": {
+    "id": {"type": "string"},
+    "title": {"type": "string"},
+    "description": {"type": "string"},
+    "kind": {"enum": ["tutorial", "narrative"]},
+    "mode": {"enum": ["do", "watch"], "description": "The mode a tutorial starts in; a narrative is always watch."},
+    "github": {"type": "string", "description": "The project on GitHub, https://github.com/OWNER/NAME."}
+   }
+  },
+  "intro": {"$ref": "#/$defs/parts", "description": "The walk's text before its first stop."},
+  "stops": {"type": "array", "items": {"$ref": "#/$defs/stop"}},
+  "slides": {
+   "oneOf": [
+    {"type": "null"},
+    {
+     "type": "object",
+     "required": ["manifest", "deck", "slides", "docs"],
+     "additionalProperties": false,
+     "properties": {
+      "manifest": {"type": "string", "description": "The slides manifest, from the class folder."},
+      "deck": {"type": ["string", "null"]},
+      "slides": {"type": "object", "additionalProperties": {"type": "array", "items": {"type": "string"}}},
+      "docs": {"type": "object", "additionalProperties": {"type": "string"}}
+     }
+    }
+   ]
+  },
+  "history": {"type": "object", "additionalProperties": {"$ref": "#/$defs/sha"}, "description": "The commit of every step and move of the whole history, by name, for an item that names another part."},
+  "errors": {"type": "array", "items": {"type": "string"}, "description": "What timewalk-check says is wrong with this walk."},
+  "warnings": {"type": "array", "items": {"type": "string"}, "description": "What timewalk-check warns of in this walk."}
+ },
+ "$defs": {
+  "sha": {"type": "string", "pattern": "^[0-9a-f]{40,64}$"},
+  "mode": {"enum": ["shared", "do", "watch"]},
+  "parts": {"type": "array", "items": {"$ref": "#/$defs/part"}},
+  "part": {
+   "oneOf": [
+    {
+     "type": "object",
+     "required": ["kind", "mode", "text"],
+     "additionalProperties": false,
+     "properties": {"kind": {"const": "prose"}, "mode": {"$ref": "#/$defs/mode"}, "text": {"type": "string", "description": "Markdown, as written; fenced code is kept whole."}}
+    },
+    {
+     "type": "object",
+     "required": ["kind", "mode", "text", "track", "makes"],
+     "additionalProperties": false,
+     "properties": {
+      "kind": {"const": "command"},
+      "mode": {"$ref": "#/$defs/mode"},
+      "text": {"type": "string"},
+      "track": {"type": "string", "pattern": "^(|main|runs[2-9]?)$", "description": "\"\" for the shell at the step, main for the repository you started from, runs to runs9 for the Runs tabs."},
+      "makes": {"type": "boolean", "description": "A do$ line: the command that makes the move."}
+     }
+    },
+    {
+     "type": "object",
+     "required": ["kind", "mode", "item", "path", "move", "words", "show"],
+     "additionalProperties": false,
+     "properties": {
+      "kind": {"const": "item"},
+      "mode": {"$ref": "#/$defs/mode"},
+      "item": {"enum": ["diff", "file"]},
+      "path": {"type": "string"},
+      "move": {"type": ["string", "null"], "description": "The step or move the item names, when it is not the move it is in."},
+      "words": {"type": "string"},
+      "show": {"type": "array", "items": {"type": "string"}, "description": "The lines its show: lines quote, in order."}
+     }
+    },
+    {
+     "type": "object",
+     "required": ["kind", "mode", "text", "whole", "path"],
+     "additionalProperties": false,
+     "properties": {
+      "kind": {"const": "apply"},
+      "mode": {"$ref": "#/$defs/mode"},
+      "text": {"type": "string", "description": "The sentence about **Apply this file** or **Apply the whole move**, as written."},
+      "whole": {"type": "boolean", "description": "True for Apply the whole move."},
+      "path": {"type": ["string", "null"], "description": "For Apply this file: the file of the move it names, or that the text named last before it."}
+     }
+    }
+   ]
+  },
+  "names": {
+   "type": "object",
+   "required": ["added", "removed", "changed"],
+   "additionalProperties": false,
+   "properties": {
+    "added": {"type": "array", "items": {"type": "string"}},
+    "removed": {"type": "array", "items": {"type": "string"}},
+    "changed": {"type": "array", "items": {"type": "string"}}
+   }
+  },
+  "file": {
+   "type": "object",
+   "required": ["path", "old_path", "status", "added", "removed", "binary", "diff", "names"],
+   "additionalProperties": false,
+   "properties": {
+    "path": {"type": "string"},
+    "old_path": {"type": ["string", "null"]},
+    "status": {"enum": ["added", "modified", "deleted", "renamed"]},
+    "added": {"type": "integer", "minimum": 0},
+    "removed": {"type": "integer", "minimum": 0},
+    "binary": {"type": "boolean"},
+    "diff": {"type": "string", "description": "The whole diff of the file, from its first hunk; \"\" for a binary file or a change of mode alone."},
+    "names": {"$ref": "#/$defs/names"}
+   }
+  },
+  "move": {
+   "type": "object",
+   "required": ["name", "title", "commit", "parent", "parts", "files"],
+   "additionalProperties": false,
+   "properties": {
+    "name": {"type": "string"},
+    "title": {"type": "string"},
+    "commit": {"$ref": "#/$defs/sha"},
+    "parent": {"$ref": "#/$defs/sha"},
+    "parts": {"$ref": "#/$defs/parts"},
+    "files": {"type": "array", "items": {"$ref": "#/$defs/file"}}
+   }
+  },
+  "stop": {
+   "type": "object",
+   "required": ["name", "title", "tag", "commit", "start", "own", "parts", "moves", "files"],
+   "additionalProperties": false,
+   "properties": {
+    "name": {"type": "string"},
+    "title": {"type": "string"},
+    "tag": {
+     "oneOf": [
+      {"type": "null"},
+      {"type": "object", "required": ["name", "title", "text"], "additionalProperties": false,
+       "properties": {"name": {"type": "string"}, "title": {"type": "string"}, "text": {"type": "string"}}}
+     ]
+    },
+    "commit": {"$ref": "#/$defs/sha"},
+    "start": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/sha"}]},
+    "own": {
+     "oneOf": [
+      {"type": "null"},
+      {"type": "object", "required": ["title", "text"], "additionalProperties": false,
+       "properties": {"title": {"type": "string"}, "text": {"type": "string"}}}
+     ]
+    },
+    "parts": {"$ref": "#/$defs/parts"},
+    "moves": {"type": "array", "items": {"$ref": "#/$defs/move"}},
+    "files": {"type": "array", "items": {"$ref": "#/$defs/file"}, "description": "For a stop with no moves: the files of its change from its start. Empty for a stop with moves."}
+   }
+  }
+ }
+}

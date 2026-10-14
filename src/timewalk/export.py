@@ -27,6 +27,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 from timewalk import GitError, Move, Step, code_span, git, note_blocks, pick_steps, select_steps, shown_line, step_moves, tag_steps
+from timewalk.facts import facts_text, walk_facts
 from timewalk.walks import TocError, Walk, in_a_copy, inside, load_toc, own_errors_text
 
 MADE = "Made by timewalk-export from the notes of the walk. Do not edit it by hand: run timewalk-export again."
@@ -562,6 +563,9 @@ def write(
     stale: list[tuple[Path, Path]] = []
     for folder, files, ours in plan:
         for path in files:
+            blocked = next((up for up in (folder / path).parents if up.exists() and not up.is_dir()), None)
+            if blocked:
+                raise SystemExit(f"timewalk-export: {blocked} is a file where {folder / path} needs a folder; move it away, or write to another folder")
             check(folder / path)
         for pattern in ours:
             for old in sorted(folder.glob(pattern)):
@@ -591,6 +595,32 @@ def forbidden_folders(
     return [main, main.parent / f"{main.name}-replay", *worktrees]
 
 
+def facts_of(
+    args: argparse.Namespace,  # The options of the command
+    walk: Walk,  # The walk
+    walks: list[Walk],  # Every walk of the table, for the slides folders that the checks know
+    main_repo: Path,  # The project
+    url: str,  # The project on GitHub
+    title: str,  # The walk's title
+    text: str,  # The notes the walk reads, as written
+    given: str,  # The intro that --intro gives, without the presenter's lines, or ""
+) -> str:  # The JSON file of the walk's facts
+    "Gather the facts of the walk, with the presenter's lines left out unless --private keeps them."
+    keep = (lambda words: words) if args.private else public_text
+    given = args.intro.read_text(encoding="utf-8") if args.private and args.intro else given   # --private keeps the intro's cues too
+    root = args.toc.resolve().parent if args.toc else main_repo
+    try:
+        opening = read_sections(keep(text))[1] if not (walk.intro or walk.shared) else keep(walk.intro_text())
+        own = walk.own_sections()
+        own = None if own is None else [keep(section) if section else None for section in own]
+        intro = "\n\n".join(part.strip() for part in (given, "" if args.no_opening and not (walk.intro or walk.shared) else opening) if part.strip())
+        folders = [w.slides.parent for w in walks if w.slides] if args.toc and (len(walks) > 1 or walks[0].id != "default") else None
+        facts = walk_facts(walk, main_repo, root, url, title, keep(text), intro, own, folders, keep)
+    except NotesError as error:
+        raise SystemExit(f"timewalk-export: {walk.notes}: {error}") from None
+    return facts_text(facts, MADE)
+
+
 def main() -> None:
     "Write the tutorial of a walk for reading without timewalk: Markdown for GitHub, and a website."
     parser = argparse.ArgumentParser(description="Write a walk for reading without timewalk: a Markdown file for each mode of a tutorial, "
@@ -607,9 +637,13 @@ def main() -> None:
     parser.add_argument("--markdown", type=Path, help="the folder for TUTORIAL-do.md and TUTORIAL-watch.md, or a narrative's TUTORIAL.md")
     parser.add_argument("--site", type=Path, help="the folder for the website")
     parser.add_argument("--quarto", action="store_true", help="write _quarto.yml for the website, not _smalldocs.yml")
+    parser.add_argument("--json", type=Path, help="the file for the facts of the walk, for a class to render its own pages from")
+    parser.add_argument("--private", action="store_true", help="with --json, keep the presenter's lines, for a presenter's copy")
     args = parser.parse_args()
-    if not args.markdown and not args.site:
-        parser.error("give --markdown, --site, or both")
+    if not args.markdown and not args.site and not args.json:
+        parser.error("give --markdown, --site, --json, or more than one")
+    if args.private and not args.json:
+        parser.error("--private is for --json; the copies to read never have the presenter's lines")
     if bool(args.toc) == bool(args.notes):
         parser.error("give --toc (and --walk), or --notes")
     try:
@@ -617,6 +651,7 @@ def main() -> None:
     except GitError as error:
         raise SystemExit(f"timewalk-export: {args.repo}: {error}") from None
     walk = Walk("notes", "", "tutorial", args.notes.resolve() if args.notes else None, None, args.tags, None, "manual")
+    walks = [walk]
     if args.toc:
         try:
             walks = load_toc(args.toc.resolve())
@@ -639,7 +674,10 @@ def main() -> None:
     every = tag_steps(main_repo, walk.tags)
     history = {**{s.name: s.sha for s in every}, **{m.name: m.sha for found in step_moves(main_repo, every) for m in found}}
     history_starts = {s.name: every[i - 1].sha for i, s in enumerate(every) if i}
-    text = (walk.shared or walk.notes).read_text(encoding="utf-8")   # a walk with notes of its own reads them through own_sections
+    try:
+        text = (walk.shared or walk.notes).read_text(encoding="utf-8")   # a walk with notes of its own reads them through own_sections
+    except OSError as error:
+        raise SystemExit(f"timewalk-export: the notes of walk {walk.id}, {walk.shared or walk.notes}, cannot be read ({error.strerror})") from None
     url = github_url(main_repo, args.github)
     warned: set[str] = set()
 
@@ -652,7 +690,7 @@ def main() -> None:
         "Find the change of one file between two commits. A commit's own change comes from git show, which knows a first commit."
         own = base == f"{sha}^"
         try:
-            return git(main_repo, *(["show", "--format=", sha] if own else ["diff", base, sha]), "--no-color", "--no-ext-diff", "--", path)
+            return git(main_repo, "--literal-pathspecs", *(["show", "--format=", sha] if own else ["diff", base, sha]), "--no-color", "--no-ext-diff", "--", path)
         except GitError:
             return ""
 
@@ -678,10 +716,12 @@ def main() -> None:
         if name not in history:
             warned.add(f"the notes have ## {name}, which is not a step of the history; it is left out")
     title = args.title or (walk.title if walk.select or not named else named) or "Tutorial"
+    plan: list[tuple[Path, dict[str, str], list[str]]] = []
+    if args.json:
+        plan.append((args.json.parent, {args.json.name: facts_of(args, walk, walks, main_repo, url, title, text, intros[0])}, []))
     head = "\n\n".join(part.strip() for part in [intros[0], intros[1] if walk.intro or walk.shared else "" if args.no_opening else opening]
                          if part.strip())
     modes: list[str | None] = ["do", "watch"] if tutorial else [None]
-    plan: list[tuple[Path, dict[str, str], list[str]]] = []
     if args.markdown:
         files = {}
         for mode in modes:

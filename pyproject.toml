@@ -25,12 +25,17 @@ Homepage = "https://rahuldave.com/timewalk/"
 Repository = "https://github.com/rahuldave/timewalk"
 
 [dependency-groups]
-dev = ["pytest>=8", "httpx>=0.27", "pytest-timeout>=2.3"]
+dev = [
+    "pytest>=8",
+    "httpx>=0.27",
+    "pytest-timeout>=2.3",
+    "jsonschema>=4.26.0",
+]
 
 [tool.uv]
 # uvx --from a working copy rebuilds timewalk when one of these changes. By default uv looks at pyproject.toml alone, so a
 # new commit with the same version ran the old build from uv's cache. The static files are the page's; __pycache__ is not counted.
-cache-keys = [{ file = "pyproject.toml" }, { file = "src/**/*.py" }, { file = "src/timewalk/static/**/*" }, { git = { commit = true } }]
+cache-keys = [{ file = "pyproject.toml" }, { file = "src/**/*.py" }, { file = "src/timewalk/static/**/*" }, { file = "src/timewalk/*.json" }, { git = { commit = true } }]
 
 [tool.pytest.ini_options]
 # A test that waits on a socket fails after a minute, with a traceback, and never hangs the run.

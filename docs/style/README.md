@@ -71,6 +71,9 @@ Keep the text of these headings. A link from another page uses each one as an an
 | walks.md | A walk with notes of its own |
 | walks.md | The checks of a walk with notes of its own |
 | authoring.md | What a small walk needs |
+| authoring.md | Write for a reader who has never heard of timewalk |
+| authoring.md | A file to take whole |
+| reference.md | The facts file |
 
 ## Glossary
 
@@ -134,6 +137,11 @@ only that page could not know it.
 | block | In the notes of a tutorial, the lines between `::: do` or `::: watch` and a line `:::`. The page shows a block only in its mode. Write "block for one mode" where a reader could take it for a code block |
 | fenced div | The Markdown of Pandoc, Quarto and smalldocs for a block: a line of three colons or more with a name, and a line of colons that closes it |
 | copy of a tutorial | A file or a website that `timewalk-export` writes, to read a tutorial in one mode without timewalk |
+| facts file | The JSON file that `timewalk-export --json` writes: the history and the notes of one walk, for a class to make its own pages from. Its layout is `src/timewalk/facts.schema.json` |
+| part | In the facts file, one piece of the text of a stop or a move, in the order of the notes: prose, a command, an item, or a sentence about Apply. Each part is for both modes or for one |
+| shared text | The text of a move section outside the blocks for one mode. Both modes show it |
+| Check it | The label of the anchor commands of a move, in the notes column |
+| Read the tutorial, Build it yourself | The names of watch mode and do mode on the pages that walk-kit makes from the facts file |
 | item | A line under `files:` in the notes, ``- diff `path`: words`` or ``- file `path`: words``. On the page, a button to a change or a file, with its words |
 | excerpt | A small, read-only part of the real diff that the notes draw for a `show:` line: the line, with two lines of context or its whole short hunk |
 | Last change, Next change | Two views of the reader. Last change is the change of the step or move just made, and Next change is the change of the next one |

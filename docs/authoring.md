@@ -51,11 +51,14 @@ Keep the notes file outside the repository, in the class folder. Give each step 
 Each section has these parts:
 
 - **`$ just setup`** as its first command.
-- **What the step is about,** and why the authors made it.
-- **The files to read.**
+- **What the step builds, and why,** in terms of the program.
 - **Each command, with the result to expect.**
 - **Cues and questions for the class.** A cue is a line that starts with `> `.
 - **Optionally, `time:`**, the planned start of the step.
+- **Last, a line `files:`,** with an item and its words for each file to read.
+
+Write the text for a reader who knows the program, and not timewalk. See
+[Write for a reader who has never heard of timewalk](#write-for-a-reader-who-has-never-heard-of-timewalk).
 
 Use `runs$` for a command that takes a long time, and `main$` for a command that only reads your
 repository. See [Notes](notes.md).
@@ -123,37 +126,90 @@ See [Commits for a tutorial](build-walks.md#commits-for-a-tutorial),
   change that makes sense alone, for example one test or one new function.
 - **Make each move work alone.** After each move, the anchor commands run and give the result that the
   notes state.
-- **Keep each move small enough that its items and excerpts tell the story.** A learner who reads only
-  the items, their words and the quoted lines must see what the move did.
+- **Keep each move small enough to explain in a few paragraphs.** The text tells the story of the move.
+  The items under `files:`, their words and their excerpts are the reference that the learner checks the
+  story against.
+
+### Write for a reader who has never heard of timewalk
+
+A learner reads the notes in timewalk, or in a copy of the tutorial. A learner can also read them on a
+page that a class makes from the facts file of the walk. The facts file is the JSON file that
+`timewalk-export --json` writes. See [The facts file](reference.md#the-facts-file).
+
+The reader knows the program, or wants to learn it. The reader does not know timewalk, and does not need
+to. These rules hold for every walk, a narrative too.
+
+- **Keep timewalk's words out of the text.** "step", "move", "commit", "Start", "Before the moves" and a
+  name such as `step-02.4` are timewalk's words. Do not write them in the text of the notes. The heading
+  `### step-02.1 Title` keeps its name, because timewalk needs it. Only its title is for the reader.
+- **Open a step with what we build, and why,** in terms of the program. For example, write "We cannot
+  tell whether `tally` still works after a change, so we write tests." Do not write "The moves of this step
+  add tests."
+- **Open a move with the problem, and the change that solves it.** Do not open with "Now we add X", and do
+  not open with a list of files or a link to a diff.
+- **Then give the change, piece by piece.** Each piece says in the shared text what it changes, and why.
+  The shared text is the text outside the blocks for one mode. See
+  [Write for both modes](#write-for-both-modes).
+  - **In do mode,** the learner makes the change from the page alone. Give the exact lines in a code
+    block. Say where they go, for example "after the line `X`", "in place of these lines" or "the whole
+    file". Give each command that makes the change as a `do$` line. Never describe an edit only in words.
+  - **In watch mode,** say what the change does, and where to see it. "Read the change of
+    `pyproject.toml`." alone explains nothing.
+  - **For a file to take whole,** write **Apply this file** in the shared text. See
+    [A file to take whole](#a-file-to-take-whole).
+- **Then give the check.** Give a command, what it prints, and what that shows.
+- **Last, write `files:`,** with an item and its words for every file of the change, `uv.lock` too. Do
+  not write a list of the files in prose, such as "These files change:". A page made from the facts file
+  makes that list from the facts.
+- **Keep the same rules in the text of a small walk.** Its intro and the text at its stops are for the
+  same reader. See [Write a move to read alone](#write-a-move-to-read-alone).
+
+The diffs are the data that the learner checks against. They help, but they are not the explanation. So
+the text above `files:` must explain the change without them.
+
+### A file to take whole
+
+Some changes take a whole file, for example a new file, or a change too long to type. Say so in the
+shared text, for both modes, with **Apply this file**. Name the file in backticks in the same sentence, and say which
+lines to take, or "the whole file".
+
+```markdown
+`scripts/corpus.py` writes the corpus, a text of 2000 words. The file is too long to type, so take the
+whole file `scripts/corpus.py` with **Apply this file**.
+```
+
+- **In timewalk,** the **Apply** bar shows in do mode only. In watch mode the file is already there, and
+  the sentence says that it came whole.
+- **In the facts file,** the sentence is a part of its own, of the kind `apply`, with the path of the
+  file. A page made from the facts makes it a link to the whole file at the commit of the change, in both
+  ways of reading.
+- **Apply is a shortcut, and never the only way.** The learner can also copy the file from the link.
+
+Do not put the sentence in a `do` block only. Then a reader of the watch mode never learns that the file
+came whole.
 
 ### The section of each move
 
 Write the text of the step before its first move section. That text is about the whole step. The notes
-column shows it in a section of its own, "Before the moves". Put `$ just setup` there, and say what the
-moves do together.
+column shows it in a section of its own, under the title of the step. Put `$ just setup` there, and say
+what the step builds, and why.
 
 Give each move a `### step-NN.k Title` section, in the order of the commits. Each section has these
-parts:
+parts, in this order:
 
-- **The plan,** in the shared text before the instructions. It says in a sentence what we do now, in
-  both modes.
-- **The instructions** to make the move by hand, with the code to type, in a `do` block. A command
-  that makes the move goes in a `do$` line in the shared text. In a `watch` block, say what to look at.
-  See [Write for both modes](#write-for-both-modes).
-- **The files changed, as a list.** Start it with "The move changes these files:", or "The move changes one
-  file:" for one. Give each file an item of its own. Write its path as it is, in code. Then say what
-  happened to it, for example "- `src/tally/__init__.py`: 7 lines added; adds `count`." Do not put the
-  files in a sentence of prose. After the list, say in a sentence which change to read first.
-  `timewalk-notes` drafts the list from the diff. A step of a narrative that lists its files starts with
-  "The step changes these files:", or "The step changes one file:".
-- **A line `files:`, with items.** Give every item words that say what to look for in the file.
+- **The problem, and the change that solves it,** in the shared text, for both modes.
+- **The change, piece by piece.** Give the lines to type in a `do` block, with where they go. A command
+  that makes the move goes in a `do$` line in the shared text. In a `watch` block, say what the change
+  does, and where to see it. See [Write for both modes](#write-for-both-modes).
+- **One or more anchor commands, in the shared text.** An anchor command is the check of the move. Make
+  it safe to run again, and say what it prints and what that shows. A test that fails is a good anchor,
+  if the notes say that it fails. The notes column shows the anchor commands under the label "Check it".
+- **Last, a line `files:`, with items.** Give an item to every file of the commit, `uv.lock` too. Give
+  every item words that say what to look for in the file.
 - **A `show:` line for the main line of the move.** Under its item, quote that line of the change. The
   notes draw it as an excerpt, and the reader marks it. Put the line in one backtick. If the line has a
   backtick in it, put it in two backticks, for example ``` show: ``The command `wikiapp` runs.`` ```. See
   [Quote a line with backticks](walks.md#quote-a-line-with-backticks).
-- **One or more anchor commands at the end, in the shared text.** An anchor command shows what the move
-  did. Make it safe to run again, and say what it gives. A test that fails is a good anchor, if the notes
-  say that it fails.
 
 ```markdown
 files:
@@ -182,40 +238,53 @@ Put as much as you can in the shared text, as long as it reads well in both mode
 with only what differs between the modes.
 
 - **In the shared text,** keep what both modes need:
-  - the plan before each block, which says what we do now, for example "Now we teach `main` an option,
-    `--top N`."
-  - the list "The move changes these files:", and the line `files:` with its items and `show:` lines
-  - the explanation of the change
+  - the problem, and the change that solves it, before the blocks. For example, write "`tally` prints
+    every word, and a long text fills the screen. An option `--top N` prints only the `N` most common
+    words."
+  - the explanation of each piece of the change
+  - a sentence with **Apply this file**, for a file to take whole
+  - each command that makes the move, as a `do$` line, which the part below explains
   - the commands that check what happened, for example `$ just test` and
     `$ uv run tally --top 3 data/corpus.txt`. The checks at the end of the move are its anchor commands.
-  - each command that makes the move, as a `do$` line, which the part below explains
-- **In a `do` block,** give the edits by hand that carry out the plan. Give the code, and each file to
-  make.
-- **In a `watch` block,** say what to look at. The code is already there, so point to it. Name the file
-  or the line.
+  - last, the line `files:` with its items and `show:` lines
+- **In a `do` block,** give the exact lines to type, and say where they go. Give each file to make, whole,
+  in a code block.
+- **In a `watch` block,** say what the change does, and where to see it. The code is already there, so
+  name the file and the line.
 
 ````markdown
 ### step-02.2 A test of an empty text
 
-Now we add a test that counts the words of an empty text.
+An empty file is a text with no words. `count` must give an empty dictionary for it, and not fail. A
+test in a file of its own, `tests/test_empty.py`, says so, and keeps it true after later changes.
 
 ::: do
-Make `tests/test_empty.py`:
+Make the file `tests/test_empty.py`, with these lines:
 
 ```python
-...
+import unittest
+
+from tally import count
+
+
+class Empty(unittest.TestCase):
+    def test_empty(self):
+        self.assertEqual(count(""), {})
 ```
 :::
 
 ::: watch
-Open `tests/test_empty.py`.
+The new file `tests/test_empty.py` holds one test, `test_empty`. It gives `count` the empty text `""`,
+and expects the empty dictionary `{}`.
 :::
+
+$ uv run python -m unittest discover -s tests -q
+
+The new test passes at once. `split()` finds no words in an empty text, so `count` gives `{}`.
 
 files:
 - diff `tests/test_empty.py`: an empty text counts nothing.
   show: `self.assertEqual(count(""), {})`
-
-$ uv run python -m unittest discover -s tests -q
 ````
 
 #### Commands that make the move
@@ -259,8 +328,8 @@ block:
 - **Give an important command a part of its own.** An important command needs a paragraph or more to
   explain. Put the explanation in the shared text, then the command. After it, put a shared command that
   checks its result.
-- **Put two or three commands that are less important together.** Give them one line of plan in the
-  shared text, and a shared check after them.
+- **Put two or three commands that are less important together.** Give them one sentence in the shared
+  text that says what they change, and why. Put a shared check after them.
 - **Divide the `watch` blocks in the same places.** Give a group of commands a `watch` block beside it
   when there is something to look at. A group with nothing to look at, for example `mkdir` and a first
   test run, needs no `watch` block.
@@ -273,44 +342,48 @@ whole move.
 ````markdown
 ### step-06.1 The formatter
 
-The move changes these files:
+The code of tally mixes single and double quotes, and the blank lines differ from one function to the
+next. A formatter writes every file in one style, so that a later change shows only what it changes.
+ruff is a formatter and a linter. A linter reads the code and reports mistakes that the tests do not find.
 
-- `pyproject.toml`: 5 lines added; adds the group `dev`.
-- `uv.lock`: ruff and its version.
-- `src/tally/__init__.py`: 4 lines added, 4 removed; the formatter's changes.
-
-files:
-- diff `pyproject.toml`: ruff, a tool of development only.
-  show: `"ruff>=0.17.0",`
-- diff `src/tally/__init__.py`: double quotes and blank lines. The code does the same.
-
-Now we add ruff, the formatter and linter, to the group `dev`. `uv add` writes ruff into
-`pyproject.toml` and `uv.lock`, and installs it in `.venv`. The group `dev` is for the people who work
-on tally. A user who installs tally does not get ruff.
+First we install ruff in the group `dev`. The group `dev` is for the people who work on tally, so a user
+who installs tally does not get ruff. `uv add` writes ruff into `pyproject.toml` and `uv.lock`, and
+installs it in `.venv`:
 
 do$ uv add --dev ruff
 
 ::: watch
-Read the diff of `pyproject.toml`.
+In `pyproject.toml`, the table `[dependency-groups]` now has the group `dev`, with the line
+`"ruff>=0.17.0",`. In `uv.lock`, the entry `name = "ruff"` gives the exact version that `just setup`
+installs.
 :::
 
 $ uv run ruff --version
 
-Now we format the code, and fix what the linter can fix.
+The command prints the version of ruff, so ruff is installed.
+
+Then we format the code, and let the linter fix what it can fix:
 
 do$ uv run ruff format src tests
 do$ uv run ruff check --fix src tests
 
 ::: watch
-Read the diff of `src/tally/__init__.py`.
+In `src/tally/__init__.py`, each string now has double quotes, and two blank lines come before each
+function. The code does the same as before.
 :::
-
-The formatter changed the quotes and the blank lines, and nothing else.
 
 $ just test
 $ uv run tally --top 3 data/corpus.txt
 
-The tests pass, and the command prints the same three lines as before.
+The tests pass, and the command prints the same three lines as before. So the formatter changed how the
+code looks, and not what it does.
+
+files:
+- diff `pyproject.toml`: ruff, a tool for development only.
+  show: `"ruff>=0.17.0",`
+- diff `uv.lock`: the exact version of ruff, which every learner gets with `just setup`.
+  show: `name = "ruff"`
+- diff `src/tally/__init__.py`: double quotes and blank lines. The code does the same.
 ````
 
 In do mode, the page shows every command, in order, and each `do$` line is a command to run. In watch
@@ -346,7 +419,7 @@ its own. If not, a shared command after its block is enough. See
 
 If an anchor command is in a `do` block, the move has no command in watch mode, and `timewalk-check` warns
 of it. A `do$` line is never an anchor command. So a move whose only commands are `do$` lines has no
-anchor command, and `timewalk-check` warns of it too. `timewalk-notes --blocks` drafts both blocks in each new move. See
+anchor command, and `timewalk-check` warns of it too. `timewalk-notes` drafts both blocks in each new move. See
 [Blocks for one mode](walks.md#do-mode-and-watch-mode).
 
 ### Write a move to read alone
@@ -358,8 +431,7 @@ section to read well alone:
 
 - **Do not lean on the text of the step before the move.** Do not write "as we said above" or "the file
   from the last move". Say again what the reader needs.
-- **Name the files of the move.** Write each path in full, in the list "The move changes these files:" and
-  in the items.
+- **Name the files of the move.** Write each path in full, in the text and in the items.
 - **Name the commands of the move.** Give each command to type, and its anchor commands, in the section
   of the move.
 - **Put the setup at the top of the section of the step.** The commands before the first words of the
@@ -437,9 +509,10 @@ Run the checks in this order:
    timewalk-notes repo --toc toc.toml --walk tutorial --write
    ```
 
-   Each draft has a line `files:` with an item for each file of the move. Finish each draft by hand.
-   Write the words of each item, and pick the `show:` lines. Then run `timewalk-check` again.
-   Add `--blocks` to draft a block for each mode in each new move.
+   Each draft has comments that ask for the text of both modes, a `do` block, a `watch` block and the
+   check. It ends with a line `files:`, with an item for each file of the move. Finish each draft by
+   hand. Replace each comment, write the words of each item, and pick the `show:` lines. Then run
+   `timewalk-check` again.
 3. **Make the PDF** of each walk:
 
    ```

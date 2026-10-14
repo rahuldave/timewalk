@@ -1,6 +1,7 @@
 """Tests for timewalk: the git layer, the notes and slides readers, and the web application's guards."""
 
 import hashlib
+import json
 import re
 import shutil
 import subprocess
@@ -1935,7 +1936,8 @@ def test_the_mode_starts_from_the_table_and_is_shared(tutorial: timewalk.Repo, t
 
 def test_timewalk_notes_drafts_the_missing_moves(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
     "Each move without a section gets a draft with what its commit changed; a section already written stays as it is."
-    from timewalk.walks import add_move_sections, check, load_toc, move_summary
+    from timewalk.facts import changed_names
+    from timewalk.walks import add_move_sections, check, load_toc
 
     (tutorial_class / "notes.md").write_text("## step-00\n\n## step-01 S\n\n### step-01.1 Mine\nmy words\n\n$ ls\n\n## step-02\n")
     walk = load_toc(tutorial_class / "toc.toml")[0]
@@ -1944,7 +1946,9 @@ def test_timewalk_notes_drafts_the_missing_moves(tutorial: timewalk.Repo, tutori
     assert added == ["step-01.2", "step-01.3"]
     assert "### step-01.1 Mine\nmy words\n\n$ ls" in text
     assert "### step-01.2 b\n" in text and "### step-01.3 c\n" in text, "titles without the move's or the step's prefix"
-    assert move_summary(tutorial.main, tutorial.moves[1][1].sha) == ["- `README.md`: 1 line added, 1 removed", "- `b.txt`: a new file of 1 line"]
+    sha = tutorial.moves[1][1].sha
+    assert changed_names(tutorial.main, f"{sha}^", sha) == {"README.md": {"added": [], "removed": [], "changed": []},
+                                                          "b.txt": {"added": [], "removed": [], "changed": []}}
     (tutorial_class / "notes.md").write_text(text)
     _, warnings = check(load_toc(tutorial_class / "toc.toml"), tutorial.main, tutorial_class)
     assert any("step-01.2 has no command" in w for w in warnings) and not any("step-01.1 has no command" in w for w in warnings)
@@ -1964,10 +1968,10 @@ def test_the_summary_names_python_functions_and_recipes(tmp_path: Path) -> None:
     (main / "m.py").write_text("def a():\n    return 2\n\n\ndef b(x, y):\n    return x\n\n\nclass C:\n    pass\n")
     (main / "justfile").write_text("test:\n    echo t\n\ncheck:\n    echo c\n")
     run_git(main, "commit", "-qam", "two")
-    from timewalk.walks import move_summary
+    from timewalk.facts import changed_names
 
-    summary = move_summary(main, run_git(main, "rev-parse", "HEAD"))
-    assert summary == ["- `justfile`: 3 lines added; adds `recipe check`", "- `m.py`: 6 lines added, 2 removed; adds `class C`; changes `a`, `b`"]
+    assert changed_names(main, "HEAD^", "HEAD") == {"justfile": {"added": ["recipe check"], "removed": [], "changed": []},
+                                                    "m.py": {"added": ["class C"], "removed": [], "changed": ["a", "b"]}}
 
 
 # ---------- the replay copy: a clone on a branch ----------
@@ -2177,7 +2181,7 @@ def test_timewalk_notes_starts_the_notes_of_a_walk_folder_without_them(tutorial:
 
 def test_the_summary_names_functions_in_files_with_odd_names(tmp_path: Path) -> None:
     "A function added in a file with a space, or with an accent, is named: git's tab and quotes do not hide the file."
-    from timewalk.walks import move_summary
+    from timewalk.facts import changed_names
     main = tmp_path / "odd"
     main.mkdir()
     run_git(main, "init", "--quiet", "-b", "main")
@@ -2190,8 +2194,8 @@ def test_the_summary_names_functions_in_files_with_odd_names(tmp_path: Path) -> 
         (main / name).write_text("def b():\n    return 1\n")
     run_git(main, "add", "-A")
     run_git(main, "commit", "-qm", "two")
-    summary = "\n".join(move_summary(main, "HEAD"))
-    assert "`sp ace.py`: a new file of 2 lines; adds `b`" in summary and "`café.py`: a new file of 2 lines; adds `b`" in summary
+    names = changed_names(main, "HEAD^", "HEAD")
+    assert names["sp ace.py"]["added"] == ["b"] and names["café.py"]["added"] == ["b"]
 
 
 def test_timewalk_notes_keeps_the_order_the_line_ends_and_the_titles(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
@@ -2213,14 +2217,14 @@ def test_timewalk_notes_keeps_the_order_the_line_ends_and_the_titles(tutorial: t
 
 
 def test_timewalk_notes_drafts_items_for_each_file(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
-    "A drafted move lists its files as items: file for a new one, diff for a changed one, with the words left to write, under a lead line that the guide allows."
+    "A drafted move ends with an item for every file of its commit: file for a new one, diff for a changed one, with the words left to write, and no counted list."
     from timewalk.walks import add_move_sections, load_toc
 
     (tutorial_class / "notes.md").write_text("## step-00\n\n## step-01\n\n## step-02\n")
     _, _, drafts = add_move_sections(load_toc(tutorial_class / "toc.toml")[0], tutorial.main)
-    assert "files:\n- diff `README.md`: \n- file `b.txt`: \n" in drafts[1]
-    assert "The move changes these files:\n\n- `README.md`: 1 line added, 1 removed\n- `b.txt`: a new file of 1 line\n" in drafts[1]
-    assert "The move changes one file:\n\n- `a.txt`: a new file of 1 line\n" in drafts[0]
+    assert drafts[1].endswith("files:\n- diff `README.md`: \n- file `b.txt`: \n")
+    assert drafts[0].endswith("files:\n- file `a.txt`: \n")
+    assert not any("The move changes" in d for d in drafts)
 
 
 def test_the_two_tabs_and_a_file_as_a_move_leaves_it(tutored: TestClient) -> None:
@@ -2424,16 +2428,17 @@ def test_the_checks_of_blocks_and_of_each_mode(tutorial: timewalk.Repo, tutorial
 
 
 def test_timewalk_notes_drafts_a_block_for_each_mode(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
-    "With --blocks, a drafted move has a line for both modes, then a ::: do and a ::: watch block, closed, before its list of files; without it, none."
+    "A drafted move has, in order: the problem and the change for both modes, a ::: do and a ::: watch block, the check, and files: last."
     from timewalk.walks import add_move_sections, load_toc
 
     (tutorial_class / "notes.md").write_text("## step-00\n\n## step-01\n\n## step-02\n")
-    text, _, drafts = add_move_sections(load_toc(tutorial_class / "toc.toml")[0], tutorial.main, blocks=True)
-    assert all("::: do\n" in d and "::: watch\n" in d and d.index("::: watch") < d.index("The move changes") for d in drafts)
-    assert all(d.index("For both modes") < d.index("::: do") for d in drafts), "the plan for both modes comes before the blocks"
+    text, _, drafts = add_move_sections(load_toc(tutorial_class / "toc.toml")[0], tutorial.main)
+    for draft in drafts:
+        order = [draft.index(mark) for mark in ("For both modes", "::: do\n", "::: watch\n", "A command that checks", "files:")]
+        assert order == sorted(order), draft
+    assert "**Apply this file**" in drafts[0], "a file taken whole is said in the text for both modes"
     assert timewalk.note_blocks(text).errors == []
-    _, _, plain = add_move_sections(load_toc(tutorial_class / "toc.toml")[0], tutorial.main)
-    assert not any(":::" in d for d in plain)
+    assert timewalk.parse_notes(text)["step-01"]["commands"] == [], "the example command is in a comment, not a command"
 
 
 def test_the_pdf_prints_both_blocks_under_their_mode() -> None:
@@ -3405,3 +3410,208 @@ def test_a_walk_with_its_own_notes_says_its_mistakes_at_the_start(tutorial: time
         assert done.returncode != 0 and says in done.stderr and "select names" not in done.stderr, done.stderr
         done = run_export(tutorial.main, "--toc", str(toc), "--markdown", str(tutorial_class / "out"), "--github", "https://github.com/o/t")
         assert done.returncode != 0 and says in done.stderr, done.stderr
+
+
+# ---------- the facts of a walk: timewalk-export --json ----------
+
+
+def facts_of(
+    main: Path,  # The project
+    toc: Path,  # The table of contents
+    walk: str,  # The walk's id
+    *more: str,  # More options
+) -> tuple[dict, bytes]:  # The facts, and the file as written
+    "Run timewalk-export --json for one walk, check the file against the schema, and read it."
+    import jsonschema
+
+    out = toc.parent / "facts" / f"{walk}.json"
+    done = run_export(main, "--toc", str(toc), "--walk", walk, "--json", str(out), "--github", "https://github.com/o/t", *more)
+    assert done.returncode == 0, done.stderr
+    schema = json.loads((Path(timewalk.__file__).parent / "facts.schema.json").read_text())
+    facts = json.loads(out.read_text())
+    jsonschema.validate(facts, schema)
+    return facts, out.read_bytes()
+
+
+def test_the_facts_of_a_tutorial(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
+    "Each stop and move, its parts in the order of the notes with their modes, every file with its whole diff, and no private line."
+    (tutorial_class / "notes.md").write_text(BLOCK_NOTES)
+    facts, raw = facts_of(tutorial.main, tutorial_class / "toc.toml", "tut")
+    assert facts["format"] == 1 and facts["walk"] == {"id": "tut", "title": "t, one move at a time", "description": "", "kind": "tutorial",
+                                                      "mode": "do", "github": "https://github.com/o/t"}
+    assert facts["intro"] == [{"kind": "prose", "mode": "shared", "text": "The opening."}], "the text before the first step, without its title"
+    assert [s["name"] for s in facts["stops"]] == ["step-00", "step-01", "step-02"]
+    zero, one, _ = facts["stops"]
+    assert zero["start"] is None and zero["tag"] == {"name": "step-00", "title": "The start.", "text": ""}
+    assert [f["path"] for f in zero["files"]] == ["README.md"], "a stop with no moves has the files of its change"
+    assert one["start"] == zero["commit"] and one["files"] == [] and one["title"] == "Three moves"
+    first, second, third = one["moves"]
+    assert first["parent"] == zero["commit"] and first["title"] == "A file a"
+    assert [(p["kind"], p["mode"]) for p in first["parts"]] == [("prose", "do"), ("command", "do"), ("prose", "watch"), ("item", "shared")]
+    assert ":::\na line of code, kept as it is\n\nthe blank line above stays\n```" in first["parts"][0]["text"], "fenced code is whole"
+    assert first["parts"][3] == {"kind": "item", "mode": "shared", "item": "file", "path": "a.txt", "move": None, "words": "the first file.", "show": []}
+    assert "Say" not in raw.decode() and "presenter" not in raw.decode() and "time:" not in raw.decode(), "the private lines are left out"
+    assert second["parts"][0] == {"kind": "apply", "mode": "shared", "whole": True, "path": None,
+                                  "text": "Take it with **Apply the whole move** in timewalk, or from the move's commit on GitHub."}
+    assert second["parts"][1]["show"] == ["# t, with b"]
+    assert [(f["path"], f["status"], f["added"], f["removed"]) for f in second["files"]] == [("README.md", "modified", 1, 1), ("b.txt", "added", 1, 0)]
+    assert second["files"][0]["diff"] == "@@ -1 +1 @@\n-# t\n+# t, with b\n", "the diff from its first hunk"
+    assert third["parts"][:2] == [{"kind": "apply", "mode": "shared", "text": "Use **Apply this file**.", "whole": False, "path": None},
+                                  {"kind": "prose", "mode": "shared", "text": "It is short."}], "the sentence alone; no file named"
+    assert facts["slides"]["slides"]["step-01.2"] == ["deck.md#4"] and facts["slides"]["manifest"] == "slides/slides.toml"
+    assert facts["errors"] == [] and str(tutorial_class) not in raw.decode() and str(tutorial.main) not in raw.decode()
+    assert facts_of(tutorial.main, tutorial_class / "toc.toml", "tut")[1] == raw, "the same notes and history give the same bytes"
+    private, _ = facts_of(tutorial.main, tutorial_class / "toc.toml", "tut", "--private")
+    assert any("> Say: the presenter's line" in p["text"] for p in private["stops"][1]["moves"][0]["parts"] if p["kind"] == "prose")
+
+
+def test_the_facts_name_files_renames_and_code(tmp_path: Path) -> None:
+    "A rename keeps its old path, a binary file has no diff, a deleted file names what it removes, and a long diff is whole."
+    from timewalk.facts import change_files
+
+    main = tmp_path / "f"
+    main.mkdir()
+    run_git(main, "init", "--quiet", "-b", "main")
+    run_git(main, "config", "user.name", "t")
+    run_git(main, "config", "user.email", "t@e")
+    (main / "old.txt").write_text("".join(f"line {n}\n" for n in range(40)))
+    (main / "gone.py").write_text("def f():\n    pass\n")
+    (main / "long.txt").write_text("")
+    run_git(main, "add", "-A")
+    run_git(main, "commit", "-qm", "one")
+    run_git(main, "mv", "old.txt", "new.txt")
+    (main / "gone.py").unlink()
+    (main / "pic.bin").write_bytes(bytes(range(256)))
+    (main / "long.txt").write_text("".join(f"{n}\n" for n in range(500)))
+    run_git(main, "add", "-A")
+    run_git(main, "commit", "-qm", "two")
+    files = {f["path"]: f for f in change_files(main, "HEAD^", "HEAD")}
+    assert files["new.txt"]["status"] == "renamed" and files["new.txt"]["old_path"] == "old.txt" and files["new.txt"]["diff"] == ""
+    assert files["pic.bin"]["binary"] and files["pic.bin"]["diff"] == "" and files["pic.bin"]["status"] == "added"
+    assert files["gone.py"]["status"] == "deleted" and files["gone.py"]["names"]["removed"] == ["f"]
+    assert files["long.txt"]["added"] == 500 and files["long.txt"]["diff"].count("\n+") == 500 and files["long.txt"]["diff"].endswith("+499\n")
+    first = {f["path"]: f for f in change_files(main, None, run_git(main, "rev-parse", "HEAD^"))}
+    assert set(first) == {"old.txt", "gone.py", "long.txt"} and first["gone.py"]["names"]["added"] == ["f"], "a first commit has a change too"
+
+
+def test_the_facts_of_a_narrative_a_selection_and_notes_of_its_own(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
+    "A narrative's stops have no moves; a small step starts at the commit before its first move; a walk's own text comes with its includes."
+    toc = own_walk(tutorial_class)
+    toc.write_text(toc.read_text() + '\n[[walk]]\nid = "small"\ntitle = "Small"\nkind = "tutorial"\nnotes = "notes.md"\n'
+                   'select = [{ range = "step-01.2..step-01.3", title = "Two" }]\n'
+                   '\n[[walk]]\nid = "story"\ntitle = "Story"\nkind = "narrative"\nnotes = "notes.md"\nselect = ["step-01.1", "step-02"]\n')
+    own, _ = facts_of(tutorial.main, toc, "own")
+    middle, end = own["stops"]
+    assert middle["name"] == "step-01.2 to step-01.3" and middle["own"]["title"] == "The middle two" and middle["tag"] is None
+    assert middle["start"] == tutorial.moves[1][0].sha, "the commit before its first move"
+    assert [p["text"] for p in middle["parts"]] == ["just setup", "We skipped step-01.1, which makes a."]
+    assert [p["text"] for p in middle["moves"][0]["parts"]] == ["move b", "ls", "Between the two.", "DO ONLY"]
+    assert middle["moves"][0]["parts"][3]["mode"] == "do"
+    assert "{{include" not in middle["own"]["text"] and "### step-01.2 B" in middle["own"]["text"]
+    assert end["tag"]["name"] == "step-02" and end["own"]["title"] == "The end"
+    assert own["intro"] == [{"kind": "prose", "mode": "shared", "text": "This walk leaves out step-01.1."}], "its intro, without the cue"
+    small, _ = facts_of(tutorial.main, toc, "small")
+    assert [(s["name"], s["title"]) for s in small["stops"]] == [("step-01.2 to step-01.3", "Two")]
+    assert [p["text"] for p in small["stops"][0]["parts"]] == ["just setup"], "a small step leads with its step's commands"
+    story, _ = facts_of(tutorial.main, toc, "story")
+    assert story["walk"]["mode"] == "watch" and [s["moves"] for s in story["stops"]] == [[], []]
+    assert [p["text"] for p in story["stops"][0]["parts"]] == ["just setup", "move a", "ls"], "a stop at a move: its step's commands, then the move's text, as the page shows"
+    assert [f["path"] for f in story["stops"][0]["files"]] == ["a.txt"]
+
+
+def test_a_files_list_after_the_check_and_an_item_for_the_lockfile_pass_the_checks(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
+    "The order the draft gives, the check first and files: last, with an item for every file, is accepted as it is."
+    from timewalk.walks import check, load_toc
+
+    (tutorial_class / "notes.md").write_text(
+        "## step-00\n\n## step-01\n\n### step-01.1 A\n\nWe add a.\n\n$ ls\n\nfiles:\n- file `a.txt`: the file.\n\n"
+        "### step-01.2 B\n\nWe add b.\n\n$ ls\n\nfiles:\n- diff `README.md`: the title.\n- file `b.txt`: b.\n\n"
+        "### step-01.3 C\n\n$ ls\n\nfiles:\n- file `c.txt`: c.\n\n## step-02\n")
+    assert check(load_toc(tutorial_class / "toc.toml"), tutorial.main, tutorial_class) == ([], [])
+
+
+def test_the_facts_read_odd_paths_as_paths_and_ignore_the_git_config(tmp_path: Path) -> None:
+    "A file named like a pattern gets its own diff, and the user's diff settings change neither the diffs nor the names."
+    from timewalk.facts import change_files
+
+    main = tmp_path / "p"
+    main.mkdir()
+    run_git(main, "init", "--quiet", "-b", "main")
+    run_git(main, "config", "user.name", "t")
+    run_git(main, "config", "user.email", "t@e")
+    (main / "x.txt").write_text("x\n")
+    run_git(main, "add", "-A")
+    run_git(main, "commit", "-qm", "one")
+    for name in ("a.py", "[ab].py", ":c.py"):
+        (main / name).write_text("def f():\n    return 1\n")
+    run_git(main, "add", "-A")
+    run_git(main, "commit", "-qm", "two")
+    plain = {f["path"]: f for f in change_files(main, "HEAD^", "HEAD")}
+    assert plain["[ab].py"]["diff"] == "@@ -0,0 +1,2 @@\n+def f():\n+    return 1\n", "a pattern's diff is its own file's alone"
+    assert plain[":c.py"]["diff"] and plain[":c.py"]["names"]["added"] == ["f"]
+    run_git(main, "config", "diff.noprefix", "true")
+    run_git(main, "config", "diff.context", "1")
+    run_git(main, "config", "diff.algorithm", "histogram")
+    assert {f["path"]: f for f in change_files(main, "HEAD^", "HEAD")} == plain, "the same facts whatever the config"
+
+
+def test_the_facts_keep_an_apply_in_a_comment_and_a_cue_in_an_item_out_of_the_page() -> None:
+    "An Apply that the draft's comment names is the author's, an item's comment never reaches a reader, and e.g. ends no sentence."
+    from timewalk.facts import apply_parts, parts_of
+
+    drafted = "<!-- A file to take whole: say so here, with **Apply this file**, so that both ways of reading link it. -->"
+    assert apply_parts(drafted, "shared", ["a.py"], ["a.py"]) == [{"kind": "prose", "mode": "shared", "text": drafted}]
+    parts = apply_parts("Take one file, e.g. `a.py`, with **Apply this file**. Then run it.", "shared", ["a.py"], [])
+    assert [p["kind"] for p in parts] == ["apply", "prose"] and parts[0]["path"] == "a.py"
+    fenced = apply_parts("```\nx\n```bash\n**Apply this file**\n```\n", "do", ["a.py"], [])
+    assert [p["kind"] for p in fenced] == ["prose"], "```bash closes no fence, so the Apply is code"
+    item = {"kind": "files", "items": [{"kind": "diff", "move": None, "path": "a.py", "text": "the change. <!-- > Say: a cue -->", "show": []}]}
+    assert parts_of([item], ["a.py"])[0]["words"] == "the change."
+
+
+def test_the_draft_names_a_renamed_file_by_its_new_path(tmp_path: Path) -> None:
+    "A rename is one item, under the new path, as the pages list it; a deleted file is a diff item."
+    from timewalk import Move
+    from timewalk.walks import move_section
+
+    main = tmp_path / "r"
+    main.mkdir()
+    run_git(main, "init", "--quiet", "-b", "main")
+    run_git(main, "config", "user.name", "t")
+    run_git(main, "config", "user.email", "t@e")
+    (main / "app.py").write_text("".join(f"line {n}\n" for n in range(30)))
+    (main / "old.txt").write_text("old\n")
+    run_git(main, "add", "-A")
+    run_git(main, "commit", "-qm", "one")
+    run_git(main, "mv", "app.py", "core.py")
+    run_git(main, "rm", "-q", "old.txt")
+    run_git(main, "commit", "-qm", "step-01.1: rename")
+    draft = move_section(main, Move("step-01.1", run_git(main, "rev-parse", "HEAD"), "step-01.1: rename"))
+    assert draft.endswith("files:\n- diff `core.py`: \n- diff `old.txt`: \n")
+
+
+def test_timewalk_export_says_when_the_notes_are_missing(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
+    "A notes file that is not there is a message, not a traceback."
+    (tutorial_class / "notes.md").unlink()
+    done = run_export(tutorial.main, "--toc", str(tutorial_class / "toc.toml"), "--json", str(tutorial_class / "f.json"), "--github", "https://github.com/o/t")
+    assert done.returncode != 0 and "cannot be read" in done.stderr and "Traceback" not in done.stderr
+
+
+def test_timewalk_export_refuses_a_file_where_a_folder_goes_and_writes_nothing(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
+    "A file where the site needs a folder stops the command before it writes the facts or anything else."
+    site = tutorial_class / "site"
+    site.mkdir()
+    (site / "watch").write_text("not a folder\n")
+    done = run_export(tutorial.main, "--toc", str(tutorial_class / "toc.toml"), "--json", str(tutorial_class / "f.json"), "--site", str(site),
+                      "--github", "https://github.com/o/t")
+    assert done.returncode != 0 and "needs a folder" in done.stderr and "Traceback" not in done.stderr
+    assert not (tutorial_class / "f.json").exists()
+
+
+def test_the_facts_leave_a_cue_out_of_a_tags_text(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
+    "A tag's message is public, but a cue in it is the presenter's, as in the notes; --private keeps it."
+    run_git(tutorial.main, "tag", "-f", "-a", "step-02", "-m", "step-02: d\n\nThe text.\n\n> Say: a cue in the tag", "step-02")
+    facts, _ = facts_of(tutorial.main, tutorial_class / "toc.toml", "tut")
+    assert facts["stops"][2]["tag"]["text"] == "The text."
+    private, _ = facts_of(tutorial.main, tutorial_class / "toc.toml", "tut", "--private")
+    assert "a cue in the tag" in private["stops"][2]["tag"]["text"]

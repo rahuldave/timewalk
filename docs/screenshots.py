@@ -375,7 +375,7 @@ def shoot_tutorial(browser, tmp: Path) -> None:
         page.wait_for_timeout(800)
         save("tutorial-watch")
 
-        # Watch mode at step-01, with both of its moves shown: the text before the moves in a section of its own, each
+        # Watch mode at step-01, with both of its moves shown: the text before the moves in a section under the step's title, each
         # shown move with Shown and Restart step, and Next step at the end. A tall window, so that the whole notes fit.
         post("/api/move", {"to": 1, "name": "step-01"})
         page.wait_for_function("document.getElementById('step-name').textContent === 'step-01'")

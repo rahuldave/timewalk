@@ -205,10 +205,14 @@ timewalk-notes repo --toc toc.toml --walk tutorial            # print the drafts
 timewalk-notes repo --toc toc.toml --walk tutorial --write    # write them into the notes
 ```
 
-A draft has the title of the move, a list "The move changes these files:" from the diff, a line `files:` and a comment.
-Under `files:`, it drafts one item for each file of the move, with no words. Add the instructions to make
-the move by hand. Give each item its words, and quote the main line of the change with `show:`. End the
-section with its anchor commands.
+A draft has the title of the move, and comments that ask for each part in the order that a reader needs
+them. First comes the problem and the change, for both modes. A block `::: do` follows, for the exact
+lines to type, and a block `::: watch`, for what the change does. A comment for the check comes next. Last
+comes a line `files:`, with one item for each file of the move, `uv.lock` too, with no words.
+
+Replace each comment. Write for a reader who knows the program, and not timewalk. See
+[Write for a reader who has never heard of timewalk](authoring.md#write-for-a-reader-who-has-never-heard-of-timewalk).
+Give each item its words, and quote the main line of the change with `show:`.
 
 ```markdown
 files:

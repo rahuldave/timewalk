@@ -203,48 +203,66 @@ history, name its steps and moves with `select`. See
 Give each move a `### step-NN.k Title` section, in the order of the commits. Here `NN` is the number of
 the step and `k` is the number of the move. A move section holds these parts:
 
-- **The instructions** to make the move by hand, with the code to type. Write a command that makes the
+- **The problem, and the change that solves it,** for both modes. See
+  [Write for a reader who has never heard of timewalk](authoring.md#write-for-a-reader-who-has-never-heard-of-timewalk).
+- **The change, piece by piece,** with the exact code to type in do mode. Write a command that makes the
   move as a `do$` line, for example `do$ uv add --group test pytest`. See
   [Write for both modes](authoring.md#write-for-both-modes).
-- **The files changed,** a list that starts "The move changes these files:". Each item is one file, its
-  path as it is, then what happened to it. `timewalk-notes` drafts it from the diff. See [Draft the notes of the moves](#draft-the-notes-of-the-moves).
-- **A line `files:`, with items.** Each item is one file to look at, with words that say why. A `show:`
-  line under an item quotes the main line of the change. See [The items under files](#the-items-under-files).
-- **One or more commands at the end,** with the result to expect. They are the anchor of the move.
+- **One or more commands that check the change,** with the result to expect. They are the anchor of the
+  move.
+- **Last, a line `files:`, with items.** Each item is one file of the commit, with words that say what to
+  look for. A `show:` line under an item quotes the main line of the change. See
+  [The items under files](#the-items-under-files).
 
 ````markdown
 ## step-02 Tests, one at a time
 
 $ just setup
 
-We add the tests one file at a time, and run them after each.
+We cannot tell whether `count` still works after a change, so we write tests. We add them one file at a
+time, and run them after each.
 
 ### step-02.1 A test of counting
 
-Make `tests/test_count.py` with two tests:
+The first test says what `count` gives for a short text. The second test also asks that "A" and "a"
+count as one word, which `count` does not do yet.
+
+::: do
+Make the file `tests/test_count.py`, with these lines:
 
 ```python
-...
+import unittest
+
+from tally import count
+
+
+class Count(unittest.TestCase):
+    def test_words(self):
+        self.assertEqual(count("a b a"), {"a": 2, "b": 1})
+
+    def test_case(self):
+        self.assertEqual(count("A a"), {"a": 2})
 ```
+:::
 
-The move changes one file:
+::: watch
+The new file `tests/test_count.py` holds two tests. `test_case` gives `count` the text `"A a"`, and
+expects `{"a": 2}`.
+:::
 
-- `tests/test_count.py`: a new file of 11 lines; adds `class Count`, `test_words` and `test_case`.
+$ uv run python -m unittest discover -s tests -q
+
+One test fails. `test_case` expects `{"a": 2}`, and `count` still tells "A" from "a".
 
 files:
 - diff `tests/test_count.py`: two tests. The second asks for something the code cannot do yet.
   show: `self.assertEqual(count("A a"), {"a": 2})`
-
-$ uv run python -m unittest discover -s tests -q
-
-One test fails: `test_case` expects `{"a": 2}`.
 ````
 
 ### Anchor commands
 
 The last commands of a move section are its anchor commands. An anchor command shows what the move did,
-for example a test run or a run of the program. The notes column shows them under the label "After this
-move, run:".
+for example a test run or a run of the program. The notes column shows them under the label "Check it".
 
 A run of commands ends where the mode changes. So the last command of a `do` block and a shared command
 after it are two runs. Only the last run of shared commands in a move is its anchor. A move with all its
@@ -302,8 +320,9 @@ has a grey **Shown ✓** button in its place, which does nothing.
 #### Blocks for one mode
 
 The two modes need some different words. In do mode, the notes must give every line to type. In watch
-mode, the code is already there. The notes point to what to look at, and the lines to type get in the
-way. But the plan of the move, the items and the explanation are the same in both modes.
+mode, the code is already there. The notes say what the change does and where to see it, and the lines
+to type get in the way. But the problem, the explanation, the check and the items are the same in both
+modes.
 
 So the notes of a tutorial can hold a block for one mode, for only the words that differ. A block is a
 fenced div, as Pandoc, Quarto and smalldocs read it. A line `::: do` or `::: watch` opens it, and a line
@@ -312,24 +331,36 @@ fenced div, as Pandoc, Quarto and smalldocs read it. A line `::: do` or `::: wat
 ````markdown
 ### step-02.1 A test of counting
 
-Now we add two tests. The second asks for something that the code cannot do yet.
+`count` must give the number of each word, and count "A" and "a" as one word. Two tests say so. The
+second asks for something that the code cannot do yet.
 
 ::: do
-Make `tests/test_count.py` with two tests:
+Make the file `tests/test_count.py`, with these lines:
 
 ```python
-...
+import unittest
+
+from tally import count
+
+
+class Count(unittest.TestCase):
+    def test_words(self):
+        self.assertEqual(count("a b a"), {"a": 2, "b": 1})
+
+    def test_case(self):
+        self.assertEqual(count("A a"), {"a": 2})
 ```
 :::
 
 ::: watch
-Open `tests/test_count.py`.
+The new file `tests/test_count.py` holds two tests. `test_case` expects `count("A a")` to give
+`{"a": 2}`.
 :::
+
+$ uv run python -m unittest discover -s tests -q
 
 files:
 - diff `tests/test_count.py`: two tests. The second fails.
-
-$ uv run python -m unittest discover -s tests -q
 ````
 
 `::: {.do}` also opens a block, and so does a fence of more colons, for example `::::: watch`. The page
@@ -398,7 +429,7 @@ with a bar on its left:
 
 | Section | Looks |
 |---|---|
-| The text before the first move | A section of its own, with the label "Before the moves" and no bar. The text is about the whole step |
+| The text before the first move | A section of its own, under the title of the step and with no bar. The text is about the whole step |
 | A move made | A grey bar, and a check before its name |
 | The move on show | A dark bar |
 | The next move | A blue bar |
@@ -413,7 +444,7 @@ When every move of the step is made, a green **Next step** button ends the notes
 next step. The same button shows in the head of the slides, at the last slide. The Room window does not
 show the button on the slides.
 
-![The notes of step-01 in watch mode, with both moves shown: the text before the moves, two moves with Shown and Restart step, and Next step at the end](images/tutorial-next.png)
+![The notes of step-01 in watch mode, with both moves shown: the text of the step under its title, two moves with Shown and Restart step, and Next step at the end](images/tutorial-next.png)
 
 timewalk writes down the move on show in the git folder of the replay copy. After a restart, the page
 comes back at the same move, and the moves before it count as done. [What timewalk does with git](git.md#what-is-checked-out-and-when) says what
@@ -626,30 +657,49 @@ timewalk-notes ~/code/project --toc my-class/toc.toml --walk tutorial --write
 ```
 
 Without `--write`, it prints only the drafts. With `--write`, it writes them into the
-notes file of the walk. It refuses a notes file inside the project or a replay copy of it. A section that is already in the notes stays as it is. Each draft has these
-parts:
+notes file of the walk. It refuses a notes file inside the project or a replay copy of it. A section that is already in the notes stays as it is. Each draft has its
+parts in the order that a reader needs them:
 
 - **A heading** `### step-NN.k`, with the subject of the commit after its name as the title. A step that
   has no section yet gets one too, `## step-NN Title`, with the first line of its tag's message, steps
   without moves too. A walk whose folder has no `notes.md` yet gets one.
-- **"The move changes these files:"**, a list with one item for each file of the commit ("The move changes one
-  file:" for one). An item says if the file is new
-  or removed, or how many lines the commit added and removed. For Python, it names the functions and
-  classes that the commit added, removed or changed. For a `justfile`, it names the recipes that the
-  commit added.
-- **A line `files:`, with items.** It drafts a `file` item for each new file, and a `diff` item for each
-  changed file. You write the words of each item. It writes no `show:` lines.
-- **A comment** that asks for a command, for you to replace with an anchor command.
+- **A comment for both modes.** It asks for the problem that the change solves, and the change. It also
+  asks for **Apply this file** when a file is to be taken whole.
+- **A block `::: do`,** with a comment that asks for the exact lines to type and where they go, or the
+  command to run.
+- **A block `::: watch`,** with a comment that asks what the change does, and where to see it.
+- **A comment that asks for the check,** a command and what it prints. Replace it with the anchor
+  commands.
+- **Last, a line `files:`, with items.** It drafts an item for every file of the commit, `uv.lock` too. A
+  new file gets a `file` item, and every other file a `diff` item. You write the words of each item. It
+  writes no `show:` lines.
 
-The list names only what the diff shows. Finish each draft by hand. Write the instructions and the words
-of each item. Quote the main line of each change with `show:`, and add the anchor commands.
+```markdown
+### step-03.1 ruff, a tool for development
 
-With `--blocks`, each new move starts with a comment for both modes, and then two blocks, `::: do` and
-`::: watch`. Each has a comment that says what goes in it:
+<!-- For both modes: the problem this change solves, and the change. ... -->
 
-- **Before the blocks,** for both modes, what we do now, in one sentence.
-- **In the `do` block,** the lines to type and the commands to run, and only those.
-- **In the `watch` block,** what to look at.
+::: do
+<!-- The exact lines to type and where they go, in a code block, or the command to run. ... -->
+:::
+
+::: watch
+<!-- What the change does, and where to see it. ... -->
+:::
+
+<!-- A command that checks the result, and what it prints, for example: $ just test -->
+
+files:
+- diff `pyproject.toml`: 
+- diff `uv.lock`: 
+```
+
+The draft has no list of the files in prose. A page made from the facts of the walk makes that list
+from the facts. See [The facts file](reference.md#the-facts-file). Finish each draft by hand. Replace each
+comment, write the words of each item, and quote the main line of each change with `show:`. Leave out a
+block that has nothing to say.
+
+`--blocks` is still accepted, for old scripts, and does nothing. Every draft has both blocks.
 
 See [Write for both modes](authoring.md#write-for-both-modes).
 
@@ -668,6 +718,27 @@ smalldocs render site
 
 The links go to the project on GitHub. The address comes from the remote `origin` of the project, or from
 `--github`. [Reference](reference.md#timewalk-export) lists every option.
+
+### The facts of a walk, for pages of your own
+
+The Markdown and the website of `timewalk-export` stay, for whoever uses them. A class can also make
+pages of its own. Then it asks `timewalk-export` for the facts of the walk, in place of a copy:
+
+```
+timewalk-export ~/code/project --toc my-class/toc.toml --walk tutorial --json facts.json
+```
+
+The facts file is one JSON file. It holds the walk, its stops, and the text of each move in parts for
+each mode. It also holds every file that each commit changes, with its whole diff. It has no words or
+layout of timewalk, so a class sets its own.
+
+The facts leave out the private lines, as the copies do. `--private` keeps them, for a copy for the
+presenter. See [The facts file](reference.md#the-facts-file).
+
+The `walk` skill of walk-kit, at github.com/rahuldave/walk-kit, makes the pages of a class from the facts
+file. It calls the two ways of reading **Read the tutorial**, for watch mode, and **Build it yourself**,
+for do mode. On its pages, a sentence with **Apply this file** links to the whole file at the commit of
+the change, in both ways of reading.
 
 ### What a copy holds
 
@@ -945,6 +1016,9 @@ timewalk-export ~/code/project --toc my-class/toc.toml --walk linting --markdown
 
 - **A tutorial** gets `TUTORIAL-do.md`, `TUTORIAL-watch.md`, and one website with **Watch** and **Do**.
 - **A narrative** gets one `TUTORIAL.md`, and one website with a page for each stop.
+
+`--json FILE` writes the facts of any walk too, small walks included. Each stop of the walk is a stop in
+the facts, with its moves.
 
 The title of the copy of a walk that selects is the `title` of the walk. Each copy starts with the
 `intro` of the walk. Each page has the name of its stop, for example `watch/step-05.3-to-step-05.6.qmd`.
