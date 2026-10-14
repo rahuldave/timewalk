@@ -72,7 +72,8 @@ Keep the text of these headings. A link from another page uses each one as an an
 | walks.md | The checks of a walk with notes of its own |
 | authoring.md | What a small walk needs |
 | authoring.md | Write for a reader who has never heard of timewalk |
-| authoring.md | A file to take whole |
+| authoring.md | patch$ lines |
+| walks.md | patch$ buttons |
 | reference.md | The facts file |
 
 ## Glossary
@@ -138,7 +139,7 @@ only that page could not know it.
 | fenced div | The Markdown of Pandoc, Quarto and smalldocs for a block: a line of three colons or more with a name, and a line of colons that closes it |
 | copy of a tutorial | A file or a website that `timewalk-export` writes, to read a tutorial in one mode without timewalk |
 | facts file | The JSON file that `timewalk-export --json` writes: the history and the notes of one walk, for a class to make its own pages from. Its layout is `src/timewalk/facts.schema.json` |
-| part | In the facts file, one piece of the text of a stop or a move, in the order of the notes: prose, a command, an item, or a sentence about Apply. Each part is for both modes or for one |
+| part | In the facts file, one piece of the text of a stop or a move, in the order of the notes: prose, a command, an item, or a `patch$` line. Each part is for both modes or for one |
 | shared text | The text of a move section outside the blocks for one mode. Both modes show it |
 | Check it | The label of the anchor commands of a move, in the notes column |
 | Read the tutorial, Build it yourself | The names of watch mode and do mode on the pages that walk-kit makes from the facts file |
@@ -146,7 +147,8 @@ only that page could not know it.
 | excerpt | A small, read-only part of the real diff that the notes draw for a `show:` line: the line, with two lines of context or its whole short hunk |
 | Last change, Next change | Two views of the reader. Last change is the change of the step or move just made, and Next change is the change of the next one |
 | Your file, Your edits | Two views of the reader: the file on the disk, and its edits since the commit that the replay copy stands on |
-| Apply | The bar in Next change, in do mode. Its buttons type a git command into the shell that makes the change of the next move as edits |
+| patch$ line | A line `patch$ PATH` in the shared text of a move. It says that the move changes `PATH` by a patch, the diff of the move's commit |
+| Apply patch, Replace with the move's file | The buttons of a `patch$` line, in do mode. Apply patch types `git apply` of the patch. Replace keeps the learner's file on a saved branch, then types `git checkout` of the move's file |
 | files match | In do mode, the answer of timewalk when the files of the learner are the same as the commit of the move: "Your files match step-02.3 ✓" |
 | anchor command | One of the last commands of a move section. It shows what the move did, and the notes say what it gives |
 | artifact | A file that a step needs and that git does not hold. `just setup` makes it in an ignored folder when it is missing |

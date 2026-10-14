@@ -160,12 +160,11 @@ button.go:hover { filter: brightness(1.1); border-color: var(--go); }
 .match { font-size: 0.85em; color: var(--ink-2); }
 .match.ok { color: var(--accent); font-weight: 600; }
 .p-match { display: block; margin: 0 0 4px; }
-.apply-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 4px 10px; border-bottom: 1px solid var(--rule); background: var(--bg); }
-.apply-note { font-size: 0.85em; color: var(--ink-2); flex: 1; min-width: 12em; }
 /* The reader's head: the path keeps room, and the tabs wrap to a second line when the labels are long. */
 .file-pane .pane-head { flex-wrap: wrap; row-gap: 4px; }
 .file-pane .file-path { min-width: 10em; }
-.file-pane .views { flex-wrap: wrap; }
+/* The tabs of the reader wrap onto a second line in a narrow pane, and are never cut at its edge. */
+.file-pane .views { flex-wrap: wrap; flex: 0 1 auto; min-width: 0; max-width: 100%; }
 .open-editor { font-size: 0.85em; margin-left: 8px; color: var(--accent); white-space: nowrap; }
 .p-hint { margin: 0 0 0.8em; }
 .move-modes { display: inline-flex; flex: none; border: 1px solid var(--rule); border-radius: 6px; overflow: hidden; margin-left: -10px; }
@@ -464,4 +463,6 @@ body.shell-mode .layouts { opacity: 0.55; }   /* Shell covers the layout; the la
 .p-move.later .p-excerpt pre.diff, .p-move.later .p-excerpt.p-gone { cursor: default; }
 .p-move.later .p-excerpt pre.diff:hover .line { filter: none; }
 /* A See diff or See file button reads as Restart step does: the verb in the page's font, the path in the code's. */
-.p-files button, .p-item button { font-family: var(--sans); font-size: 0.85em; padding: 2px 8px; }
+.p-files button, .p-item button, .p-patch button { font-family: var(--sans); font-size: 0.85em; padding: 2px 8px; }
+/* A patch$ line: its button, and See diff, on one row that wraps in a narrow column. */
+.p-patch { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0.4em 0; min-width: 0; }

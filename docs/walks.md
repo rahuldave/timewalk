@@ -142,7 +142,6 @@ problem, and exits with code 1 when it finds an error.
 | Problem | Gives |
 |---|---|
 | A notes section or a slides entry for a step that is not in the walk | An error |
-| In a tutorial, a move whose subject does not start with its name, for example `step-02.1:` | An error |
 | In a tutorial, a move with no `###` section, a `###` section for no move, or sections out of the order of the commits | An error |
 | A `moves` value other than `"do"` or `"watch"`, and other mistakes in `toc.toml` | An error |
 | A step with no entry in `slides.toml`. Give each step one slide or more | An error |
@@ -183,9 +182,9 @@ first-parent line. The first-parent line is the line of commits that git follows
 through the first parent of each merge. The last move is the commit of the step, with its tag. A step of
 one commit has no moves, and the first step has none.
 
-Write the subject of each commit with the name of its move, for example `step-02.1: a test of counting`.
-The commit of the step keeps its own subject, for example `step-02: the tests pass`. A subject with the
-wrong name is an error in the checks.
+timewalk names a move by its place, so its subject can say anything, or nothing. `jj new` makes a move with
+no subject. A subject such as `step-02.1: a test of counting` helps you read `git log`. The title of the move
+comes from its `###` heading in the notes, or else from its subject.
 
 ```
 step-01: count the words              tag step-01
@@ -205,9 +204,10 @@ the step and `k` is the number of the move. A move section holds these parts:
 
 - **The problem, and the change that solves it,** for both modes. See
   [Write for a reader who has never heard of timewalk](authoring.md#write-for-a-reader-who-has-never-heard-of-timewalk).
-- **The change, piece by piece,** with the exact code to type in do mode. Write a command that makes the
-  move as a `do$` line, for example `do$ uv add --group test pytest`. See
-  [Write for both modes](authoring.md#write-for-both-modes).
+- **The change, piece by piece.** Each file of the move comes from one line. A `do$` line gives a command
+  that writes it, for example `do$ uv add --group test pytest`. A `patch$` line names a file that the move
+  changes by a patch, for example `patch$ scripts/corpus.py`. See
+  [patch$ lines](authoring.md#patch-lines) and [Write for both modes](authoring.md#write-for-both-modes).
 - **One or more commands that check the change,** with the result to expect. They are the anchor of the
   move.
 - **Last, a line `files:`, with items.** Each item is one file of the commit, with words that say what to
@@ -308,8 +308,9 @@ skip would miss that. So the moves after the next one are grey, and their button
 nothing. The way back is the step's **Start**, or **↺ Restart step** in the notes, and then `just setup`.
 
 An item under `files:` opens the change of its move in the reader, even before the file exists. In do
-mode, the reader then shows the change in the tab **Next change**, with an **Apply** bar. See
-[The reader in a tutorial](#the-reader-in-a-tutorial) and [Apply](#apply).
+mode, the reader then shows the change in the tab **Next change**. A `patch$` line of the move gives a
+button that applies the patch. See [The reader in a tutorial](#the-reader-in-a-tutorial) and
+[patch$ buttons](#patch-buttons).
 
 ![A tutorial in watch mode after Show on the first move: the commit of step-02.1 checked out, the move with a grey Shown button, and the slide of the move](images/tutorial-watch.png)
 
@@ -491,7 +492,7 @@ one run of changed lines in a diff. When the item opens the reader, the reader m
 The excerpt is a band across the whole column, and the page shades the named line. A click on the excerpt opens
 the change, as the button of its item does. In a move after the next one, the click does nothing.
 
-![The notes of step-02.1 in do mode: an item with its words and its excerpt, and the reader on Next change with the quoted line marked, and the Apply bar](images/tutorial-items.png)
+![The notes of step-02.1 in do mode: an item with its words and its excerpt, and the reader on Next change with the quoted line marked](images/tutorial-items.png)
 
 If a `show:` line is no longer in the change, the notes draw a red band that says so. A click on the band
 opens the change too. A fix to the history can remove a quoted line. `timewalk-check` warns of it too.
@@ -533,6 +534,7 @@ label of each change names its move.
 | **At step-02.3** | The file as a move leaves it, read only. It shows only when a `file` item of a move that the learner has not made opens it, in do mode |
 | **Last change: step-02.2** | The move before, to this one: the change of the move just made |
 | **Next change: step-02.3** | This move, to the next one: the change of the move to make now. It is empty at the last move of a step |
+| **Yours and step-02.3** | In do mode: your file against the file as the move to make now leaves it. Lines with `-` are yours, and lines with `+` are the move's |
 | **Your edits** | The edits since the commit that the replay copy stands on |
 
 In do mode, the code does not move, so **Last change** and **Next change** follow the moves marked
@@ -542,30 +544,55 @@ empty and **Next change** is the first move.
 In a narrative, **Last change** compares the step before with this step. **Next change** compares this
 step with the next step, before you move to it.
 
-### Apply
+**Next change** is what the commit of the move changed. **Yours and step-02.3** is what is left to do. It
+compares your file with the file as the move leaves it, as the match does. So the learner
+sees both what they did and what the move expects.
 
-In do mode, the **Next change** tab has an **Apply** bar. Apply makes the change of the next move in the
-learner's files. It types a git command into the **At this step** tab, and runs it. The learner sees
-exactly what ran.
+Before any edit, the two tabs show the same change. When
+your file matches the move, the tab is empty. A file of the walk's `loose` that matches by the names of its
+packages says so above its diff, as the versions can differ.
 
-| Button | Types into the shell |
-|---|---|
-| **⇣ Apply this file** | ``(cd "$(git rev-parse --show-toplevel)" && git diff A B -- path \| git apply --3way)``, where `A` is the commit before the move and `B` is the commit of the move |
-| **⇣ Apply the whole move** | `git cherry-pick --no-commit B`, for the commit `B` of the move |
+### patch$ buttons
 
-- **The changes become edits.** HEAD stays where it is. HEAD is the commit that the replay copy stands
-  on. The file list marks the files, and **Your edits** shows them.
-- **A button is disabled** when the learner has already changed a file that it touches. The bar then
-  says to compare the file with **Next change**, or to use **⇥ Catch me up**.
+A line `patch$ PATH` in the notes says that the move changes `PATH` by a patch. See
+[patch$ lines](authoring.md#patch-lines). In do mode, on the move that the learner works on, the line shows
+a button that fits the learner's file. The button types a git command into the **At this step** tab, and
+runs it. The learner sees exactly what ran.
+
+| Button | Shows when | Types into the shell |
+|---|---|---|
+| **⇣ Apply patch PATH** | The file is as it was before the move | ``(cd COPY && git --literal-pathspecs diff --no-color --no-ext-diff --no-textconv --binary --src-prefix=a/ --dst-prefix=b/ A B -- PATH \| git apply --intent-to-add)`` |
+| **⇄ Replace with the move's file PATH** | The learner has changed the file | ``(cd COPY && git --literal-pathspecs checkout B -- PATH && git --literal-pathspecs reset -q -- PATH && git --literal-pathspecs add -N -- PATH)`` |
+
+Here `COPY` is the replay copy's own path, `A` is the commit before the move, and `B` is the commit of the move. The
+command names the copy by its path, so a shell that went elsewhere changes nothing there. The options of `git diff`
+give the form that `git apply` reads, whatever your git config says. A path is a name, not a pattern.
+
+- **Apply patch is a plain `git apply`.** It merges nothing and stages nothing. So a file never gets
+  conflict markers. The change becomes an edit, and HEAD stays where it is. A new file is tracked with
+  nothing staged, so **↺ Restart step** keeps it on a saved branch, as any edit.
+- **Replace keeps the learner's version first.** The server puts it on a branch
+  `timewalk/saved/<move>-yours`, a commit on top of HEAD. It writes no file. For a file that the move
+  deletes, Replace types `rm -f -- PATH`. What the learner staged with `git add` is kept too, in a commit of its
+  own. A copy with `--in-place`, or a replay worktree of an older version, shares its branches with your
+  repository. It cannot keep a branch, so Replace is off there.
+- **A renamed file needs a `patch$` line for each of its two paths.** Then the old file goes too. `timewalk-check` warns of a rename with one.
+- **The button is off** when the file is already as the move leaves it.
+- **The buttons follow the learner's file.** They change after each edit, and on each check of the match.
+- **± See diff PATH** opens the reader on the move's change of that file.
 - **The page itself never writes a file.** The shell runs the command, as any terminal does.
-- **The Room window has no Apply bar.**
+- **The Room window shows no Apply patch or Replace button,** only **± See diff PATH**.
 
-![The Apply bar after Apply the whole move: step-02.1 is marked done, and the reader shows the next move, step-02.2](images/tutorial-apply.png)
+The learner can also make the change by hand. The tab **Yours and step-NN.k** shows what still differs.
+Either way, the move is marked done when the files match. In watch mode, the line reads "A patch to PATH",
+with **± See diff PATH**.
+
+![The notes of step-02.2 in do mode with its patch$ line, Apply patch tests/test_empty.py and See diff, after Apply patch made step-02.1, and the reader on Next change: step-02.2](images/tutorial-patch.png)
 
 ### Your files match
 
 In do mode, the page asks timewalk every two seconds if the learner's files match the commit of the move
-that the learner works on. The answer shows on the section of that move, and in the Apply bar:
+that the learner works on. The answer shows on the section of that move:
 
 - **"Your files match step-02.3 ✓"** when every file is the same as in the commit.
 - **"2 files differ from step-02.3: a.py, b.py"** with the names of the files that differ.
@@ -573,7 +600,10 @@ that the learner works on. The answer shows on the section of that move, and in 
 A match marks the move done by itself, once for each move. Only your own window marks the move, and never
 the Room window.
 
-The comparison is by content. It takes every file that differs between HEAD and the commit of the
+The comparison is by content, and by whether each file can run. So a move of `do$ chmod +x x` alone is
+made only by `chmod`.
+
+The comparison takes every file that differs between HEAD and the commit of the
 move, and every file with edits. A new file of the move counts, even when git does not track it yet. The
 comparison is strict, so one extra space is a difference. It is a hint and never a gate. **Done ✓**
 still marks a move done when the learner made it another way.
@@ -614,7 +644,7 @@ A `pyproject.toml` or a `uv.lock` that the move makes must be there too, as any 
 A file that matches only by the names of its packages is still a match, and the move is marked done. The
 page names such files after the tick, for example "Your files match step-02.1 ✓ (pyproject.toml, uv.lock
 by the names of the packages, not their versions)". A file left out shows as "(notes.txt not compared)".
-**Apply** still writes the file of the commit, with its versions.
+**Apply patch** and **Replace** still write the file of the commit, with its versions.
 
 `loose` is for a tutorial only. `timewalk-check` gives an error for `loose` in a narrative, or for a
 `loose` that is not a list of text. It warns of each entry that no move of the walk changes, for example
@@ -663,10 +693,11 @@ parts in the order that a reader needs them:
 - **A heading** `### step-NN.k`, with the subject of the commit after its name as the title. A step that
   has no section yet gets one too, `## step-NN Title`, with the first line of its tag's message, steps
   without moves too. A walk whose folder has no `notes.md` yet gets one.
-- **A comment for both modes.** It asks for the problem that the change solves, and the change. It also
-  asks for **Apply this file** when a file is to be taken whole.
-- **A block `::: do`,** with a comment that asks for the exact lines to type and where they go, or the
-  command to run.
+- **A comment for both modes.** It asks for the problem that the change solves, and the change.
+- **A line `patch$ PATH` for each file of the commit.** Put a `do$` line, the command, in place of the
+  `patch$` lines of the files that a command writes.
+- **A block `::: do`,** with a comment that asks what to read in each patch, and where in the file. It
+  asks for no code, as the patch comes from the project.
 - **A block `::: watch`,** with a comment that asks what the change does, and where to see it.
 - **A comment that asks for the check,** a command and what it prints. Replace it with the anchor
   commands.
@@ -679,8 +710,11 @@ parts in the order that a reader needs them:
 
 <!-- For both modes: the problem this change solves, and the change. ... -->
 
+patch$ pyproject.toml
+patch$ uv.lock
+
 ::: do
-<!-- The exact lines to type and where they go, in a code block, or the command to run. ... -->
+<!-- What to read in each patch, and where in the file. Copy no code: the patch comes from the project. -->
 :::
 
 ::: watch
@@ -737,8 +771,8 @@ presenter. See [The facts file](reference.md#the-facts-file).
 
 The `walk` skill of walk-kit, at github.com/rahuldave/walk-kit, makes the pages of a class from the facts
 file. It calls the two ways of reading **Read the tutorial**, for watch mode, and **Build it yourself**,
-for do mode. On its pages, a sentence with **Apply this file** links to the whole file at the commit of
-the change, in both ways of reading.
+for do mode. On its pages, a `patch$` line reads "A patch to `PATH`." in Read the tutorial. In Build it
+yourself, it reads "Apply the patch to `PATH`:", with a command that applies the patch from GitHub.
 
 ### What a copy holds
 
@@ -773,10 +807,10 @@ Each copy is for one mode. It changes the notes in these ways:
     of the file is added.
   - GitHub and smalldocs 0.1.4 or later colour a `diff` block, with the removed lines in red and the added lines in green.
     Quarto colours it only with its common colours for code.
-- **A sentence about Apply goes to the commit instead.** A reader without timewalk has no **Apply** bar.
-  "with **Apply this file** in timewalk, or from the move's commit on GitHub" becomes "from the move's
-  commit", as a link. Any other **Apply this file** or **Apply the whole move** becomes a link to the
-  move's commit. The rest of the sentence stays.
+- **A `patch$` line follows the mode of the copy.** The do copy says "Apply the patch to `PATH`:", with
+  the path linked to its diff on GitHub. A `bash` code block follows, with
+  `curl -sL https://github.com/OWNER/NAME/commit/SHA.diff | git apply --include=PATH`. The watch copy says
+  "A patch to `PATH`.", with the same link. Any other sentence goes as written.
 - **A copy holds only the sections of the steps and moves of the walk.** If the notes have a section for
   a name that is not a step of the history, the command says so.
 
@@ -882,10 +916,9 @@ Each of these is an error, and timewalk does not start:
 
 ### Why select, and not tags of its own
 
-Before `select`, tags of its own on a branch were the only way to take a part of a tutorial. The
-subject of each move must start with the name of its move. A move `step-05.3` of the big tutorial is a
-different move in a walk with tags of its own, for example `lint-02.1`. So tags of its own need a copy of
-each commit, with a new subject. A fix to the big tutorial must then go into the copy too.
+Before `select`, tags of its own on a branch were the only way to take a part of a tutorial. Tags of its
+own need a copy of each commit, on a branch of its own. A fix to the big tutorial must then go into the copy
+too.
 
 With `select`, a move keeps its name in every walk. The notes, the commits and the selection then agree.
 Tags of its own are still the way for a part with a history of its own, for example the walk `hooks` of
@@ -996,7 +1029,7 @@ walk linting: step-05.3 to step-05.6 takes the section ### step-05.4, and notes.
 The other sections of the notes are not part of the small walk. The walk of the whole tutorial checks
 them, if the table of contents lists it. A section for a name that is not a step of the history is an
 error. Each small step needs a slide, of its own moves or of its step. The `###` sections of a step must
-be in the order of the commits. The subject of each move's commit must start with its name.
+be in the order of the commits.
 
 `timewalk-notes --write`, for a tutorial that selects, drafts only the sections that the walk takes. It
 writes them into the notes of the whole tutorial, in the order of the history. A new move section goes

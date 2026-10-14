@@ -92,9 +92,10 @@ Rahul set these rules. Each rule has tests. Do not weaken them.
 | File | What it is |
 |---|---|
 | `src/timewalk/__init__.py` | The whole server, one module: `git()`, `Repo` (steps, the replay clone and its fetches, moves, saved branches, diffs, reads), `select_steps` (a small walk's steps, each with its `start`, the commit before it, and the title of its entry) and `walk_notes` (the notes of each of its stops), `own_stops`, `stop_range` and `expand_stop` (a walk with notes of its own: its intro and `##` stops, the place that a stop's `{{include ...}}` lines make, and the stop with its includes put in), notes and slides parsers, `loosely_same` (a `pyproject.toml` or `uv.lock` that `loose` names matches by package names), `Terminal` (a pty), `Hub` (events to pages), `make_app` (Starlette routes) |
-| `src/timewalk/walks.py` | Several walks: `load_toc` reads `toc.toml` (with `select`, whose entries can have a title, and `intro` for a small walk, `shared` for a walk with notes of its own, whose `own_select` makes its `select` from its stops, and `loose` for a tutorial), `check` checks notes and slides against the steps (`selection_problems` for a walk that selects, `own_problems` for a walk with notes of its own), and the commands `timewalk-check` and `timewalk-notes` (a tutorial's notes: a `## step-NN Title` section for each step, and drafts of its `### step-NN.k` sections: comments for the text of both modes, a `do` and a `watch` block, the check, and last a `files:` item for every file of the commit) |
+| `src/timewalk/walks.py` | Several walks: `load_toc` reads `toc.toml` (with `select`, whose entries can have a title, and `intro` for a small walk, `shared` for a walk with notes of its own, whose `own_select` makes its `select` from its stops, and `loose` for a tutorial), `check` checks notes and slides against the steps (`selection_problems` for a walk that selects, `own_problems` for a walk with notes of its own), and the commands `timewalk-check` and `timewalk-notes` (a tutorial's notes: a `## step-NN Title` section for each step, and drafts of its `### step-NN.k` sections: comments for the text of both modes, a `patch$` line for each file, a `do` and a `watch` block, the check, and last a `files:` item for every file of the commit) |
 | `src/timewalk/export.py` | The command `timewalk-export`: copies of a walk to read without timewalk, one for each mode of a tutorial, with only that mode's `::: do` or `::: watch` blocks and without the private lines. `--markdown` writes `TUTORIAL-do.md` and `TUTORIAL-watch.md` (a narrative: `TUTORIAL.md`), and `--site` one website (smalldocs, or Quarto with `--quarto`) with a Watch and a Do section (a narrative: one). `--json` writes the facts of the walk (see `facts.py`). It writes over only the files that it made |
-| `src/timewalk/facts.py` | The facts of one walk, for `timewalk-export --json` (`--private` keeps the presenter's lines): the walk, its intro, its stops, each move's text as parts for each mode (`prose`, `command`, `item`, `apply`), and each file of each change with its whole diff and the names it changes. A class makes its own pages from them, as walk-kit does. The same inputs give the same bytes |
+| `src/timewalk/facts.py` | The facts of one walk, for `timewalk-export --json` (`--private` keeps the presenter's lines): the walk, its intro, its stops, each move's text as parts for each mode (`prose`, `command`, `item`, `patch`), and each file of each change with its whole diff, the names it changes, the `do$` line that writes it (`by`) and its `patch`. Each stop and move has its `number`. The notes' text is kept byte for byte. A class makes its own pages from them, as walk-kit does. The same inputs give the same bytes |
+| `src/timewalk/observe.py` | Where each file of a move comes from: `observe` runs a move's `do$` lines at the commit before it in a scratch `git clone --shared` (`Scratch`), and notes what each writes; `sources` says for each file the `do$` line that writes it or `patch`, and what is changed by hand after. Results go to a cache, `~/.cache/timewalk/observed`, unless a line fails. `timewalk-check` and `timewalk-export --json` run it; timewalk itself, `--no-run` and `TIMEWALK_NO_RUN=1` do not |
 | `src/timewalk/facts.schema.json` | The layout of the facts file, as a JSON Schema. Raise its `format` for a change that a renderer must know of, and keep the table in `docs/reference.md` true |
 | `src/timewalk/slides_pdf.py` | The command `timewalk-pdf`: the PDF of the slides and, with `--with-notes`, the notes, drawn by Chrome or Edge through Playwright. `--brand DIR` gives it the look of a brand folder (font, colours, cover, dividers); only this command and `print.js` know brands, and the page does not. The **PDF** button calls it through `/api/pdf`, with no brand |
 | `src/timewalk/static/` | `index.html`/`app.js` (the page, at `/`), `print.*` (for the PDF), `common.js`, `app.css` |
@@ -114,7 +115,7 @@ websockets, Playwright and pypdf. The tests use the `dev` group. In a clone, run
 the version changed.
 
 timewalk is not on PyPI, by Rahul's choice. Users run it from GitHub with
-`uvx --from git+https://github.com/rahuldave/timewalk@v1.3.0 timewalk`. To get a change to users, raise the
+`uvx --from git+https://github.com/rahuldave/timewalk@v1.4.0 timewalk`. To get a change to users, raise the
 version in `pyproject.toml` and tag the commit `vX.Y.Z`. Then push the tag, and update the pin in the docs and
 in the kits.
 
@@ -140,6 +141,10 @@ A terminal test once hung while it waited for output from `/api/type`. The termi
 socket.
 
 ## Conventions
+
+- **Answer Rahul succinctly, in precise language.** Short lines, one idea each. Name the actor and the thing. Write "the
+  learner's file", not "theirs", and "the move's version", not "it". No vague words such as "there", "this", "stuff",
+  "and so on". A list beats an essay.
 
 - Python 3.11+, ruff with line length 150 (`ruff.toml`). Plain stdlib, with Starlette, uvicorn, Playwright
   and pypdf.

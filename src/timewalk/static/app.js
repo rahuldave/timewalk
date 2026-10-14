@@ -29,7 +29,8 @@ const ui = {
   state: null,            // what /api/state returned
   tree: null,             // what /api/tree returned
   open: null,             // path of the file being read
-  view: "file",           // "file", "diff" (what the step changed) or "edits" (what was edited since the step)
+  view: "file",           // "file", "at", "diff" (what the step changed), "next", "compare" (yours and the move) or "edits"
+  compared: null,         // the comparison that the compare view shows, to draw it again when it changes
   closedDirs: new Set(),
   knownRecipes: null,     // recipe names seen at the previous step, to mark new ones
   recipes: { replay: [], main: [] },
@@ -594,7 +595,7 @@ function drawMode() {
 }
 
 /** Open a file in the reader. Views: "file" (your file), "at" (as a move leaves it), "diff" (Last change), "next"
- *  (Next change), "edits" (your edits). `of` names a move whose change to show; `marks` are lines to highlight. */
+ *  (Next change), "compare" (in do mode, your file and the move being made), "edits" (your edits). `of` names a move whose change to show; `marks` are lines to highlight. */
 async function openFile(path, view = "file", scrollTop = true, of = null, at = null, marks = null) {
   const query = "/api/file?path=" + encodeURIComponent(path) + (of ? "&of=" + encodeURIComponent(of) : "") + (at ? "&at=" + encodeURIComponent(at) : "");
   const file = await api(query);
@@ -603,17 +604,22 @@ async function openFile(path, view = "file", scrollTop = true, of = null, at = n
   ui.marks = marks || [];
   $("view-diff").textContent = ui.of ? `Changes in ${ui.of}` : file.last_name ? `Last change: ${file.last_name}` : "Last change";
   $("view-next").textContent = file.next_name ? `Next change: ${file.next_name}` : "Next change";
+  // Next change is what the move's commit changed; this tab is your file against the move, as the match compares them.
+  $("view-compare").hidden = !file.compare_name;
+  $("view-compare").textContent = file.compare_name ? `Yours and ${file.compare_name}` : "Yours and the move";
   $("view-at").hidden = !ui.at;
   $("view-at").textContent = ui.at ? `At ${ui.at}` : "At";
   // A view with nothing to show falls back to the file, for example once edits are stashed or undone.
-  const empty = { diff: !file.diff, next: !file.next, edits: !file.edits, at: !ui.at };
+  const empty = { diff: !file.diff, next: !file.next, edits: !file.edits, at: !ui.at, compare: !file.compare && !file.compare_loose && !file.compare_mode };
   if (empty[view]) view = "file";
   ui.open = path;
   ui.view = view;
+  ui.compared = compared(file);
   $("file-path").textContent = path;
-  for (const name of ["file", "at", "diff", "next", "edits"]) $("view-" + name).setAttribute("aria-selected", String(view === name));
+  for (const name of ["file", "at", "diff", "next", "compare", "edits"]) $("view-" + name).setAttribute("aria-selected", String(view === name));
   $("view-diff").disabled = !file.diff;
   $("view-next").disabled = !file.next;
+  $("view-compare").disabled = empty.compare;
   $("view-edits").disabled = !file.edits;
   $("view-edits").hidden = !file.edits;
   const body = $("file-body");
@@ -622,6 +628,7 @@ async function openFile(path, view = "file", scrollTop = true, of = null, at = n
   if (view === "edits") body.replaceChildren(drawDiff(file.edits, ui.marks));
   else if (view === "diff") body.replaceChildren(drawDiff(file.diff, ui.marks));
   else if (view === "next") body.replaceChildren(drawDiff(file.next, ui.marks));
+  else if (view === "compare") body.replaceChildren(...drawCompare(file));
   else if (shown.missing) body.innerHTML = `<p class="empty">This file does not exist ${view === "at" ? "at " + escapeHtml(ui.at) : "at this step"}.</p>`;
   else if (shown.skipped) body.innerHTML = `<p class="empty">Not shown: ${escapeHtml(shown.skipped)}.</p>`;
   else body.replaceChildren(drawCode(path, shown.text, ui.marks));
@@ -631,9 +638,35 @@ async function openFile(path, view = "file", scrollTop = true, of = null, at = n
     body.scrollTop = mark ? Math.max(mark.getBoundingClientRect().top - body.getBoundingClientRect().top + body.scrollTop - 60, 0) : 0;
   }
   drawEditorLink(view === "file" && !file.missing && !file.skipped);
-  drawApply(path, view, file);
   document.querySelectorAll("#tree .file").forEach((item) => item.classList.remove("open"));
   drawTree();
+}
+
+/** What the compare view draws, as one value, so that a change of the diff or of the mode draws it again. */
+function compared(file) {
+  return `${file.compare ?? ""}\u0000${file.compare_mode ?? ""}\u0000${file.compare_loose ?? ""}`;
+}
+
+/** Your file against the move being made: a line that says how a file of the walk's loose matches, then the diff. */
+function drawCompare(file) {
+  const out = [];
+  if (file.compare_loose) {
+    const note = document.createElement("p");
+    note.className = "empty";
+    note.textContent = file.compare_loose === "names"
+      ? `Your file matches ${file.compare_name} by the names of its packages. The versions can differ.`
+      : `The match does not compare this file with ${file.compare_name}: the walk's loose names it.`;
+    out.push(note);
+  }
+  if (file.compare_mode) {
+    const note = document.createElement("p");
+    note.className = "empty";
+    note.textContent = file.compare_mode === "runs" ? `Your file has the lines of ${file.compare_name}, but it cannot run yet: chmod +x makes it run.`
+      : `Your file has the lines of ${file.compare_name}, but it can run, and the move's file cannot.`;
+    out.push(note);
+  }
+  if (file.compare) out.push(drawDiff(file.compare, ui.marks));
+  return out;
 }
 
 /** Whether a line of a file or a diff is one of the lines to mark: its text, without the diff's sign, holds a mark. */
@@ -661,32 +694,6 @@ function drawEditorLink(show) {
     settings.set("editor", order[(order.indexOf(editor) + 1) % order.length]);
     drawEditorLink(true);
   };
-}
-
-/** Apply, in the Next change tab, in a tutorial's do mode: type into the shell the command that applies this file's
- *  change, or the whole move's, as edits. Disabled where the learner has already changed a file it touches. */
-function drawApply(path, view, file) {
-  const bar = $("apply-bar");
-  const next = ui.state?.changes?.next;
-  const moves = ui.state?.moves || [];
-  const move = next && moves.find((m) => m.name === next.name);
-  bar.hidden = ROOM || view !== "next" || ui.state?.mode !== "do" || !move || !file.next;
-  if (bar.hidden) return;
-  const edited = new Set(ui.tree?.edits || ui.state.edits || []);   // the file list's edits are the freshest
-  const touched = move.files.map((f) => f.path);
-  // Files that already match the move were applied, or typed, and are no collision: the move is about to be done.
-  const applied = ui.match?.match && ui.match.move === move.name;
-  const fileClash = !applied && edited.has(path);
-  const moveClash = applied ? [] : touched.filter((p) => edited.has(p));
-  $("apply-file").hidden = $("apply-move").hidden = !!applied;
-  $("apply-note").textContent = applied ? `Your files match ${move.name}: it is made` : fileClash || moveClash.length
-    ? `You have changed ${fileClash ? path : moveClash.join(", ")}. Compare it with Next change, or use Catch me up.`
-    : `${move.name}: apply its change to your files, as edits`;
-  $("apply-file").disabled = fileClash;
-  $("apply-move").disabled = moveClash.length > 0;
-  // From the top of the copy: the learner's shell may be in a folder of it, where the path would not be found.
-  $("apply-file").onclick = () => typeCommand(`(cd "$(git rev-parse --show-toplevel)" && git diff ${next.before.slice(0, 12)} ${next.after.slice(0, 12)} -- ${shellQuote(path)} | git apply --3way)`);
-  $("apply-move").onclick = () => typeCommand(`git cherry-pick --no-commit ${next.after.slice(0, 12)}`);
 }
 
 function shellQuote(text) {
@@ -955,7 +962,7 @@ function wireControls() {
   $("slide-step").onclick = () => move(ui.state.current + 1);
   for (const button of $("layouts").querySelectorAll("button")) button.onclick = () => show({ layout: button.dataset.layout });
   $("shell-toggle").onclick = () => { ui.shellToggledHere = true; show({ shell: !ui.shell }); };
-  for (const view of ["file", "at", "diff", "next", "edits"]) {
+  for (const view of ["file", "at", "diff", "next", "compare", "edits"]) {
     $("view-" + view).onclick = () => ui.open && show({ path: ui.open, view, of: view === "diff" ? ui.of : null, at: ui.at, marks: ui.marks });
   }
   $("theme").onclick = () => { ui.theme = ui.theme === "dark" ? "light" : "dark"; applyAppearance(); restartTerminals(); };
@@ -1419,6 +1426,11 @@ function drawNotes() {
       group = null;
       continue;
     }
+    if (part.kind === "patch") {
+      into.append(drawPatch(part, owner, shown, into.classList.contains("here")));
+      group = null;
+      continue;
+    }
     // A do$ line makes the move. Do mode runs it; watch mode shows what the move ran, with nothing to run.
     if (part.makes && shown === "watch") {
       const ran = document.createElement("p");
@@ -1555,6 +1567,92 @@ function drawFiles(items, owner, files) {
   return box;
 }
 
+/** A patch$ line: a file that the move changes by a patch. In watch mode, a pointer to its diff. In do mode, on the move
+ *  being made, a button that fits the learner's file: Apply when the file is as it was before the move, which applies the
+ *  move's diff with git apply; Replace when the learner changed it, which keeps the learner's version on a saved branch,
+ *  then takes the move's version. Never a merge. Each button types its git command into the shell at the step. */
+function drawPatch(part, owner, shown, here) {
+  const { moves = [] } = ui.state;
+  const name = moves[owner - 1]?.name;
+  const row = document.createElement("div");
+  row.className = "p-patch";
+  const pathOf = () => { const path = document.createElement("span"); path.className = "p-item-path"; path.textContent = part.path; return path; };
+  const see = document.createElement("button");
+  see.append("\u00B1 See diff ", pathOf());
+  see.title = `What ${name || "this step"} changes in this file`;
+  see.onclick = () => show({ path: part.path, ...changeView(owner) });
+  if (shown === "watch" || !name) {
+    const said = document.createElement("span");
+    said.className = "p-ran";
+    const code = document.createElement("code");
+    code.textContent = part.path;
+    said.append("A patch to ", code);
+    row.append(said, see);
+    return row;
+  }
+  const act = document.createElement("button");
+  act.className = "p-patch-act";
+  act.append("\u21E3 Apply patch ", pathOf());
+  act.disabled = true;
+  const made = !here && owner <= (ui.state.done ?? 0);
+  act.title = here ? "Looking at your file" : made ? `${name} is made` : "Make the moves before this one first";
+  if (ROOM) {   // the Room window watches: only your window has the button that acts
+    row.append(see);
+    return row;
+  }
+  row.append(act, see);
+  if (!here) return row;
+  row.dataset.move = name;
+  row.dataset.path = part.path;
+  updatePatch(row);
+  return row;
+}
+
+/** Fit a patch$ row's button to the learner's file, as it is now: Apply, Replace, or nothing to do. */
+async function updatePatch(row) {
+  const { move: name, path: file } = row.dataset;
+  const found = await api(`/api/patch?move=${encodeURIComponent(name)}&path=${encodeURIComponent(file)}`).catch(() => null);
+  if (!found || !row.isConnected) return;
+  const act = row.querySelector(".p-patch-act");
+  const pathOf = () => { const path = document.createElement("span"); path.className = "p-item-path"; path.textContent = file; return path; };
+  // The copy by its own path: a shell that went elsewhere must not patch, or remove, a file there. Paths are names, not
+  // patterns, and the diff has the form that git apply reads, whatever the learner's git config says.
+  const top = `cd ${shellQuote(found.work)}`;
+  const git = "git --literal-pathspecs";
+  const path = shellQuote(file);
+  act.onclick = null;
+  act.disabled = found.state !== "apply" && !(found.state === "replace" && found.keep);
+  if (found.state === "replace") {
+    act.replaceChildren("\u21C4 Replace with the move's file ", pathOf());
+    act.title = found.keep ? `You changed this file. Keep your version on a branch timewalk/saved/..., then take the file as ${name} leaves it`
+      : "This copy shares its branches with your repository, so timewalk cannot keep your version. Use Catch me up";
+    act.onclick = async () => {
+      const kept = await api("/api/keep", { path: file, move: name }).catch((error) => { showNotice(error.message, true); return null; });
+      if (!kept) return;
+      showNotice(kept.branch ? `Your version of ${file} is kept on the branch ${kept.branch}` : `${file} was as the step has it: nothing of yours to keep`);
+      // A new file stays tracked, as an edit with nothing staged, so that Restart step keeps it on a saved branch as any edit
+      typeCommand(found.exists ? `\u0015(${top} && ${git} checkout ${found.after.slice(0, 12)} -- ${path} && ${git} reset -q -- ${path} && ${git} add -N -- ${path})`
+        : `\u0015(${top} && rm -f -- ${path})`);
+    };
+    return;
+  }
+  act.replaceChildren("\u21E3 Apply patch ", pathOf());
+  if (found.state === "apply") {
+    act.title = `Apply ${name}'s diff to your file, with git apply. It becomes an edit`;
+    // --intent-to-add: a new file is tracked with nothing staged, so it is an edit, as the file of any other patch
+    // Ctrl+U first: a command that a button of the notes typed, and did not run, must not join this one on one line
+    act.onclick = () => typeCommand(`\u0015(${top} && ${git} diff --no-color --no-ext-diff --no-textconv --binary --src-prefix=a/ --dst-prefix=b/ `
+      + `${found.before.slice(0, 12)} ${found.after.slice(0, 12)} -- ${path} | git apply --intent-to-add)`);
+  } else {
+    act.title = `Your file is as ${name} leaves it`;
+  }
+}
+
+/** Fit every patch$ row of the move being made to the learner's files: after an edit, and on each check of the match. */
+function updatePatches() {
+  for (const row of document.querySelectorAll("#notes .p-patch[data-move]")) updatePatch(row);
+}
+
 /** In do mode: whether the learner's files match the move being worked on. Shown on its section and in the Apply bar;
  *  a match marks the move done by itself. Asked every two seconds, and after each refresh. */
 async function checkMatch() {
@@ -1566,6 +1664,16 @@ async function checkMatch() {
   }
   ui.match = await api("/api/match").catch(() => null);
   drawMatch();
+  updatePatches();   // a new file that git does not track yet sends no edits event
+  // A new file that git does not track yet sends no edits event: the comparison is read again here, and drawn if it changed.
+  if (ui.open && ui.view === "compare") {
+    const path = ui.open;
+    const now = await api("/api/file?path=" + encodeURIComponent(path)).catch(() => null);
+    // Another window may have opened another file, or view, while this one asked: then it is not drawn again.
+    if (now && ui.open === path && ui.view === "compare" && compared(now) !== ui.compared) {
+      await openFile(path, "compare", false, ui.of, ui.at, ui.marks);
+    }
+  }
   // Only your window marks it, never the Room, so that two windows do not both ask.
   // Once per move: a learner who then marks it not done keeps that choice.
   const key = `${ui.state.steps[ui.state.current]?.name} ${ui.match?.move}`;
@@ -1591,8 +1699,6 @@ function drawMatch() {
     badge.textContent = text;
     head.after(badge);
   }
-  $("apply-match").textContent = text;
-  $("apply-match").className = "match" + (match?.match ? " ok" : "");
 }
 
 /** Draw a small, read-only excerpt of a change in the notes: the line that show: names, with two lines of context, or
@@ -1718,7 +1824,7 @@ const events = onEvents(async (event) => {
   // drawing, sent this window no event: look again.
   if (event.type === "hello") { await refresh(); return; }
   if (event.type === "edits") {
-    checkMatch();   // edits are often a move being made: no need to wait for the next poll
+    checkMatch();   // edits are often a move being made: no need to wait for the next poll; it fits the patch$ buttons too
     await loadTree();
     if (ui.open) await openFile(ui.open, ui.view, false, ui.of, ui.at, ui.marks);
   }

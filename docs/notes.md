@@ -39,6 +39,7 @@ main$ git log --oneline
 | `runs2$ command` to `runs9$ command` | The same, in one more Runs tab, which opens the first time a line uses it. Use it for a second long command while the first command still runs |
 | `main$ command` | The same, in the **Main** tab, in your repository |
 | `do$ command` | In a tutorial walk: a command that makes the move, for example `do$ uv add --group test pytest`. In do mode, the same as `$ command`. In watch mode and in a narrative, no button, and the line "The move ran:" with the command. Never an anchor command. Put it outside the blocks. See [Write for both modes](authoring.md#write-for-both-modes) |
+| `patch$ PATH` | In a tutorial walk: the move changes `PATH` by a patch, the diff of its commit. Write a path with a space in backticks. In do mode, a button that applies the patch, and **± See diff PATH**. In watch mode, "A patch to PATH". Put it outside the blocks. See [patch$ lines](authoring.md#patch-lines) |
 | `### step-NN.k Title` | In a tutorial walk: starts the section of move `k` of step `NN`, for example `### step-02.1 A test of counting`. Write the sections in the order of the commits. See [Tutorial walks](walks.md#tutorial-walks) |
 | `files:` | Starts a list of items, the files to look at. If the line has no items, the page shows a **± See diff** button for each file that the commit of the move added or changed |
 | ``- diff `path`: words`` | Under `files:`, an item: a button **± See diff path** that opens the change of the move, or of the step, to that file, and its words. The words can go on in an indented line under it |
@@ -65,8 +66,8 @@ change, and gives the commands that check it. It ends with a line `files:` and i
 The text of a step before its first move section is about the whole step. Put `$ just setup` there, and
 say what the step builds, and why.
 
-Write the notes for a reader who knows the program, and not timewalk. Do not write "step", "move" or
-"commit" in the text. See
+Write the notes for a reader who knows the program, and not timewalk. Do not write "step" or "commit" in
+the text. The intro of a tutorial says once what a move is, so the text can then use the word "move". See
 [Write for a reader who has never heard of timewalk](authoring.md#write-for-a-reader-who-has-never-heard-of-timewalk).
 
 ````markdown
@@ -118,13 +119,18 @@ it safe to run again, and keep it from changing tracked files. A test that fails
 if the notes say that it fails. See [Anchor commands](walks.md#anchor-commands).
 
 A move section can hold blocks for one mode. The shared text first says what problem the change solves,
-and what the change is. Then the `do` block gives the exact lines to type, and the `watch` block says what
-the change does and where to see it. The page shows only the blocks of the mode on show. Keep the
+and what the change is. Then the `do` block says what to read in each patch, and where. The `watch` block says what
+the change does, and where to see it.
+
+The page shows only the blocks of the mode on show. Keep the
 explanation, the anchor commands and the items outside the blocks. See [What a narrative and a tutorial need](authoring.md#write-for-both-modes).
 
 A command that makes the move, for example `uv add`, goes in a `do$` line in the shared text. Do mode
 runs it, and watch mode shows it as what the move ran. A `do$` line is never an anchor command. See
 [Write for both modes](authoring.md#write-for-both-modes).
+
+A file that the move changes by hand gets a `patch$` line in the shared text. Every file of a move comes
+from a `do$` line or a `patch$` line, so the notes copy no code. See [patch$ lines](authoring.md#patch-lines).
 
 ## The notes column
 

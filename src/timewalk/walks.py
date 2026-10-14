@@ -44,6 +44,7 @@ from timewalk import (
     MODES,
     SHOW_LINE,
     GitError,
+    Move,
     code_span,
     expand_entry,
     expand_stop,
@@ -63,6 +64,7 @@ from timewalk import (
     tag_steps,
     walk_notes,
 )
+from timewalk.observe import Scratch, observe, running, sources
 
 KINDS = ("narrative", "tutorial")
 WALK_KEYS = ("id", "title", "description", "kind", "folder", "notes", "slides", "steps", "select", "intro", "tags", "setup", "sync", "moves", "loose", "shared")
@@ -292,6 +294,7 @@ def check_walk(
     root: Path,  # The class folder: every slide must be inside it
     replay: Path | None = None,  # The replay copy, where notes and slides must not be either
     slide_folders: list[Path] | None = None,  # With a table of contents: the walks' slides folders, the only ones the page serves
+    run: bool | None = None,  # Whether to run the do$ commands, to see the files they write; None: unless TIMEWALK_NO_RUN is set
 ) -> tuple[list[str], list[str], set[Path]]:  # Errors, warnings, and the slide files the walk uses
     "Check one walk's notes and slides against its steps and against each other."
     from timewalk.export import cue_problems  # here, as timewalk.export imports this module
@@ -321,10 +324,6 @@ def check_walk(
     elif walk.kind == "tutorial":
         picked = pick_steps(tag_steps(main, walk.tags), walk.steps)
         moves = {step.name: found for step, found in zip(picked, step_moves(main, picked), strict=True)}
-        for found in moves.values():
-            for move in found[:-1]:  # the last move is the step's own commit, with the step's subject
-                if not move.subject.startswith(f"{move.name}:"):
-                    errors.append(f"{name}: the commit {move.sha[:7]}, move {move.name}, has the subject {move.subject!r}; start it with '{move.name}:'")
     names = set(steps) | {move.name for found in moves.values() for move in found} | history
     changed = {path for found in moves.values() for move in found
                for path in git(main, "diff-tree", "-r", "--root", "--no-commit-id", "--name-only", "-z", move.sha).split("\x00") if path} if walk.loose else set()
@@ -391,6 +390,13 @@ def check_walk(
                     where = "" if len(modes) == len(MODES) else f" in {modes[0]} mode"
                     warnings.append(f"{name}: {move} has no command{where} in {walk.notes.name}; add one that shows what the move did, "
                                     "for example $ just test")
+            if walk.kind == "tutorial":
+                walked = taken_moves if walk.select else list(moves.values())
+                every_move = list({move.name: move for found in walked for move in found}.values())
+                more_errors, more_warnings = source_problems(walk, main, sections, every_move, running() if run is None else run)
+                errors += [f"{name}: {problem}" for problem in more_errors]
+                warnings += [f"{name}: {problem}" for problem in more_warnings]
+            warnings += [f"{name}: {walk.notes.name}: {problem}" for problem in apply_sentences(sections)]
     if walk.slides is None:
         if walk.notes is not None:
             warnings.append(f"{name}: has no slides.toml; give every step at least one slide")
@@ -565,9 +571,6 @@ def selection_problems(
         numbers = [int(name.rsplit(".", 1)[1]) for name in order if name.rsplit(".", 1)[0] == source and name.rsplit(".", 1)[1].isdigit()]
         if numbers != sorted(numbers):
             errors.append(f"the ### sections of {source} in {file} are not in the order of the commits: {', '.join(order)}")
-        for move in found:
-            if not move.subject.startswith((f"{move.name}:", f"{source}:")):
-                errors.append(f"the commit {move.sha[:7]}, move {move.name}, has the subject {move.subject!r}; start it with '{move.name}:'")
         if not tutorial:
             continue
         parts = view.get(step.name, {}).get("parts", [])
@@ -615,6 +618,13 @@ def do_line_problems(
         else:
             sections[-1][1].append(part)
     for move, found in sections:
+        for part in (part for part in found if part["kind"] == "patch" and tutorial):
+            if move is None:
+                problems.append(f"{step}: the line patch$ {part['path']} is before the first move; put it in the section of the move "
+                                "that changes the file")
+            elif part.get("mode"):
+                problems.append(f"{move}: the line patch$ {part['path']} is in the block ::: {part['mode']}; a patch$ line shows in both "
+                                "modes, so put it outside the block")
         makes = [at for at, part in enumerate(found) if part["kind"] == "command" and part.get("makes")]
         if not makes:
             continue
@@ -698,6 +708,98 @@ def item_problems(
     return problems
 
 
+def move_parts(
+    sections: dict,  # The notes, as parse_notes reads them
+    name: str,  # A move, such as step-02.1
+) -> list[dict]:  # The parts of its ### section, without its heading
+    "Find the parts of one move's section."
+    parts, mine = sections.get(name.rsplit(".", 1)[0], {}).get("parts", []), None
+    for at, part in enumerate(parts):
+        if part["kind"] == "move":
+            if mine is not None:
+                return parts[mine:at]
+            if part["name"] == name:
+                mine = at + 1
+    return parts[mine:] if mine is not None else []
+
+
+def source_problems(
+    walk: Walk,  # A tutorial
+    main: Path,  # The repository
+    sections: dict,  # The notes it reads, as parse_notes reads them
+    moves: list[Move],  # Its moves
+    run: bool,  # Whether to run the do$ lines; without, a move with do$ lines is not checked for where its files come from
+) -> tuple[list[str], list[str]]:  # Errors and warnings, each a sentence
+    """Check where each file of each move comes from: a do$ line writes it, or a patch$ line names it. A file that a do$
+    line writes and the move then changes needs a patch$ line too. Also check that each do$ line runs, and writes only
+    files of the move. A patch$ line that names a file that the move does not change is an error; the rest are warnings."""
+    from timewalk.facts import DIFF, change_files  # here, as timewalk.facts imports this module
+
+    errors: list[str] = []
+    problems: list[str] = []
+    scratch = Scratch(main)
+    try:
+        for move in moves:
+            parts = move_parts(sections, move.name)
+            commands = [part["text"] for part in parts if part["kind"] == "command" and part.get("makes")]
+            files = change_files(main, f"{move.sha}^", move.sha)
+            paths = {p for f in files for p in (f["path"], f["old_path"]) if p}
+            named = [part["path"] for part in parts if part["kind"] == "patch"]
+            for path in dict.fromkeys(named):
+                if path not in paths:
+                    errors.append(f"{move.name}: the line patch$ {path} names a file that the move does not change")
+            if commands and not run:
+                continue
+            found = observe(main, git(main, "rev-parse", f"{move.sha}^"), move.sha, commands, scratch) if commands else {"commands": [], "left": {}}
+            for command in found["commands"]:
+                if command["exit"]:
+                    code = f" (exit {command['exit']})" if command["exit"] > 0 else ""
+                    said = f": {command['said'].rstrip('.')}" if command["said"] else ""
+                    problems.append(f"{move.name}: the do$ line {code_span(command['text'])} fails at the commit before the move{code}{said}. "
+                                    "A do$ line runs before the move's patches; one that needs a patch gets a move of its own")
+            made, outside = sources(main, move.sha, files, found, walk.loose, DIFF)
+            for file in files:
+                by, patch = made[file["path"]]
+                if file["old_path"] and file["old_path"] not in named and (by == "patch" or patch):   # a rename removes the old file too
+                    problems.append(f"{move.name}: {file['path']} is renamed from {file['old_path']}; add patch$ {file['old_path']}, so that the old "
+                                    "file goes too")
+                if file["path"] in named:
+                    continue
+                if by == "patch":
+                    problems.append(f"{move.name}: {file['path']}: no do$ line writes it, and no patch$ line names it; add patch$ {file['path']}")
+                elif patch:
+                    problems.append(f"{move.name}: {file['path']}: the do$ line {code_span(commands[by])} writes it, and the move changes it after that; "
+                                    f"add patch$ {file['path']} for that change")
+            for at, path in outside:
+                problems.append(f"{move.name}: the do$ line {code_span(commands[at])} writes {path}, which the move does not change")
+    finally:
+        scratch.close()
+    return errors, problems
+
+
+def apply_sentences(
+    sections: dict,  # Notes, as parse_notes reads them
+) -> list[str]:  # A warning for each sentence that asks for **Apply this file** or **Apply the whole move**
+    """Find the sentences that old notes wrote for the Apply bar, which is gone: a patch$ line takes their place."""
+    from timewalk.facts import chunks_of  # here, as timewalk.facts imports this module
+
+    found = []
+    for step, entry in sections.items():
+        where = step
+        for part in entry.get("parts", []):
+            if part["kind"] == "move":
+                where = part["name"]
+            if part["kind"] != "text":
+                continue
+            for chunk, code in chunks_of(part["text"]):
+                prose = re.sub(r"<!--.*?(-->|$)", "", chunk, flags=re.DOTALL) if not code else ""
+                if re.search(r"\*\*Apply (this file|the whole move)\*\*", prose):
+                    found.append(f"{where}: a sentence asks for **Apply**, which timewalk no longer has; write a line patch$ PATH for each "
+                                 "file that the move changes by a patch")
+                    break
+    return found
+
+
 def moves_without_commands(
     parts: list[dict],  # The parts of a step's notes
 ) -> list[str]:  # The moves whose section has no command
@@ -741,7 +843,7 @@ def move_section(
     blocks: bool = True,  # Kept for old callers: every draft now has a block for each mode
 ) -> str:  # A ### section for it, for the author to finish
     """Write a first draft of a move's notes, in the order a reader needs them: the problem and the change, for both
-    modes; the lines to type, in do mode; what to look at, in watch mode; the command that checks it; and last, an item
+    modes, with a patch$ line for each file; what to read in each patch, in do mode; what to look at, in watch mode; the command that checks it; and last, an item
     for every file of the commit, for the author's words."""
     step = move.name.rsplit(".", 1)[0]
     prefixed = move.subject.startswith((f"{move.name}:", f"{step}:"))   # a move's subject, or the step's own on its last move
@@ -754,20 +856,35 @@ def move_section(
         statuses[fields[at + width - 1]] = fields[at][0]
         at += width
     items = [f"- {'file' if status in 'AC' else 'diff'} `{path}`: " for path, status in sorted(statuses.items())]
+    paths = sorted({p for found in fields_paths(fields) for p in found})
+    patches = [f"patch$ {f'`{path}`' if ' ' in path else path}" for path in paths]
     return "\n".join([
         f"### {move.name} {title}", "",
         "<!-- For both modes: the problem this change solves, and the change. A reader who has never heard of",
-        "timewalk reads it. Do not write \"step\", \"move\" or \"commit\". A file to take whole, a new one or one too",
-        "long to type: say so here, with **Apply this file**, so that both ways of reading link the whole file. -->", "",
+        "timewalk reads it. Do not write \"step\", \"move\" or \"commit\". Each file comes from one line below: keep",
+        "the patch line of each file changed by hand, and put a do line, the command, in place of the patch lines of",
+        "the files that a command writes. -->", "",
+        *patches, "",
         "::: do",
-        "<!-- The exact lines to type and where they go, in a code block, or the command to run. Never an edit",
-        "described only in words. -->",
+        "<!-- What to read in each patch, and where in the file. Copy no code: the patch comes from the project. -->",
         ":::", "",
         "::: watch",
         "<!-- What the change does, and where to see it. Say it; do not only send the reader to a diff. -->",
         ":::", "",
         "<!-- A command that checks the result, and what it prints, for example: $ just test -->", "",
         "files:", *items, ""])
+
+
+def fields_paths(
+    fields: list[str],  # What git diff-tree -z --name-status printed, split at its NULs
+) -> list[tuple[str, ...]]:  # The paths of each change: one, or for a rename or a copy, the old one and the new one
+    "Read the paths of a --name-status list, both paths of a rename, so that a patch$ line names each file a move changes."
+    out, at = [], 0
+    while at < len(fields) and fields[at]:
+        width = 3 if fields[at][0] in "RC" else 2
+        out.append(tuple(fields[at + 1:at + width]) if fields[at][0] == "R" else (fields[at + width - 1],))
+        at += width
+    return out
 
 
 def add_move_sections(
@@ -933,6 +1050,7 @@ def check(
     main: Path,  # The repository
     root: Path,  # The class folder
     replay: Path | None = None,  # The replay copy
+    run: bool | None = None,  # Whether to run the do$ commands; None: unless TIMEWALK_NO_RUN is set
 ) -> tuple[list[str], list[str]]:  # Errors and warnings, each a sentence
     "Check every walk, and warn of slide files in the walks' slides folders that no walk uses."
     errors: list[str] = []
@@ -948,7 +1066,7 @@ def check(
             if walk.notes is not None and inside(walk.notes, folder):
                 errors.append(f"walk {walk.id}: its notes, {walk.notes}, are in a slides folder, which the page serves; move them out")
     for walk in walks:
-        more_errors, more_warnings, files = check_walk(walk, main, root, replay, folders)
+        more_errors, more_warnings, files = check_walk(walk, main, root, replay, folders, run)
         errors += more_errors
         warnings += more_warnings
         used |= files
@@ -970,6 +1088,8 @@ def main() -> None:
     parser.add_argument("--slides", type=Path, help="without a table: the slides manifest of the one walk")
     parser.add_argument("--tags", default="step-*", help="without a table: the glob of the tags that mark steps (default: step-*)")
     parser.add_argument("--replay", type=Path, help="where the replay copy is, if timewalk runs with --replay (default: <repo>-replay)")
+    parser.add_argument("--no-run", action="store_true", help="do not run the do$ commands to see which files they write; "
+                        "a move with do$ lines is then not checked for where its files come from")
     args = parser.parse_args()
     main_repo = Path(git(args.repo.resolve(), "rev-parse", "--show-toplevel"))
     replay = args.replay.resolve() if args.replay else main_repo.parent / f"{main_repo.name}-replay"
@@ -986,7 +1106,7 @@ def main() -> None:
         slides = args.slides.resolve() if args.slides else None
         walks = [Walk("default", "default", "narrative", notes, slides, args.tags, None, "manual")]
         root = slides.parent if slides else (notes.parent if notes else Path.cwd())
-    errors, warnings = check(walks, main_repo, root, replay)
+    errors, warnings = check(walks, main_repo, root, replay, False if args.no_run else None)
     for line in errors:
         print(f"error: {line}")
     for line in warnings:

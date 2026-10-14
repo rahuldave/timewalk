@@ -88,8 +88,9 @@ Make the steps as for one walk, with one annotated tag for each step, on one bra
 
 ### Commits for a tutorial
 
-Make each move a commit of its own, and name it in its subject. The last commit of the step keeps the
-subject of the step, and carries the tag:
+Make each move a commit of its own. timewalk names a move by its place between the tags, so the third
+commit after `step-01` is `step-02.3`. Its subject needs no name, and can be empty. The title of the move
+comes from its `###` heading in the notes. With jj, `jj new` starts the next move. The last commit of the step carries the tag:
 
 ```
 git commit -m "step-02.1: a test of counting"
@@ -206,8 +207,8 @@ timewalk-notes repo --toc toc.toml --walk tutorial --write    # write them into 
 ```
 
 A draft has the title of the move, and comments that ask for each part in the order that a reader needs
-them. First comes the problem and the change, for both modes. A block `::: do` follows, for the exact
-lines to type, and a block `::: watch`, for what the change does. A comment for the check comes next. Last
+them. First comes the problem and the change, for both modes. A block `::: do` follows, for each change
+by hand and where it goes, and a block `::: watch`, for what the change does. A comment for the check comes next. Last
 comes a line `files:`, with one item for each file of the move, `uv.lock` too, with no words.
 
 Replace each comment. Write for a reader who knows the program, and not timewalk. See
@@ -241,7 +242,7 @@ These recipes run timewalk from GitHub on the clone of the project. `just presen
 and stops if a check finds an error:
 
 ```just
-timewalk := "uvx --from git+https://github.com/rahuldave/timewalk@v1.3.0"
+timewalk := "uvx --from git+https://github.com/rahuldave/timewalk@v1.4.0"
 
 # Open the walks: just present, or just present tutorial for another walk
 present walk="" *args:

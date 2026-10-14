@@ -285,7 +285,7 @@ def shoot(browser, base: str, repo: timewalk.Repo) -> None:
 
 
 def shoot_tutorial(browser, tmp: Path) -> None:
-    "Take the tutorial walk of timewalk-test: the band at its first step, step-02 in do mode and in watch mode, step-01 with its moves all shown, the step bar with the walk menu, the items and Apply."
+    "Take the tutorial walk of timewalk-test: the band at its first step, step-02 in do mode and in watch mode, step-01 with its moves all shown, the step bar with the walk menu, the items and a patch$ line."
     from timewalk.walks import load_toc
 
     local = ROOT.parent / "timewalk-test"
@@ -415,25 +415,26 @@ def shoot_tutorial(browser, tmp: Path) -> None:
         page.locator("#layouts button[data-layout=code]").click()
 
         # The items of move 1: a button with its words, and the show: line as a small excerpt of the real diff. The
-        # item opens Next change, with the same line marked, and the Apply bar with what the files match.
+        # item opens Next change, with the same line marked; the move's section says what the files match.
         section(1).locator(".p-item button").first.click()
         page.wait_for_function("document.getElementById('view-next').textContent === 'Next change: step-02.1'")
-        page.wait_for_selector("#apply-bar:not([hidden])")
         page.wait_for_selector("#file-body .line.mark")
-        page.wait_for_function("document.getElementById('apply-match').textContent.includes('step-02.1')")
+        page.wait_for_function("document.querySelector('#notes .p-match')?.textContent.includes('step-02.1')")
         section(1).locator(".p-items").scroll_into_view_if_needed()
         page.wait_for_timeout(800)
         save("tutorial-items")
 
-        # Apply the whole move: the command goes into the shell at the step, the files match step-02.1, and the move is
-        # marked done by itself. The item of move 2 then opens its Next change, with the Apply bar for that move.
-        page.locator("#apply-move").click()
+        # The patch$ line of move 1: Apply patch types git apply into the shell at the step. The files then match
+        # step-02.1, and the move is marked done by itself. Move 2's patch$ line then offers its own patch.
+        page.wait_for_function("!document.querySelector('#notes .p-move.here .p-patch-act')?.disabled")
+        section(1).locator(".p-patch-act").click()
         page.wait_for_selector('#notes .p-move.here[data-move="2"]', timeout=15000)
-        section(2).locator(".p-item button").first.click()
+        page.wait_for_function("!document.querySelector('#notes .p-move.here .p-patch-act')?.disabled")
+        section(2).locator(".p-patch button").last.click()   # See diff
         page.wait_for_function("document.getElementById('view-next').textContent === 'Next change: step-02.2'")
-        page.wait_for_function("document.getElementById('apply-match').textContent.includes('step-02.2')")
+        section(2).locator(".p-patch").scroll_into_view_if_needed()
         page.wait_for_timeout(800)
-        save("tutorial-apply")
+        save("tutorial-patch")
         page.close()
         if errors:
             raise SystemExit("screenshots: the tutorial reported errors: " + "; ".join(errors))

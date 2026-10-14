@@ -28,11 +28,11 @@ opens it. It prints one address. Open it on the projector and on your own screen
 On your own project, run timewalk straight from GitHub with uv. uv downloads it once and keeps it:
 
 ```
-uvx --from git+https://github.com/rahuldave/timewalk@v1.3.0 timewalk ~/code/project --notes notes.md --slides slides/slides.toml
+uvx --from git+https://github.com/rahuldave/timewalk@v1.4.0 timewalk ~/code/project --notes notes.md --slides slides/slides.toml
 ```
 
 To install the commands `timewalk` and `timewalk-pdf` for good, run
-`uv tool install git+https://github.com/rahuldave/timewalk@v1.3.0`.
+`uv tool install git+https://github.com/rahuldave/timewalk@v1.4.0`.
 
 By default, the steps are the tags that match `step-*`. The message of an annotated tag is the note that
 the audience sees, in the status band under the step bar. The band also says what to do now.
@@ -55,7 +55,8 @@ Keep the notes file outside the repository. timewalk refuses a notes file inside
 - **Tutorials**, walks that stop at each small commit between two tags. In do mode the learner makes each
   move by hand from the notes, and in watch mode timewalk checks out each commit. `timewalk-notes` drafts
   the notes of each move from its diff. The notes point at the files of a move, and quote its main lines.
-  The reader shows the last change and the next one, and **Apply** types the git command that makes it.
+  The reader shows the last change and the next one. A `patch$` line in the notes gives a button that
+  applies the move's patch to the learner's file.
   A block `::: do` or `::: watch` in the notes shows in one mode only. `timewalk-export` writes a copy
   of a tutorial for each mode, as Markdown for GitHub and as a website, to read without timewalk. With
   `--json`, it writes the facts of a walk in one file, for a class to make its own pages from.

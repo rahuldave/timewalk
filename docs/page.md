@@ -205,6 +205,7 @@ the reader chooses the view. Each label of a change names the step or the move t
 | **At step-02.3** | Only in a tutorial, in do mode. The file as a move leaves it, read only. A `file` item of a move that the learner has not made yet opens it. See [Do mode and watch mode](walks.md#do-mode-and-watch-mode) |
 | **Last change: step-03** | What the step just made changed in the file, against the step before. In a tutorial, the change of the move just made |
 | **Next change: step-04** | What the next step changes in the file. In a tutorial, the change of the next move. The view is empty at the last step, and at the last move of a step |
+| **Yours and step-02.3** | Only in a tutorial, in do mode. Your file against the file as the move that you make leaves it. See [The reader in a tutorial](walks.md#the-reader-in-a-tutorial) |
 | **Your edits** | The edits to the file since the commit that the replay copy stands on. The view shows only when the file has edits |
 
 A diff is the list of lines that a change added and removed. **Last change** and **Next change** read

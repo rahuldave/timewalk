@@ -5,8 +5,8 @@
 A tutorial's notes have one text for both modes, and blocks for one mode: `::: do` ... `:::` and `::: watch` ...
 `:::`. Each copy keeps the text outside the blocks and the blocks of its mode. It leaves out the private lines, the
 presenter's cues and the planned times. Commands become code blocks. Each step links to its code at the tag, each move
-to its commit, and each `files:` item to its file at the commit; a `diff` item also links to its change. A sentence
-that sends the learner to **Apply** becomes a link to the move's commit.
+to its commit, and each `files:` item to its file at the commit; a `diff` item also links to its change. A `patch$`
+line links to the file's change, and in the do copy also gives the command that applies the patch from GitHub.
 
 `--markdown DIR` writes TUTORIAL-do.md and TUTORIAL-watch.md, for GitHub. `--site DIR` writes one website with two
 sections, Watch and Do, and a page for each step in each: `index.qmd`, `watch/step-NN.qmd`, `do/step-NN.qmd`, and
@@ -20,13 +20,14 @@ import functools
 import hashlib
 import json
 import re
+import shlex
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import quote
 
-from timewalk import GitError, Move, Step, code_span, git, note_blocks, pick_steps, select_steps, shown_line, step_moves, tag_steps
+from timewalk import PATCH_LINE, GitError, Move, Step, code_span, git, note_blocks, pick_steps, select_steps, shown_line, step_moves, tag_steps
 from timewalk.facts import facts_text, walk_facts
 from timewalk.walks import TocError, Walk, in_a_copy, inside, load_toc, own_errors_text
 
@@ -52,14 +53,10 @@ OPEN = re.compile(r"^ {0,3}(`{3,}(?=[^`]*$)|~{3,})")
 CLOSE = re.compile(r"^ {0,3}(`{3,}|~{3,})\s*$")
 QUOTED = re.compile(LEAD + ">")
 LABEL = re.compile(LEAD + r"(?:>\s*)+[*_]{0,2}[A-Z][A-Za-z]*\s*[*_]{0,2}\s*:")
-NEW_BLOCK = re.compile(r"^\s*(?:#{1,6}(?:\s|$)|```|~~~|[-*+]\s|\d+[.)]\s|(?:---|\*\*\*|___)\s*$|<|(?:main|runs[2-9]?|do)?\$\s|time:)|^:{3,}\s*(?:\{[^}]*\}|[\w-]+)?\s*$")
+NEW_BLOCK = re.compile(r"^\s*(?:#{1,6}(?:\s|$)|```|~~~|[-*+]\s|\d+[.)]\s|(?:---|\*\*\*|___)\s*$|<|(?:main|runs[2-9]?|do|patch)?\$\s|time:)|^:{3,}\s*(?:\{[^}]*\}|[\w-]+)?\s*$")
 COMMAND = re.compile(r"^\s*(main|runs[2-9]?|do)?\$\s+(.+)$")
 ITEM = re.compile(r"^(\s*)-\s+(diff|file)\s+(?:([\w.-]+)\s+)?`([^`]+)`\s*:?\s*(.*)$")
 DIFF_LINES = 200   # the most lines of a change that a copy shows; the link to GitHub has the rest
-APPLY = re.compile(r"\*\*Apply (?:this file|the whole move)\*\*")
-# "Take it with **Apply this file** in timewalk, or from the move's commit on GitHub": the words from "with" go
-WITH_APPLY = re.compile(r"\bwith\s+\*\*Apply (?:this file|the whole move)\*\*(\s+too)?,?(?:\s+in\s+timewalk)?"
-                        r"(?:,?\s+or\s+(?:from\s+)?the\s+move's\s+commit(?:\s+on\s+GitHub)?)?")
 
 
 class NotesError(ValueError):
@@ -306,7 +303,7 @@ def build(
         if step.section and len(names) > 1:
             section.title = ""
         section.title = step.title or section.title   # a title that select gives
-        section.body = squeeze(apply_links(body, url).strip("\n")) + "\n"
+        section.body = squeeze("\n".join(line for line, _ in body).strip("\n")) + "\n"
         out.append(section)
     return out
 
@@ -340,6 +337,7 @@ def render(
     body: list[tuple[str, str | None]] = []
     commands: list[tuple[str, str]] = []   # a run of commands: (track, command)
     items = False   # whether the lines are a files: list
+    commands_made = any((c := COMMAND.match(line)) and c.group(1) == "do" for at, line in enumerate(lines) if at not in code)
     changes: list[tuple[str, str]] = []   # the diff items of that list: (the step or move, the path)
 
     def flush() -> None:
@@ -400,6 +398,24 @@ def render(
                 continue
             commands.append((command.group(1) or "", command.group(2).strip()))
             continue
+        if (patched := PATCH_LINE.match(line)) and where in shas:
+            if items:
+                show_changes()
+                items = False
+            flush()
+            path = patched.group(1).strip().strip("`")
+            linked = f"[`{path}`]({change(where)}#diff-{hashlib.sha256(path.encode()).hexdigest()})"
+            while body and not body[-1][0].strip():
+                body.pop()
+            if watch:
+                body += [("", None), (f"A patch to {linked}.", None), ("", None)]
+            elif commands_made:   # a do$ line may have written the file first: the whole change would not apply on top of it
+                body += [("", None), (f"Change {linked} as its change shows.", None), ("", None)]
+            else:   # the change on GitHub, which git apply takes one file of, from the top of the project
+                pattern = re.sub(r"([*?\[\\])", r"\\\1", path)   # git apply reads --include as a pattern
+                body += [("", None), (f"Apply the patch to {linked}, from the top of the project:", None), ("", None), ("```bash", None),
+                         (f"curl -sL {change(where)}.diff | git apply --include={shlex.quote(pattern)}", None), ("```", None), ("", None)]
+            continue
         if not line.strip() and commands:
             continue
         flush()
@@ -428,34 +444,6 @@ def render(
     flush()
     show_changes()
     return body
-
-
-def apply_links(
-    body: list[tuple[str, str | None]],  # The lines of one step, each with the link to its move's change, or None to leave it
-    url: str,  # The project on GitHub
-) -> str:  # The text, with timewalk's Apply buttons made links to the move's commit
-    """Turn timewalk's Apply buttons, which a reader without timewalk does not have, into the commit of the move: "with
-    **Apply this file** in timewalk, or from the move's commit on GitHub" becomes "from the move's commit", and any other
-    **Apply ...** becomes a link to it. Each run of prose lines is read whole, as a phrase can go over two lines."""
-    out: list[str] = []
-    at = 0
-    while at < len(body):
-        line, link = body[at]
-        if link is None or not line.strip():
-            out.append(line)
-            at += 1
-            continue
-        run = [line]
-        while at + len(run) < len(body) and body[at + len(run)][1] == link and body[at + len(run)][0].strip():
-            run.append(body[at + len(run)][0])
-        text = "\n".join(run)
-        if APPLY.search(text):
-            target = f"[the move's commit]({link})"
-            text = WITH_APPLY.sub(lambda m, target=target: f"{(m.group(1) or '').strip()}{',' if m.group(1) else ''} from {target}".lstrip(), text)
-            text = APPLY.sub(target, text)
-        out.extend(text.split("\n"))
-        at += len(run)
-    return "\n".join(out)
 
 
 def slug(
@@ -615,7 +603,7 @@ def facts_of(
         own = None if own is None else [keep(section) if section else None for section in own]
         intro = "\n\n".join(part.strip() for part in (given, "" if args.no_opening and not (walk.intro or walk.shared) else opening) if part.strip())
         folders = [w.slides.parent for w in walks if w.slides] if args.toc and (len(walks) > 1 or walks[0].id != "default") else None
-        facts = walk_facts(walk, main_repo, root, url, title, keep(text), intro, own, folders, keep)
+        facts = walk_facts(walk, main_repo, root, url, title, keep(text), intro, own, folders, keep, False if args.no_run else None)
     except NotesError as error:
         raise SystemExit(f"timewalk-export: {walk.notes}: {error}") from None
     return facts_text(facts, MADE)
@@ -639,6 +627,7 @@ def main() -> None:
     parser.add_argument("--quarto", action="store_true", help="write _quarto.yml for the website, not _smalldocs.yml")
     parser.add_argument("--json", type=Path, help="the file for the facts of the walk, for a class to render its own pages from")
     parser.add_argument("--private", action="store_true", help="with --json, keep the presenter's lines, for a presenter's copy")
+    parser.add_argument("--no-run", action="store_true", help="with --json, do not run the do$ commands to see which files they write")
     args = parser.parse_args()
     if not args.markdown and not args.site and not args.json:
         parser.error("give --markdown, --site, --json, or more than one")

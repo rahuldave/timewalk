@@ -14,11 +14,10 @@ import tomllib
 from pathlib import Path
 
 from timewalk import Move, Step, git, parse_notes, pick_steps, select_steps, step_moves, tag_steps, walk_notes
+from timewalk.observe import Scratch, observe, running, sources
 from timewalk.walks import Walk, check_walk, unquote_path
 
-FORMAT = 1   # the version of the layout; a change that a renderer must know of raises it
-APPLY = re.compile(r"\*\*Apply (this file|the whole move)\*\*")
-SENTENCE = re.compile(r"(?<!\be\.g\.)(?<!\bi\.e\.)(?<=[.!?])\s+(?=\S)")   # "e.g." ends no sentence
+FORMAT = 3   # the version of the layout; a change that a renderer must know of raises it
 FENCE = re.compile(r"^\s*(```+|~~~+)")
 # Every diff reads the same on every machine, whatever the user's git config says, and a path is never a pattern
 DIFF = ["--literal-pathspecs", "-c", "core.quotePath=false", "-c", "diff.noprefix=false", "-c", "diff.mnemonicPrefix=false", "-c", "diff.relative=false",
@@ -154,7 +153,7 @@ def chunks_of(
             if mark:
                 now, fence = [line], mark.group(1)
             else:
-                out.append(("", False))
+                out.append((line, False))   # a blank line, as written, spaces too
             continue
         now.append(line)
     if now:
@@ -162,68 +161,24 @@ def chunks_of(
     return out
 
 
-def apply_parts(
-    text: str,  # A part of prose
-    mode: str,  # Its mode
-    paths: list[str],  # The files of the move, to find the one a sentence names
-    last: list[str],  # The last file the text named before, as a list of one, or empty; updated
-) -> list[dict]:  # The prose, with each sentence that sends the reader to Apply made a part of its own
-    """Find the sentences about timewalk's **Apply this file** and **Apply the whole move** buttons, which a reader without
-    timewalk does not have, so that a renderer can make each a link. Such a sentence names its file in backticks, or
-    means the file named last before it. Fenced code is never cut."""
-    out: list[dict] = []
-    kept: list[str] = []
-
-    def flush() -> None:
-        words = re.sub(r"\n{3,}", "\n\n", "\n".join(kept)).strip("\n")
-        if words.strip():
-            out.append({"kind": "prose", "mode": mode, "text": words})
-        kept.clear()
-
-    for chunk, code in chunks_of(text):
-        named = [span for span in re.findall(r"`([^`]+)`", chunk) if span in paths] if not code else []
-        if code or not APPLY.search(re.sub(r"<!--.*?(-->|$)", "", chunk, flags=re.DOTALL)):   # an Apply in a comment is for the author
-            kept.append(chunk)
-            last[:] = named[-1:] or last
-            continue
-        run = False   # whether the sentence before, in this paragraph, was kept as prose
-        for sentence in SENTENCE.split(chunk):
-            spans = [span for span in re.findall(r"`([^`]+)`", sentence) if span in paths]
-            found = APPLY.search(sentence)
-            if not found:
-                kept.append(kept.pop() + " " + sentence if run else sentence)
-                run = True
-            else:
-                run = False
-                flush()
-                whole = found.group(1) == "the whole move"
-                out.append({"kind": "apply", "mode": mode, "text": sentence, "whole": whole,
-                            "path": None if whole else (spans or last or [None])[-1]})
-            last[:] = spans[-1:] or last
-        kept.append("")
-    flush()
-    return out
-
-
 def parts_of(
     parsed: list[dict],  # Parts as parse_notes reads them, without move headings
-    paths: list[str],  # The files of the move they belong to, or []
-) -> list[dict]:  # The parts of the facts: prose, command, item and apply, each with its mode
-    "Turn the notes' parts into the facts' parts, in the order of the notes."
+) -> list[dict]:  # The parts of the facts: prose, command, patch and item, each with its mode
+    "Turn the notes' parts into the facts' parts, in the order of the notes. Prose goes as written, every character of it."
     out: list[dict] = []
-    last: list[str] = []
     for part in parsed:
         mode = part.get("mode") or "shared"
         if part["kind"] == "text":
-            out += apply_parts(part["text"], mode, paths, last)
+            out.append({"kind": "prose", "mode": mode, "text": part["text"]})
+        elif part["kind"] == "patch":
+            out.append({"kind": "patch", "mode": mode, "path": part["path"]})
         elif part["kind"] == "command":
             out.append({"kind": "command", "mode": mode, "text": part["text"], "track": "" if part["track"] == "replay" else part["track"],
-                        "makes": bool(part.get("makes"))})
+                        "makes": bool(part.get("makes")), "writes": None})
         elif part["kind"] == "files":
             for item in part["items"]:
                 out.append({"kind": "item", "mode": item.get("mode") or mode, "item": item["kind"], "path": item["path"], "move": item["move"],
                             "words": re.sub(r"\s*<!--.*?(-->|$)", "", item["text"], flags=re.DOTALL).strip(), "show": list(item["show"])})
-                last[:] = [item["path"]]
     return out
 
 
@@ -259,7 +214,29 @@ def intro_parts(
     if lines and re.match(r"^#\s+\S", lines[0]):
         lines = lines[1:]
     found = parse_notes("## intro\n" + "\n".join(lines)).get("intro", {})
-    return parts_of(found.get("parts", []), [])
+    return parts_of(found.get("parts", []))
+
+
+def display_number(
+    name: str,  # A stop or a move, such as step-08b, step-08b.1 or step-05.3 to step-05.6
+    tags: str,  # The walk's glob of tag names, such as step-*
+) -> str:  # The number a reader sees, such as 8b, 8b.1 or 5.3 to 5.6
+    "Number a stop or a move as a reader counts it: its name without the tags' prefix, and without zeros in front."
+    prefix = tags.split("*", 1)[0].split("?", 1)[0].split("[", 1)[0]
+    out = []
+    for part in name.split(" to "):
+        part = part.strip()
+        rest = part[len(prefix):] if prefix and part.startswith(prefix) and len(part) > len(prefix) else part
+        out.append(re.sub(r"^0+(?=\d)", "", rest))
+    return " to ".join(out)
+
+
+def with_sources(
+    files: list[dict],  # The files of a move, as change_files lists them
+    made: dict[str, tuple[int | str, str]] | None,  # Each file's source and patch, from observe.sources; None when not run
+) -> list[dict]:  # The same files, each with its by and its patch
+    "Say where each file comes from: the index of the do$ command that writes it, or a patch, and what is changed by hand."
+    return [{**file, "by": made[file["path"]][0] if made else None, "patch": made[file["path"]][1] if made else None} for file in files]
 
 
 def relative(
@@ -284,8 +261,32 @@ def walk_facts(
     own: list[str | None] | None,  # A walk with notes of its own: each stop's section, with its includes, as text to read
     folders: list[Path] | None = None,  # The walks' slides folders, for the checks
     keep=lambda words: words,  # What to do to a tag's text: leave out the presenter's lines, as the notes' are left out
+    run: bool | None = None,  # Whether to run the do$ commands, to see the files they write; None: unless TIMEWALK_NO_RUN is set
 ) -> dict:  # The facts, in the layout of facts.schema.json
     "Gather the facts of one walk: the history, the notes read as the page reads them, the slides and the checks."
+    run = running() if run is None else run
+    scratch = Scratch(main)
+    try:
+        return gather(walk, main, root, url, title, text, intro, own, folders, keep, run, scratch)
+    finally:
+        scratch.close()
+
+
+def gather(
+    walk: Walk,  # The walk
+    main: Path,  # The repository
+    root: Path,  # The class folder
+    url: str,  # The project on GitHub
+    title: str,  # The walk's title
+    text: str,  # The notes the walk reads
+    intro: str,  # The intro
+    own: list[str | None] | None,  # A walk with notes of its own: each stop's section
+    folders: list[Path] | None,  # The walks' slides folders
+    keep,  # What to do to a tag's text
+    run: bool,  # Whether to run the do$ commands
+    scratch: Scratch,  # The clone they run in
+) -> dict:  # The facts; see walk_facts
+    "Gather the facts of one walk, for walk_facts."
     tutorial = walk.kind == "tutorial"
     if walk.select:
         steps, moves = select_steps(main, walk.tags, walk.select, tutorial)
@@ -305,21 +306,32 @@ def walk_facts(
         for move in found:
             heading, mine = by_move.get(move.name, ({}, []))
             files = change_files(main, f"{move.sha}^", move.sha)
-            walked.append({"name": move.name, "title": move_title(move, heading.get("title", "")), "commit": move.sha,
-                           "parent": git(main, "rev-parse", f"{move.sha}^"), "parts": parts_of(mine, [f["path"] for f in files]), "files": files})
+            parent = git(main, "rev-parse", f"{move.sha}^")
+            parts = parts_of(mine)
+            commands = [part["text"] for part in parts if part["kind"] == "command" and part["makes"]]
+            seen = observe(main, parent, move.sha, commands, scratch) if commands and run else {"commands": [], "left": {}} if not commands else None
+            made = sources(main, move.sha, files, seen, walk.loose, DIFF)[0] if seen is not None else None
+            writes = iter(seen["commands"] if seen else [])
+            for part in parts:
+                if part["kind"] == "command":
+                    ran = next(writes, None) if part["makes"] and seen else None   # a command after a failed one did not run
+                    part["writes"] = ran["writes"] if ran else None
+            walked.append({"name": move.name, "number": display_number(move.name, walk.tags), "title": move_title(move, heading.get("title", "")),
+                           "commit": move.sha, "parent": parent, "parts": parts, "files": with_sources(files, made)})
         whole = not step.section
         files = [] if found else change_files(main, start or None, step.sha)
         section = own[at] if own is not None and at < len(own) else None
         stops.append({
             "name": step.name,
+            "number": display_number(step.name, walk.tags),
             "title": step.title or entry.get("title", "") or (tag_of(step)["title"] if whole else ""),
             "tag": tag_of(step, keep) if whole else None,
             "commit": step.sha,
             "start": start or None,
             "own": {"title": step.title, "text": section.split("\n", 1)[1].strip("\n") + "\n"} if section else None,
-            "parts": parts_of(before, [f["path"] for f in files]),
+            "parts": parts_of(before),
             "moves": walked,
-            "files": files,
+            "files": with_sources(files, {f["path"]: ("patch", f["diff"]) for f in files}),
         })
     slides = None
     if walk.slides is not None and walk.slides.is_file():
@@ -330,11 +342,12 @@ def walk_facts(
                   "docs": {name: doc for name, doc in data.get("docs", {}).items() if name in wanted}}
     every = tag_steps(main, walk.tags)
     history = {**{step.name: step.sha for step in every}, **{move.name: move.sha for found in step_moves(main, every) for move in found}}
-    errors, warnings, _ = check_walk(walk, main, root, main.parent / f"{main.name}-replay", folders)
+    errors, warnings, _ = check_walk(walk, main, root, main.parent / f"{main.name}-replay", folders, run)
     return {
         "format": FORMAT,
         "timewalk": importlib.metadata.version("timewalk"),
         "made": "",
+        "observed": run,
         "walk": {"id": walk.id, "title": title, "description": walk.description, "kind": walk.kind, "mode": walk.mode if tutorial else "watch",
                  "github": url},
         "intro": intro_parts(intro),

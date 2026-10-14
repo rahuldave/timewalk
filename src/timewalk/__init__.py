@@ -111,6 +111,42 @@ def name_status(
     return {path: status[0] for status, path in zip(fields[::2], fields[1::2], strict=False) if status and path}
 
 
+def blob_diff(
+    path: str,  # The file's path, for git to choose how to read it
+    old: bytes | None,  # The file before, or None where it does not exist
+    new: bytes | None,  # The file after, or None
+    config: list[str] | None = None,  # git options before the command, such as -c diff.context=3
+) -> str:  # The diff from its first hunk, ending in a newline; "" when they are the same, or binary
+    "Compare two copies of a file that need not be in any commit, such as a learner's file and a move's, with git's own diff."
+    with tempfile.TemporaryDirectory(prefix="timewalk-diff-") as folder:
+        sides = []
+        for name, data in (("a", old), ("b", new)):
+            if data is None:
+                sides.append(os.devnull)
+                continue
+            side = Path(folder) / name / path.rsplit("/", 1)[-1]   # git reads the attributes of the file's own name
+            side.parent.mkdir()
+            side.write_bytes(data)
+            sides.append(str(side))
+        done = subprocess.run(["git", *(config or []), "diff", "--no-index", "--no-color", "--no-ext-diff", "--no-textconv", "--", *sides],
+                              cwd=folder, capture_output=True)
+    if done.returncode not in (0, 1):
+        raise GitError(done.stderr.decode("utf-8", errors="replace").strip() or "git diff --no-index failed")
+    lines = done.stdout.decode("utf-8", errors="replace").split("\n")
+    hunk = next((at for at, line in enumerate(lines) if line.startswith("@@")), None)
+    return "" if hunk is None else "\n".join(lines[hunk:])
+
+
+def blob_at_commit(
+    cwd: Path,  # A repository
+    commit: str,  # A commit
+    path: str,  # A file
+) -> bytes | None:  # The file at that commit, or None if it has no such file
+    "Read one file of a commit, as bytes."
+    done = subprocess.run(["git", "cat-file", "blob", f"{commit}:{path}"], cwd=cwd, capture_output=True)
+    return done.stdout if done.returncode == 0 else None
+
+
 @dataclass
 class Step:
     "One point in the history that the browser can stand on."
@@ -572,6 +608,87 @@ class Repo:
             return parent if parent != head else None
         return git(self.work, "commit-tree", tree, "-p", parent, "-m", message % "edits", env=self.identity())
 
+    def keep_file(
+        self,
+        relative: str,  # A file of the copy, which the learner changed
+        label: str,  # The move that a patch$ line is about to replace the file for
+    ) -> str | None:  # The saved branch that holds the learner's version; None when the file is as HEAD has it
+        """Keep the learner's version of one file on a branch `timewalk/saved/...`, before the page's Replace button puts the
+        move's version in its place. What was staged with `git add` is one commit on top of HEAD, if it differs; the file as
+        it is on disk, or its absence, is another on top. Only git's objects and the branch are written: no file of the copy,
+        and not its index. A copy that is the user's own repository, or a replay worktree of an older version, has no
+        branch of its own, and refuses."""
+        if self.branch is None:
+            raise GitError("this copy shares its branches with your repository, so timewalk keeps no branch here; copy your file "
+                           "aside yourself, or use Catch me up")
+        if relative != os.path.normpath(relative) or ((self.work / relative).is_dir() and not (self.work / relative).is_symlink()):
+            raise GitError(f"{relative} is not a file of the copy")
+        head = git(self.work, "rev-parse", "HEAD")
+        message = f"{label}: your %s of {relative}, kept by timewalk before Replace"
+        with tempfile.TemporaryDirectory() as folder:
+            env = {"GIT_INDEX_FILE": str(Path(folder) / "index"), "GIT_LITERAL_PATHSPECS": "1"}
+            git(self.work, "read-tree", "HEAD", env=env)
+            parent = head
+            staged = git(self.work, "--literal-pathspecs", "ls-files", "--stage", "-z", "--", relative).split("\x00")[0]
+            if "\t" in staged and " " in staged:   # what git add put in the index, as it is there
+                mode, blob = staged.split("\t", 1)[0].split()[:2]
+                git(self.work, "update-index", "--add", "--cacheinfo", f"{mode},{blob},{relative}", env=env)
+                tree = git(self.work, "write-tree", env=env)
+                if tree != git(self.work, "rev-parse", "HEAD^{tree}"):
+                    parent = git(self.work, "commit-tree", tree, "-p", head, "-m", message % "staged version", env=self.identity())
+            if (self.work / relative).exists() or (self.work / relative).is_symlink():
+                git(self.work, "update-index", "--add", "--", relative, env=env)
+            else:
+                git(self.work, "update-index", "--force-remove", "--", relative, env=env)
+            tree = git(self.work, "write-tree", env=env)
+        commit = parent
+        if tree != git(self.work, "rev-parse", f"{parent}^{{tree}}"):
+            commit = git(self.work, "commit-tree", tree, "-p", parent, "-m", message % "version", env=self.identity())
+        if commit == head:
+            return None   # the learner's file is as HEAD has it: nothing of theirs to keep
+        names = set(git(self.work, "for-each-ref", "--format=%(refname:short)", f"refs/heads/{SAVED}").splitlines())
+        base = SAVED + (re.sub(r"\.\.+", "-", re.sub(r"[^A-Za-z0-9._-]+", "-", f"{label}-yours")).strip("-.") or "yours")
+        name, n = base, 1
+        while name in names:
+            n += 1
+            name = f"{base}-{n}"
+        git(self.work, "branch", name, commit)
+        return name
+
+    def patch_state(
+        self,
+        name: str,  # A move
+        relative: str,  # A file that a patch$ line of the move names
+    ) -> dict:  # state: "made", the file is as the move leaves it; "apply", as before the move; "replace", any other way
+        """Say what the learner's file is, against a move's patch: so that the page offers Apply only where the patch fits
+        exactly, and otherwise Replace, with no merge and no conflict. A file is its contents and whether it can run; a
+        symbolic link is its target. `keep` says whether Replace can keep the learner's version on a branch."""
+        move = self.move_named(name)
+        if move is None:
+            return {"state": ""}
+        before, after = git(self.work, "rev-parse", f"{move.sha}^"), move.sha
+        file = self.work / relative
+        mine = None
+        if file.is_symlink():
+            mine = (os.fsencode(os.readlink(file)), "l")
+        elif file.is_file():
+            mine = (file.read_bytes(), "x" if os.access(file, os.X_OK) and self.file_modes() else "-")
+        def theirs(commit: str) -> tuple | None:
+            entry = git(self.work, "--literal-pathspecs", "ls-tree", "-z", commit, "--", relative).split("\x00")[0]
+            if "\t" not in entry:
+                return None
+            mode, _, blob = entry.split("\t", 1)[0].split()
+            data = subprocess.run(["git", "cat-file", "blob", blob], cwd=self.work, capture_output=True).stdout
+            return (data, {"100755": "x" if self.file_modes() else "-", "120000": "l"}.get(mode, "-"))
+        made, was = theirs(after), theirs(before)
+        state = "made" if mine == made else "apply" if mine == was else "replace"
+        return {"state": state, "before": before, "after": after, "exists": made is not None, "keep": self.branch is not None, "work": str(self.work)}
+
+    def file_modes(self) -> bool:  # Whether git in the copy sees whether a file can run
+        "Read core.fileMode: on a file system where every file can run, git does not compare the mode, and neither does timewalk."
+        found = subprocess.run(["git", "config", "--bool", "core.fileMode"], cwd=self.work, capture_output=True, text=True).stdout.strip()
+        return found != "false"
+
     def remove_kept(
         self,
         paths: list[str],  # The files in the way, relative to the copy, already kept on a saved branch
@@ -849,14 +966,18 @@ class Repo:
         paths = sorted({p for p in touched if p} | set(self.edits()))
         if not paths:
             return []
-        wanted = {}
+        wanted, modes = {}, {}
         for entry in git(self.work, "ls-tree", "-r", "-z", target, "--", *paths).split("\x00"):
             if "\t" in entry:
                 info, path = entry.split("\t", 1)
-                wanted[path] = info.split()[2]
+                wanted[path], modes[path] = info.split()[2], info.split()[0]
         on_disk = [p for p in paths if (self.work / p).is_file()]
         hashes = dict(zip(on_disk, git(self.work, "hash-object", "--stdin-paths", input_text="\n".join(on_disk)).splitlines(), strict=True)) if on_disk else {}
-        differ = [p for p in paths if wanted.get(p) != hashes.get(p)]
+        # A file that can run differs from one that cannot, so that a move of chmod +x alone is made only by chmod
+        runs = lambda p: modes.get(p) == "100755"   # noqa: E731
+        modal = self.file_modes()
+        differ = [p for p in paths if wanted.get(p) != hashes.get(p)
+                  or (modal and p in hashes and p in modes and modes[p] in ("100644", "100755") and runs(p) != os.access(self.work / p, os.X_OK))]
         for path in [p for p in differ if any(fnmatch.fnmatchcase(p, glob) for glob in loose or [])]:
             how = loosely_same(path, self.work / path, self.read_blob(wanted[path]) if path in wanted else None)
             if how:
@@ -1069,6 +1190,9 @@ def note_blocks(
     return out
 
 
+PATCH_LINE = re.compile(r"^\s*patch\$\s+(.+?)\s*$")   # patch$ src/x.py: a file that the move changes by a patch
+
+
 def _items_follow(
     lines: list[str],  # The lines of the notes
     at: int,  # The index of a files: line
@@ -1094,6 +1218,9 @@ def parse_notes(
         main$ git log         a command for the terminal in the repository you started from
         do$ uv add ruff       in a tutorial, the command that makes the move: a command in do mode, and in watch mode
                               shown as what the move ran, with nothing to run; never the anchor of a move
+        patch$ src/x.py       in a tutorial, a file that the move changes by a patch, the diff of its commit: in do
+                              mode a button that applies it, in watch mode a pointer to its diff; a path with a
+                              space is written in backticks
         > Say: ...            a cue; shown with the prose, set apart in its own shade
         ### step-02.1 Title   in a tutorial, starts the notes of one move of the step, which is one commit
         ::: do                in a tutorial, a block of lines for do mode only, up to a line :::
@@ -1139,6 +1266,7 @@ def parse_notes(
         mode = blocks.mode[at] if at < len(blocks.mode) else None
         planned = re.match(r"^time:\s*(\d+):(\d\d)\s*$", line.strip()) if fence is None else None
         command = re.match(r"^\s*(main|runs[2-9]?|do)?\$\s+(.+)$", line) if fence is None else None
+        patched = PATCH_LINE.match(line) if fence is None else None
         move = re.match(rf"^###\s+({re.escape(name)}\.\d+)(?:\s+(.*))?$", line) if fence is None else None
         if mark:
             fence = mark.group(1)[0] if fence is None else (None if mark.group(1)[0] == fence else fence)
@@ -1163,6 +1291,12 @@ def parse_notes(
         elif fence is None and items and not command and line.startswith("  ") and line.strip() and lines[at - 1].strip():
             items[-1]["text"] = (items[-1]["text"] + " " + line.strip()).strip()   # an item's words, over more lines
             current["text"].append(line)
+        elif patched:
+            items = None
+            path = patched.group(1).strip()
+            path = path[1:-1] if len(path) > 1 and path[0] == path[-1] == "`" else path
+            parts.append({"kind": "patch", "path": path, **({"mode": mode} if mode else {})})
+            current["text"].append(line)   # the PDF prints it as written
         elif command:
             items = None
             makes = command.group(1) == "do"   # do$: the command that makes the move; run in do mode, shown as what it ran in watch mode
@@ -2080,7 +2214,37 @@ def make_app(
             commit = (repo.move_named(at).sha if repo.move_named(at) else next((s.sha for s in repo.steps if s.name == at), None))
             if commit:
                 answer["at"], answer["at_text"] = at, repo.read_at(commit, path)
+        answer.update(await asyncio.to_thread(compare_now, path))
         return answer
+
+    def compare_now(
+        path: str,  # A file of the working copy
+    ) -> dict:  # compare: the diff from the learner's file to the move's; compare_name: that move; compare_loose: how it matches loosely
+        """In do mode: compare the learner's file with the move being worked on, as the match does. A file of the walk's
+        loose that matches by its packages' names says so, and shows its diff too."""
+        index, _ = repo.position()
+        moves = repo.moves[index] if index is not None else []
+        if showing["mode"] != "do" or not moves or showing["done"] >= len(moves):
+            return {}
+        working = showing["done"] + 1
+        commit = repo.commit_at(index, working)
+        file = repo.work / path
+        name = moves[working - 1].name
+        if file.is_file() and file.stat().st_size > MAX_FILE_BYTES:
+            return {"compare": "", "compare_name": name, "compare_loose": ""}   # too large to show, as the file itself is
+        theirs = blob_at_commit(repo.work, commit, path)
+        if theirs is not None and len(theirs) > MAX_FILE_BYTES:
+            return {"compare": "", "compare_name": name, "compare_loose": ""}
+        mine = file.read_bytes() if file.is_file() else None
+        loose = active["walk"].loose if active["walk"] else []
+        how = loosely_same(path, file, theirs) if any(fnmatch.fnmatchcase(path, glob) for glob in loose) else ""
+        mode = ""   # the same lines, but one can run and the other cannot: a diff of lines does not show that
+        if mine is not None and mine == theirs and repo.file_modes():
+            entry = git(repo.work, "--literal-pathspecs", "ls-tree", commit, "--", path).split("\t")[0].split()
+            runs = bool(entry) and entry[0] == "100755"
+            if runs != os.access(file, os.X_OK):
+                mode = "runs" if runs else "stops"
+        return {"compare": blob_diff(path, mine, theirs), "compare_name": name, "compare_loose": how, "compare_mode": mode}
 
     @guarded
     async def match(request: Request) -> dict:
@@ -2331,6 +2495,30 @@ def make_app(
                         "layout": showing["layout"], "shell": showing["shell"], "mode": showing["mode"]})
         return {"ok": True}
 
+    def inside_copy(
+        path: str,  # A path from the page
+    ) -> bool:  # Whether it names a place inside the replay copy
+        "Refuse a path that leaves the copy, such as ../x."
+        return bool(path) and (repo.work / path).resolve().is_relative_to(repo.work.resolve())
+
+    @guarded
+    async def patch(request: Request) -> dict:
+        "For a patch$ line: whether the learner's file is as the move leaves it, as it was before the move, or neither."
+        path, name = request.query_params.get("path", ""), request.query_params.get("move", "")
+        if not inside_copy(path) or not name:
+            return {"state": ""}
+        return await asyncio.to_thread(repo.patch_state, name, path)
+
+    @guarded
+    async def keep(request: Request) -> dict:
+        "Keep the learner's version of a file on a saved branch, before Replace types the command that puts the move's in its place."
+        body = await request.json()
+        body = body if isinstance(body, dict) else {}
+        path, name = str(body.get("path", "")), str(body.get("move", ""))
+        if not inside_copy(path) or repo.move_named(name) is None:
+            raise GitError(f"there is no file {path} of a move {name} to keep")
+        return {"branch": await asyncio.to_thread(repo.keep_file, path, name)}
+
     @guarded
     async def type_command(request: Request) -> dict:
         "Type a command into one of the shells, as if at the keyboard."
@@ -2487,6 +2675,8 @@ def make_app(
         Route("/api/pdf", pdf),
         Route("/api/show", show, methods=["POST"]),
         Route("/api/type", type_command, methods=["POST"]),
+        Route("/api/patch", patch),
+        Route("/api/keep", keep, methods=["POST"]),
         Route("/api/clock", set_clock, methods=["POST"]),
         WebSocketRoute("/ws/term/{name}", terminal),
         WebSocketRoute("/ws/events", events),
@@ -2555,7 +2745,7 @@ def main() -> None:
     if walks:
         from timewalk.walks import check
 
-        errors, warnings = check(walks, repo.main, root, repo.work)
+        errors, warnings = check(walks, repo.main, root, repo.work, run=False)   # timewalk-check runs the do$ lines
         for line in warnings:
             print(f"timewalk: warning: {line}")
         if errors:

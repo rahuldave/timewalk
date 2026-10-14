@@ -131,8 +131,8 @@ step-02.2: a test of an empty text    move step-02.2
 step-02: the tests pass               tag step-02, move step-02.3
 ```
 
-- **The subject of each move starts with its name,** `step-NN.k:`. `timewalk-check` reports a subject with
-  the wrong name.
+- **A move is named by its place,** so its subject can say anything, or nothing. A subject that names the
+  move helps you read `git log`. `jj new` makes a move with no subject.
 - **The last commit keeps the subject of the step,** `step-NN:`, and carries the tag.
 
 See [Commits for a tutorial](build-walks.md#commits-for-a-tutorial).
@@ -196,22 +196,32 @@ The notes of each step start with `just setup`, so any step is a safe place to l
 package that a move added. A skip would miss that, and a move back would leave it in place. So after
 **Start**, run `just setup` again.
 
-### Apply
+### patch$ buttons
 
-In do mode, the **Apply** bar in **Next change** types a git command into the **At this step** tab, and
-runs it:
+In do mode, a `patch$` line of the move being made shows a button. The button types a git command into
+the **At this step** tab, and runs it:
 
 | Button | Types |
 |---|---|
-| **⇣ Apply this file** | ``(cd "$(git rev-parse --show-toplevel)" && git diff A B -- path \| git apply --3way)`` |
-| **⇣ Apply the whole move** | `git cherry-pick --no-commit B` |
+| **⇣ Apply patch path** | ``(cd COPY && git --literal-pathspecs diff --no-color --no-ext-diff --no-textconv --binary --src-prefix=a/ --dst-prefix=b/ A B -- path \| git apply --intent-to-add)`` |
+| **⇄ Replace with the move's file path** | ``(cd COPY && git --literal-pathspecs checkout B -- path && git --literal-pathspecs reset -q -- path && git --literal-pathspecs add -N -- path)`` |
 
-Here `A` is the commit before the move, and `B` is the commit of the move. `git apply --3way` merges the
-change into the file when the file differs. A cherry-pick copies the change of a commit, and
-`--no-commit` leaves it as edits. HEAD does not move.
+Here `COPY` is the replay copy's own path, `A` is the commit before the move, and `B` is the commit of the move. The
+command names the copy by its path, so a shell that went elsewhere changes nothing there. The options of `git diff`
+give the form that `git apply` reads, whatever your git config says. A path is a name, not a pattern. 
+
+A plain `git apply` writes the
+change as an edit. It merges nothing and stages nothing. `--intent-to-add` and `git add -N` track a new
+file without its lines, so it is an edit too, and **↺ Restart step** keeps it on a saved branch. HEAD does not
+move.
+
+**Apply patch** shows when the file is as it was before the move. **Replace** shows when the learner has
+changed the file. Before it types, the server keeps the learner's version on a branch
+`timewalk/saved/<move>-yours`. That branch is a commit on top of HEAD, and no file is written. For a file
+that the move deletes, **Replace** types `rm -f -- path`.
 
 The page itself never writes a file. The shell runs the command, and the learner sees it. See
-[Apply](walks.md#apply).
+[patch$ buttons](walks.md#patch-buttons).
 
 ## How a move keeps the learner's work
 

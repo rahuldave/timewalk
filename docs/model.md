@@ -106,8 +106,8 @@ then happen, in this order:
 | **Next change** | The diff of the next step, or of the next move, for that file | `git diff <before> <after> -- <file>`, in the replay copy |
 | **Your edits** | The edits since the commit that the replay copy stands on | `git diff HEAD -- <file>`, in the replay copy |
 | **± See diff** or **▤ See file** in the notes, or a click on an excerpt | Opens the change or the file in the reader, in every window | None. It reads, as the views of the reader do |
-| **⇣ Apply this file**, **⇣ Apply the whole move** | Types a command into the **At this step** tab, and runs it | `git diff <before> <move> -- <file> \| git apply --3way`, or `git cherry-pick --no-commit <move>`. The shell writes the files, as edits |
-| "Your files match", every two seconds in do mode | Compares the files on the disk with the commit of the move, by content. A match marks the move done, once | None. `git diff --name-only`, `git ls-tree` and `git hash-object` read |
+| **⇣ Apply patch**, **⇄ Replace with the move's file**, on a `patch$` line in do mode | Types a command into the **At this step** tab, and runs it | `git diff <before> <move> -- <file> \| git apply --intent-to-add`, or `git checkout <move> -- <file>` and `git reset -q -- <file>`. Before **Replace**, the server keeps your file on a branch `timewalk/saved/<move>-yours`. The shell writes the file, as an edit |
+| "Your files match", every two seconds in do mode | Compares the files on the disk with the commit of the move, by content and by whether each file can run. A match marks the move done, once | None. `git diff --name-only`, `git ls-tree` and `git hash-object` read |
 | **Open in VS Code** | A link that opens the file in your editor | None. The editor opens the file |
 | **At this step** | A login shell | Starts in the replay copy |
 | **Runs**, **Runs 2** to **9**, **+** | More login shells, each with its own process | Start in the replay copy |

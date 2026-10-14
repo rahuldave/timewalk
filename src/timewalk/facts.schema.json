@@ -2,14 +2,15 @@
  "$schema": "https://json-schema.org/draft/2020-12/schema",
  "$id": "https://rahuldave.com/timewalk/facts.schema.json",
  "title": "The facts of a timewalk walk",
- "description": "What timewalk-export --json writes: one walk's history and notes, for a class to render its own pages from. Format 1. docs/reference.md explains each field.",
+ "description": "What timewalk-export --json writes: one walk's history and notes, for a class to render its own pages from. Format 3. docs/reference.md explains each field.",
  "type": "object",
- "required": ["format", "timewalk", "made", "walk", "intro", "stops", "slides", "history", "errors", "warnings"],
+ "required": ["format", "timewalk", "made", "observed", "walk", "intro", "stops", "slides", "history", "errors", "warnings"],
  "additionalProperties": false,
  "properties": {
-  "format": {"const": 1, "description": "The version of this layout. A change that a renderer must know of raises it."},
+  "format": {"const": 3, "description": "The version of this layout. A change that a renderer must know of raises it."},
   "timewalk": {"type": "string", "description": "The version of timewalk that wrote the file."},
   "made": {"type": "string", "description": "The line that marks the file as made by timewalk-export, which writes over only its own files."},
+  "observed": {"type": "boolean", "description": "Whether the do$ commands ran, so that each do$ line has its writes and each file of a move with do$ lines its by and patch."},
   "walk": {
    "type": "object",
    "required": ["id", "title", "description", "kind", "mode", "github"],
@@ -55,18 +56,20 @@
      "type": "object",
      "required": ["kind", "mode", "text"],
      "additionalProperties": false,
-     "properties": {"kind": {"const": "prose"}, "mode": {"$ref": "#/$defs/mode"}, "text": {"type": "string", "description": "Markdown, as written; fenced code is kept whole."}}
+     "properties": {"kind": {"const": "prose"}, "mode": {"$ref": "#/$defs/mode"}, "text": {"type": "string", "description": "Markdown, as written, every character of it."}}
     },
     {
      "type": "object",
-     "required": ["kind", "mode", "text", "track", "makes"],
+     "required": ["kind", "mode", "text", "track", "makes", "writes"],
      "additionalProperties": false,
      "properties": {
       "kind": {"const": "command"},
       "mode": {"$ref": "#/$defs/mode"},
       "text": {"type": "string"},
       "track": {"type": "string", "pattern": "^(|main|runs[2-9]?)$", "description": "\"\" for the shell at the step, main for the repository you started from, runs to runs9 for the Runs tabs."},
-      "makes": {"type": "boolean", "description": "A do$ line: the command that makes the move."}
+      "makes": {"type": "boolean", "description": "A do$ line: the command that makes the move."},
+      "writes": {"type": ["array", "null"], "items": {"type": "string"},
+                 "description": "For a do$ line that ran: the files it adds, changes or removes, in the order of their paths. null for any other command, or when it did not run."}
      }
     },
     {
@@ -85,14 +88,12 @@
     },
     {
      "type": "object",
-     "required": ["kind", "mode", "text", "whole", "path"],
+     "required": ["kind", "mode", "path"],
      "additionalProperties": false,
      "properties": {
-      "kind": {"const": "apply"},
+      "kind": {"const": "patch"},
       "mode": {"$ref": "#/$defs/mode"},
-      "text": {"type": "string", "description": "The sentence about **Apply this file** or **Apply the whole move**, as written."},
-      "whole": {"type": "boolean", "description": "True for Apply the whole move."},
-      "path": {"type": ["string", "null"], "description": "For Apply this file: the file of the move it names, or that the text named last before it."}
+      "path": {"type": "string", "description": "A patch$ line: the file that the move changes by a patch, its diff from the commit before the move."}
      }
     }
    ]
@@ -109,7 +110,7 @@
   },
   "file": {
    "type": "object",
-   "required": ["path", "old_path", "status", "added", "removed", "binary", "diff", "names"],
+   "required": ["path", "old_path", "status", "added", "removed", "binary", "diff", "names", "by", "patch"],
    "additionalProperties": false,
    "properties": {
     "path": {"type": "string"},
@@ -119,15 +120,20 @@
     "removed": {"type": "integer", "minimum": 0},
     "binary": {"type": "boolean"},
     "diff": {"type": "string", "description": "The whole diff of the file, from its first hunk; \"\" for a binary file or a change of mode alone."},
-    "names": {"$ref": "#/$defs/names"}
+    "names": {"$ref": "#/$defs/names"},
+    "by": {"oneOf": [{"type": "integer", "minimum": 0}, {"const": "patch"}, {"type": "null"}],
+           "description": "Where the file comes from: the index, among the move's do$ lines, of the last one that writes it; \"patch\" when no do$ line writes it, so a patch$ line should name it; null when the do$ lines did not run."},
+    "patch": {"type": ["string", "null"],
+              "description": "What a person changes by hand, from its first hunk: the whole diff for a patch, and for a file of a do$ line the diff from what the line left to the commit, \"\" when there is none. null when the do$ lines did not run."}
    }
   },
   "move": {
    "type": "object",
-   "required": ["name", "title", "commit", "parent", "parts", "files"],
+   "required": ["name", "number", "title", "commit", "parent", "parts", "files"],
    "additionalProperties": false,
    "properties": {
     "name": {"type": "string"},
+    "number": {"type": "string", "description": "The number a reader sees: the name without the prefix of the tags and the zeros in front, such as 8b.1 or 5.3 to 5.6."},
     "title": {"type": "string"},
     "commit": {"$ref": "#/$defs/sha"},
     "parent": {"$ref": "#/$defs/sha"},
@@ -137,10 +143,11 @@
   },
   "stop": {
    "type": "object",
-   "required": ["name", "title", "tag", "commit", "start", "own", "parts", "moves", "files"],
+   "required": ["name", "number", "title", "tag", "commit", "start", "own", "parts", "moves", "files"],
    "additionalProperties": false,
    "properties": {
     "name": {"type": "string"},
+    "number": {"type": "string", "description": "The number a reader sees: the name without the prefix of the tags and the zeros in front, such as 8b.1 or 5.3 to 5.6."},
     "title": {"type": "string"},
     "tag": {
      "oneOf": [

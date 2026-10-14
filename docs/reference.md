@@ -5,11 +5,11 @@
 Run timewalk from GitHub with uv, with no clone and no install:
 
 ```
-uvx --from git+https://github.com/rahuldave/timewalk@v1.3.0 timewalk [repo] [options]
-uvx --from git+https://github.com/rahuldave/timewalk@v1.3.0 timewalk-pdf [options]
+uvx --from git+https://github.com/rahuldave/timewalk@v1.4.0 timewalk [repo] [options]
+uvx --from git+https://github.com/rahuldave/timewalk@v1.4.0 timewalk-pdf [options]
 ```
 
-Or install the commands `timewalk`, `timewalk-pdf`, `timewalk-check`, `timewalk-notes` and `timewalk-export` once with `uv tool install git+https://github.com/rahuldave/timewalk@v1.3.0`. In a clone of timewalk, run them with
+Or install the commands `timewalk`, `timewalk-pdf`, `timewalk-check`, `timewalk-notes` and `timewalk-export` once with `uv tool install git+https://github.com/rahuldave/timewalk@v1.4.0`. In a clone of timewalk, run them with
 `uv run timewalk` and `uv run timewalk-pdf`.
 
 ## timewalk
@@ -76,6 +76,32 @@ warning:
 - A `show:` line is no longer in the change of its item.
 - An item names a move that is not in the walk.
 
+In a tutorial, it also runs the `do$` lines of each move, to see where each file of the move comes from. A
+file gets its content from a `do$` line that writes it, or from a patch that a `patch$` line names. It
+runs the `do$` lines of a move in order, at the commit before the move, in a scratch clone of the project.
+It notes the files that each one writes. The clone is a `git clone --shared` in a folder of its own, made
+afresh for each move, with no remote. So nothing is written in your repository.
+
+The result of each move goes into a cache, `~/.cache/timewalk/observed`, so a
+second check runs nothing. Each of these problems is a warning:
+
+- No `do$` line writes a file of the move, and no `patch$` line names it. The warning ends "add patch$
+  PATH".
+- A `do$` line writes a file, and the move changes it after that, and no `patch$` line names it.
+- A `do$` line writes a file that the move does not change.
+- A `do$` line fails at the commit before the move. The lines after it do not run.
+
+A file that the walk's `loose` names, and that matches by the names of its packages, has no change after
+its `do$` line. So a `uv.lock` with newer versions is the `do$` line's. Give `--no-run`, or set
+`TIMEWALK_NO_RUN=1`, to run nothing. A move with `do$` lines is then not checked. timewalk itself runs
+nothing when it starts.
+
+A `patch$` line that names a file that its move does not change is an error. A `patch$` line before the
+first move of a step, or in a block for one mode, is a warning.
+
+A sentence that asks for **Apply this file** or **Apply the whole move** is a warning. timewalk no longer
+has these buttons. Write a line `patch$ PATH` for each file that the move changes by a patch.
+
 In any walk, a `show:` line that quotes a line with a backtick in it in one backtick is a warning. Write
 it in two backticks. See [Quote a line with backticks](walks.md#quote-a-line-with-backticks).
 
@@ -124,9 +150,10 @@ Drafts a `### step-NN.k` section for each move that the notes do not have yet, a
 draft has the subject of the commit as its title. Then it has these parts, each a comment for you to
 replace:
 
-- the problem that the change solves, and the change, for both modes, with **Apply this file** for a
-  file to take whole
-- a block `::: do`, for the exact lines to type and where they go
+- the problem that the change solves, and the change, for both modes
+- a line `patch$ PATH` for each file of the commit. Put a `do$` line in place of the `patch$` lines of the
+  files that a command writes
+- a block `::: do`, for what to read in each patch, and where in the file. It copies no code
 - a block `::: watch`, for what the change does and where to see it
 - the check, a command and what it prints
 
@@ -164,6 +191,7 @@ timewalk-export REPO --notes notes.md [--tags GLOB] (--markdown DIR | --site DIR
 | `--quarto` | With `--site`: write `_quarto.yml` in place of `_smalldocs.yml` |
 | `--json` | The file for the facts of the walk, in JSON, for a class to make its own pages from. See [The facts file](#the-facts-file) |
 | `--private` | With `--json`: keep the private lines, for a copy for the presenter. Without it, the facts leave them out, as the copies do |
+| `--no-run` | With `--json`: run no `do$` line. The facts then say `"observed": false`, and give no `writes`, `by` or `patch` for a move with `do$` lines |
 
 Give one or more of `--markdown`, `--site` and `--json`. Each copy of a tutorial has the text outside the blocks and the blocks
 of one mode, without the private lines. A narrative has one copy, with the `watch` blocks. Each step, move
@@ -181,11 +209,15 @@ no words or layout of timewalk. The exact layout is a JSON Schema, `src/timewalk
 timewalk repository. The same notes and history give the same bytes. The file has no time of day, and no
 path of your machine.
 
+The text of the notes is in it as written, every character, blank lines too. Only the private lines are
+left out.
+
 | Field | Holds |
 |---|---|
-| `format` | The version of the layout, now `1`. A change that a renderer must know of raises it |
+| `format` | The version of the layout, now `3`. A change that a renderer must know of raises it. Version 2 added `observed`, `number`, `writes`, `by` and the field `patch` of a file. Version 3 added the part `patch`, and removed the part `apply` |
 | `timewalk` | The version of timewalk that wrote the file |
 | `made` | The line "Made by timewalk-export". The command writes over only a file with this line |
+| `observed` | Whether the `do$` lines ran. See [timewalk-check](#timewalk-check) |
 | `walk` | `id`, `title`, `description`, `kind` (`tutorial` or `narrative`), `mode` (the mode that a tutorial starts in, and `watch` for a narrative) and `github`, the address of the project |
 | `intro` | The parts of the text before the first stop |
 | `stops` | The stops of the walk, in order |
@@ -198,6 +230,7 @@ A stop has these fields:
 | Field | Holds |
 |---|---|
 | `name`, `title` | The name of the stop, for example `step-02` or `step-05.3 to step-05.6`, and its title |
+| `number` | The number that a reader sees: the name without the prefix of the tags and the zeros in front, for example `2`, `8b` or `5.3 to 5.6` |
 | `tag` | For a whole step, its tag: `name`, `title` (the first line of the message) and `text` (the rest). `null` for any other stop, for example a small step |
 | `commit`, `start` | The commit of the stop, and the commit where it starts: the tag before it, or the commit before its first move. `start` is `null` at the first commit of the history |
 | `own` | In a walk with notes of its own: the `title` and the `text` of the section of the stop, with its includes put in. Else `null` |
@@ -205,17 +238,18 @@ A stop has these fields:
 | `moves` | The moves of the stop, in order. Empty in a narrative, and in a step without moves |
 | `files` | For a stop with no moves, each file of its change from `start`. Empty for a stop with moves |
 
-A move has a `name`, a `title`, its `commit`, the commit before it (`parent`), its `parts` and its `files`.
+A move has a `name`, a `number` (for example `8b.1`), a `title`, its `commit`, the commit before it (`parent`), its
+`parts` and its `files`.
 
 The text of a stop or a move is a list of parts, in the order of the notes. Each part has a `kind`, and a
 `mode`, which is `shared`, `do` or `watch`.
 
 | Kind | Holds |
 |---|---|
-| `prose` | `text`: Markdown, as written. Fenced code stays whole |
-| `command` | `text`, the command. `track` is `""` for the shell at the step, `main`, or `runs` to `runs9`. `makes` is true for a `do$` line |
+| `prose` | `text`: Markdown, as written, every character. Fenced code stays whole |
+| `command` | `text`, the command. `track` is `""` for the shell at the step, `main`, or `runs` to `runs9`. `makes` is true for a `do$` line. `writes` lists the files that a `do$` line adds, changes or removes, when it ran. It is `null` for any other command |
 | `item` | An item under `files:`. `item` is `diff` or `file`. It also has `path`, `move` (the move that the item names, or `null` for its own move), `words`, and `show`, the lines that its `show:` lines quote |
-| `apply` | A sentence with **Apply this file** or **Apply the whole move**, as written, in `text`. `whole` is true for the whole move. `path` is the file that the sentence names, or the file named last before it |
+| `patch` | A `patch$` line. `path` is the file that the move changes by a patch, the diff of the move's commit. Do not mix it up with the field `patch` of a file |
 
 A file of a change has these fields:
 
@@ -226,6 +260,8 @@ A file of a change has these fields:
 | `added`, `removed`, `binary` | The count of lines added and removed, and whether git sees the file as binary |
 | `diff` | The whole diff of the file, from its first hunk, never cut. `""` for a binary file, or for a change of its mode alone |
 | `names` | `added`, `removed` and `changed`: the Python functions and classes that the change adds, removes or changes, and the recipes that it adds to a `justfile` |
+| `by` | Where the file comes from: the place, from 0, among the `do$` lines of the move, of the last one that writes it. `"patch"` when no `do$` line writes it. `null` when the `do$` lines did not run. A stop with no moves has `"patch"` for every file |
+| `patch` | The field `patch` of a file: what a person changes by hand, from its first hunk. For a patch, the whole diff. For a file of a `do$` line, the diff from what the line left to the commit, and `""` when there is none. `null` when the `do$` lines did not run |
 
 Without `--private`, the facts leave out the private lines. A private line is a `time:` line, a cue in an
 HTML comment, or a cue `> Say:` or `> Note:`.
@@ -286,6 +322,7 @@ In the timewalk folder, `just` lists these:
 | `> text` | A cue. Every window shows it, in its own shade. Remove private cues before you give the notes to students |
 | `$ cmd`, `runs$ cmd`, `runs2$ cmd` to `runs9$ cmd`, `main$ cmd` | A command for that tab |
 | `do$ cmd` | In a tutorial: a command that makes the move. In do mode, a command for the **At this step** tab. In watch mode and in a narrative, the line "The move ran:" and the command, with no button. Never an anchor command. The do copy of `timewalk-export` shows it as a command, and the watch copy as "The move ran:". The PDF prints it as written |
+| `patch$ PATH` | In a tutorial, in the shared text of a move: the move changes `PATH` by a patch, the diff of its commit. Write a path with a space in backticks. In do mode, on the move being made, **⇣ Apply patch PATH** or **⇄ Replace with the move's file PATH**, and **± See diff PATH**. In watch mode, "A patch to PATH" and **± See diff PATH**. See [patch$ buttons](walks.md#patch-buttons) |
 | `### step-NN.k Title` | In a tutorial: starts the section of move `k` of step `NN`. Write the sections in the order of the commits |
 | `files:` | Starts a list of items. With no items: a **± See diff** button for each file that the commit of the move added or changed |
 | ``- diff `path`: words`` | An item: a button **± See diff path** to the change of the move, or of the step, to that file. Its words go under the button |
@@ -305,7 +342,8 @@ In the timewalk folder, `just` lists these:
 | **Your file** | The file on the disk, in the replay copy |
 | **At step-02.3** | In do mode: the file as a move not made yet leaves it, read only. A `file` item opens it |
 | **Last change: name** | The step before, or the move before, to this one |
-| **Next change: name** | This step or move, to the next one. In do mode, it has the **Apply** bar |
+| **Next change: name** | This step or move, to the next one |
+| **Yours and step-02.3** | In do mode: your file, against the file as the move that you make leaves it. Lines with `-` are yours, and lines with `+` are the move's. A file of the walk's `loose` that matches by the names of its packages says so |
 | **Changes in step-02.1** | The change of another move, opened from the notes |
 | **Your edits** | The edits since the commit that the replay copy stands on |
 
