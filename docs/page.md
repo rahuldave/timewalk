@@ -233,9 +233,19 @@ status band does. At the first stop of a walk with an `intro`, the intro comes n
 walk". A green **Next step** button ends the notes. See [Notes](notes.md) and
 [The intro of a walk](walks.md#the-intro-of-a-walk).
 
-In do mode of a strict walk, a `do$` line of `uv`, for example `uv add --dev ruff`, has no button. The
-column says that the author ran it, and gives a command in its place that takes its files from the move's
-commit. See [A strict walk](walks.md#a-strict-walk).
+A strict walk compares `pyproject.toml` and `uv.lock` line by line. A learner who runs `uv add --dev ruff`
+a month after the author gets a newer ruff, and the files never match. So in do mode of a strict walk, a
+`do$` line of `uv add`, `uv remove`, `uv lock`, `uv init`, `uv version` or `uv sync` has no button. The
+column says that the author ran it. In its place, the column gives a command that takes the files from the
+move's commit.
+
+A line of `uv run` runs a program, so it keeps its button. If the program also writes
+`pyproject.toml` or `uv.lock`, the command that takes them comes after that button. See
+[A strict walk](walks.md#a-strict-walk).
+
+To find which files a `uv` line writes, timewalk first runs the move's `do$` lines in a scratch copy of the
+project. Sometimes that run fails, for example when the computer has no network. The column then says why,
+and gives the `uv` line as an ordinary button. **↻ Try again** runs the lines in the scratch copy again.
 
 ## The terminals
 

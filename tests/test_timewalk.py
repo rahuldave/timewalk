@@ -3459,7 +3459,7 @@ def test_the_facts_of_a_tutorial(tutorial: timewalk.Repo, tutorial_class: Path) 
     "Each stop and move, its parts in the order of the notes with their modes, every file with its whole diff, and no private line."
     (tutorial_class / "notes.md").write_text(BLOCK_NOTES)
     facts, raw = facts_of(tutorial.main, tutorial_class / "toc.toml", "tut")
-    assert facts["format"] == 3 and facts["walk"] == {"id": "tut", "title": "t, one move at a time", "description": "", "kind": "tutorial",
+    assert facts["format"] == 4 and facts["walk"] == {"id": "tut", "title": "t, one move at a time", "description": "", "kind": "tutorial",
                                                       "mode": "do", "github": "https://github.com/o/t", "loose": []}
     assert facts["intro"] == [{"kind": "prose", "mode": "shared", "text": "The opening."}], "the text before the first step, without its title"
     assert [s["name"] for s in facts["stops"]] == ["step-00", "step-01", "step-02"]
@@ -3749,7 +3749,9 @@ def test_a_failed_run_is_not_kept(tmp_path: Path) -> None:
 
 
 FAKE_UV = """#!/bin/sh
-# A uv that writes the newer versions of a later day, and notes each sync in uv-synced, as a scratch run and a learner see it
+# A uv that writes the newer versions of a later day, and notes each sync in uv-synced, as a scratch run and a learner see it.
+# With FAKE_UV_OFFLINE set, uv add fails, as a uv with no network does.
+if [ -n "$FAKE_UV_OFFLINE" ] && [ "$1" = add ]; then echo "error: Failed to fetch: no network" >&2; exit 2; fi
 case "$1" in
   add) printf '[project]\\nname = "m"\\ndependencies = ["%s>=9.1"]\\n' "$2" > pyproject.toml
        printf 'version = 1\\n[[package]]\\nname = "%s"\\nversion = "9.1"\\n' "$2" > uv.lock
@@ -3803,8 +3805,8 @@ def uv_history(
     return main, toc
 
 
-def test_takes_follow_the_rule_of_walk_kit() -> None:
-    "walk-kit's rule: a do$ line that runs uv and writes a file compared exactly takes what it writes, and later lines that write the same join it."
+def test_takes_follow_the_rule() -> None:
+    "A do$ line that runs uv and writes a file compared exactly takes what it writes, and later lines that write the same join it."
     from timewalk.facts import runs_uv, takes
 
     sha = "0123456789abcdef0123"
@@ -3816,14 +3818,15 @@ def test_takes_follow_the_rule_of_walk_kit() -> None:
         file("new name.txt", 0, "renamed", "was.txt"), file("pyproject.toml", 1), file("uv.lock", 1), file("y", 2, "added")], sha, [])
     assert found[0] == {"lines": [0], "files": ["packages/x/pyproject.toml", "packages/x/[odd].py", "new name.txt"], "deletes": ["old.txt", "was.txt"],
                         "command": "git restore --source 0123456789ab -- packages/x/pyproject.toml ':(top,literal)packages/x/[odd].py' "
-                                   "'new name.txt' && rm -f -- old.txt was.txt"}, "no uv.lock: no uv sync; the files in the order of the move's"
+                                   "'new name.txt' && rm -f -- old.txt was.txt", "after": False}, "no uv.lock: no uv sync; the files in the order of the move's"
     assert found[1]["command"] == "git restore --source 0123456789ab -- pyproject.toml uv.lock && uv sync --locked --all-groups --all-packages"
     assert 2 not in found, "a line that is not uv"
     joined = takes([line("uv add click", "pyproject.toml", "uv.lock"), line("printf x > pyproject.toml", "pyproject.toml"), line("ls")],
                    [file("pyproject.toml", 1), file("uv.lock", 0)], sha, [])
     assert joined == {0: {"lines": [0, 1], "files": ["pyproject.toml", "uv.lock"], "deletes": [],
-                          "command": "git restore --source 0123456789ab -- pyproject.toml uv.lock && uv sync --locked --all-groups --all-packages"},
-                      1: {"lines": [], "files": [], "deletes": [], "command": ""}}, "a later line that writes a file of the group joins it"
+                          "command": "git restore --source 0123456789ab -- pyproject.toml uv.lock && uv sync --locked --all-groups --all-packages",
+                          "after": False},
+                      1: {"lines": [], "files": [], "deletes": [], "command": "", "after": False}}, "a later line that writes a file of the group joins it"
     nested = takes([line("uv add --directory sub x", "sub/pyproject.toml", "sub/uv.lock")], [file("sub/pyproject.toml", 0), file("sub/uv.lock", 0)], sha, [])
     assert nested[0]["command"].endswith("&& uv sync --directory sub --locked --all-groups --all-packages"), "a uv.lock that is not at the top"
     two = [file("pyproject.toml", 0), file("uv.lock", 0)]
@@ -3836,54 +3839,15 @@ def test_takes_follow_the_rule_of_walk_kit() -> None:
     assert runs_uv("'uv' add x") and runs_uv("cd sub && uv add x") and runs_uv("UV_INDEX=x uv add y") and not runs_uv("echo uv")
 
 
-WALK_KIT = Path.home() / "Projects" / "walk-kit" / "scripts"
 TALLY = Path.home() / "Projects" / "timewalk-test"
 
 
-def walk_kit_takes(
-    facts: dict,  # Facts of a tutorial, from timewalk-export --json
-) -> list[tuple[str, int, dict | None, dict | None]]:  # For each do$ line: its move, its place, walk-kit's take and timewalk's
-    "Run walk-kit's own rule, render.taken and render.take_lines, on each move of the facts, beside the facts' take."
-    sys.path.insert(0, str(WALK_KIT))
-    try:
-        import render
-    finally:
-        sys.path.remove(str(WALK_KIT))
-    out = []
-    for stop in facts["stops"]:
-        for move in stop["moves"]:
-            makes = [p for p in move["parts"] if p["kind"] == "command" and p["makes"]]
-            found = render.taken(facts, makes, move["files"])
-            for at, part in enumerate(makes):
-                theirs = None
-                if at in found:
-                    lines, files = found[at]
-                    command = ""
-                    if lines:
-                        said = render.take_lines([makes[i]["text"] for i in lines], files, move["commit"], facts)
-                        command = said[said.index("```bash") + 1]
-                    theirs = {"lines": lines, "files": [f["path"] for f in files if f["status"] != "deleted"], "command": command}
-                ours = part["take"] and {k: part["take"][k] for k in ("lines", "files", "command")}
-                out.append((move["name"], at, theirs, ours))
-    return out
-
-
-@pytest.mark.skipif(not (WALK_KIT / "render.py").is_file(), reason="walk-kit is not beside timewalk")
-def test_walk_kits_rule_and_take_agree_on_made_cases(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    "walk-kit's taken and take_lines give the same lines, files and command as the facts' take, for the cases of uv_history."
-    main, toc = uv_history(tmp_path, monkeypatch)
-    monkeypatch.delenv("TIMEWALK_NO_RUN")
-    facts, _ = facts_of(main, toc, "u")
-    found = walk_kit_takes(facts)
-    assert [theirs for _, _, theirs, _ in found] == [ours for _, _, _, ours in found], found
-    assert sum(1 for *_, ours in found if ours and ours["command"]) == 2
-
-
-@pytest.mark.skipif(not (WALK_KIT / "render.py").is_file() or not (TALLY / "toc.toml").is_file() or not shutil.which("uv"),
-                    reason="walk-kit, timewalk-test or uv is not here")
+@pytest.mark.skipif(not (TALLY / "toc.toml").is_file() or not shutil.which("uv"), reason="timewalk-test or uv is not here")
 @pytest.mark.timeout(1200)
-def test_walk_kits_rule_and_take_agree_on_tallys_strict_walks(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    "On timewalk-test's walks strict and strict-extra, run with real uv, walk-kit's rule and the facts' take give the same commands."
+def test_the_takes_of_tallys_strict_walks(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """On timewalk-test's walks strict and strict-extra, run with real uv: each uv add, init and remove gets a take in place
+    of it, and each uv run stays a command. walk-kit renders the pages from these takes, and its tests check that a page
+    shows exactly the facts' take."""
     monkeypatch.delenv("TIMEWALK_NO_RUN")
     monkeypatch.setenv("XDG_CACHE_HOME", os.environ.get("TIMEWALK_TEST_CACHE", str(Path.home() / ".cache")))   # the runs of earlier checks
     repo = tmp_path / "repo"
@@ -3892,14 +3856,19 @@ def test_walk_kits_rule_and_take_agree_on_tallys_strict_walks(tmp_path: Path, mo
     folder.mkdir()
     for name in ("toc.toml", "notes.md", "walks", "slides"):
         (shutil.copytree if (TALLY / name).is_dir() else shutil.copy)(TALLY / name, folder / name)
-    taken = 0
+    taken = []
     for walk in ("strict", "strict-extra"):
         facts, _ = facts_of(repo, folder / "toc.toml", walk)
-        assert facts["observed"] is True
-        found = walk_kit_takes(facts)
-        assert [theirs for _, _, theirs, _ in found] == [ours for _, _, _, ours in found], [f for f in found if f[2] != f[3]]
-        taken += sum(1 for *_, ours in found if ours and ours["command"])
-    assert taken >= 5, "ruff in strict; tabulate, mdformat, the library, talib and the remove in strict-extra"
+        assert facts["observed"] is True and not facts["errors"], facts["errors"]
+        for stop in facts["stops"]:
+            for move in [*stop["moves"], {"commit": stop["commit"], "parts": stop["parts"]}]:
+                for part in (p for p in move["parts"] if p["kind"] == "command" and p["makes"]):
+                    if part["text"].startswith("uv run"):
+                        assert part["take"] is None, part
+                    elif part["take"] and part["take"]["command"]:
+                        assert part["take"]["command"].startswith(f"git restore --source {move['commit'][:12]} -- ") and not part["take"]["after"]
+                        taken.append(part["text"])
+    assert len(taken) >= 5 and "uv add --dev ruff" in taken, "ruff in strict; tabulate, mdformat, the library, talib and the remove in strict-extra"
 
 
 def test_the_facts_give_a_strict_walks_uv_lines_a_take(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -3911,7 +3880,8 @@ def test_the_facts_give_a_strict_walks_uv_lines_a_take(tmp_path: Path, monkeypat
     sha = ruff["commit"][:12]
     assert [p["take"] for p in ruff["parts"] if p["kind"] == "command"] == [
         {"lines": [0], "files": [".python-version", "pyproject.toml", "uv.lock"], "deletes": [],
-         "command": f"git restore --source {sha} -- .python-version pyproject.toml uv.lock && uv sync --locked --all-groups --all-packages"}, None]
+         "command": f"git restore --source {sha} -- .python-version pyproject.toml uv.lock && uv sync --locked --all-groups --all-packages",
+         "after": False}, None]
     assert [p["take"] and (p["take"]["lines"], p["take"]["files"]) for p in click["parts"] if p["kind"] == "command"] == [
         ([0, 1], ["pyproject.toml", "uv.lock"]), ([], []), None], "the printf line writes pyproject.toml after uv add click, so it joins the take"
     toc.write_text(toc.read_text() + 'loose = ["pyproject.toml", "uv.lock"]\n')
@@ -3930,7 +3900,7 @@ def wait_for_takes(
     "Read the notes until timewalk has run the do$ lines of uv of the step, as a page reads them again on each notes event."
     for _ in range(200):
         parts = [p for p in client.get("/api/notes", params={"t": TOKEN}).json()["notes"][step]["parts"] if p.get("makes")]
-        if not any(p.get("taking") for p in parts):
+        if not any(p.get("taking") or p.get("retrying") for p in parts):
             return parts
         time.sleep(0.05)
     pytest.fail("the do$ lines never ran")
@@ -4058,6 +4028,258 @@ def test_no_run_gives_the_uv_command(tmp_path: Path, monkeypatch: pytest.MonkeyP
         assert not any("take" in p or "taking" in p for p in parts)
 
 
+def test_a_uv_command_that_runs_a_program_stays() -> None:
+    """Only uv add, remove, lock, init, version and sync are left out for a take. A line of uv run runs a program: the
+    learner runs it, and the take comes after it. A later line of uv add that writes the same files is still left out."""
+    from timewalk.facts import only_locks, takes, uv_commands
+
+    assert uv_commands("uv add x && uv run y") == ["add", "run"] and uv_commands("uv --directory 'a b' -q add x") == ["add"]
+    assert uv_commands("cd a; UV_X=1 uv lock") == ["lock"] and uv_commands("uv --version") == [""] and uv_commands("echo uv add") == []
+    assert uv_commands("uv --python-preference only-system add x") == ["add"], "an option of uv that takes a value"
+    assert only_locks("cd sub && uv add x") and not only_locks("uv add pre-commit && pre-commit install"), "a program of its own runs"
+    assert all(only_locks(f"uv {verb} x") for verb in ("add", "remove", "lock", "init", "version", "sync"))
+    assert not any(only_locks(text) for text in ("uv run x", "uv add x && uv run y", "uv tree", "uv export -o r.txt", "uv --version", "ls"))
+    sha = "0123456789abcdef0123"
+    file = lambda path, by, status="modified": {"path": path, "by": by, "status": status, "old_path": None}   # noqa: E731
+    line = lambda text, *writes: {"text": text, "writes": list(writes)}   # noqa: E731
+    command = "git restore --source 0123456789ab -- pyproject.toml uv.lock && uv sync --locked --all-groups --all-packages"
+    alone = takes([line("uv run python make.py", "uv.lock")], [file("uv.lock", 0)], sha, [])
+    assert alone == {0: {"lines": [0], "files": ["uv.lock"], "deletes": [], "after": True,
+                         "command": "git restore --source 0123456789ab -- uv.lock && uv sync --locked --all-groups --all-packages"}}, \
+        "uv run writes uv.lock: the learner runs it, and then takes the file"
+    first = takes([line("uv run python make.py", "uv.lock"), line("uv add ruff", "pyproject.toml", "uv.lock")],
+                  [file("pyproject.toml", 1), file("uv.lock", 1)], sha, [])
+    assert first == {0: {"lines": [0, 1], "files": ["pyproject.toml", "uv.lock"], "deletes": [], "command": command, "after": True},
+                     1: {"lines": [], "files": [], "deletes": [], "command": "", "after": False}}, "uv run runs; the uv add after it does not"
+    between = takes([line("uv add a", "pyproject.toml", "uv.lock"), line("uv run python make.py", "uv.lock", "out.txt"),
+                     line("uv add b", "pyproject.toml", "uv.lock")], [file("out.txt", 1, "added"), file("pyproject.toml", 2), file("uv.lock", 2)], sha, [])
+    assert between == {0: {"lines": [0, 2], "files": ["out.txt", "pyproject.toml", "uv.lock"], "deletes": [], "after": False,
+                           "command": command.replace("-- ", "-- out.txt ")},
+                       1: {"lines": [1], "files": ["out.txt", "pyproject.toml", "uv.lock"], "deletes": [], "after": True,
+                           "command": command.replace("-- ", "-- out.txt ")},
+                       2: {"lines": [], "files": [], "deletes": [], "command": "", "after": False}}, \
+        "uv add a is left out, uv run runs and takes the files again after it, and uv add b joins the first take"
+    quiet = takes([line("uv add a", "pyproject.toml", "uv.lock"), line("uv run python make.py", "out.txt"), line("uv run ruff check", "out.txt")],
+                  [file("out.txt", 2, "added"), file("pyproject.toml", 0), file("uv.lock", 0)], sha, [])
+    assert list(quiet) == [0] and quiet[0]["lines"] == [0], "a uv run that writes no file of the take runs as it is, with no take"
+    mixed = takes([line("uv add a && uv run make", "pyproject.toml", "uv.lock")], [file("pyproject.toml", 0), file("uv.lock", 0)], sha, [])
+    assert mixed[0]["after"] is True, "a line that runs a program too is run, and then the take"
+
+
+def one_commit_step(
+    main: Path,  # The project of uv_history
+    toc: Path,  # Its toc.toml
+) -> None:
+    "Add step-02, a step of one commit, made by do$ uv add rich, with no ### sections, to uv_history's project and notes."
+    (main / "pyproject.toml").write_text('[project]\nname = "m"\ndependencies = ["rich>=9.0"]\n')
+    (main / "uv.lock").write_text('version = 1\n[[package]]\nname = "rich"\nversion = "9.0"\n')
+    run_git(main, "add", "-A")
+    run_git(main, "commit", "-qm", "step-02: rich")
+    run_git(main, "tag", "-a", "step-02", "-m", "two")
+    notes = toc.parent / "notes.md"
+    notes.write_text(notes.read_text() + "\n## step-02 Two\n\ndo$ uv add rich\n\n$ ls\n")
+
+
+def test_a_step_of_one_commit_gets_a_take(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A strict step of one commit, with no ### sections, is a change of its own: its do$ line of uv gets a take in the
+    facts and on the page, its files their by, and the check takes the line as a move's."""
+    from timewalk.walks import check, load_toc
+
+    main, toc = uv_history(tmp_path, monkeypatch)
+    one_commit_step(main, toc)
+    monkeypatch.delenv("TIMEWALK_NO_RUN")
+    facts, _ = facts_of(main, toc, "u")
+    two = facts["stops"][2]
+    sha = two["commit"][:12]
+    assert two["moves"] == [] and [p["take"] for p in two["parts"] if p["kind"] == "command"] == [
+        {"lines": [0], "files": ["pyproject.toml", "uv.lock"], "deletes": [], "after": False,
+         "command": f"git restore --source {sha} -- pyproject.toml uv.lock && uv sync --locked --all-groups --all-packages"}, None]
+    assert [f["by"] for f in two["files"]] == [0, 0], "uv add rich writes both files"
+    errors, warnings = check(load_toc(toc), main, toc.parent, run=True)
+    assert not errors and not any("step-02: the do$ line" in w or "step-02: pyproject.toml: no do$ line" in w for w in warnings), warnings
+    assert any("step-02: pyproject.toml: the do$ line `uv add rich` writes it" in w for w in warnings), "checked as a move is"
+    repo = timewalk.Repo(main)
+    repo.select("step-*", None, tutorial=True)
+    with TestClient(timewalk.make_app(repo, TOKEN, PORT, assistant="", walks=load_toc(toc), root=toc.parent, run=True), headers=HOST) as client:
+        assert client.post("/api/move", params={"t": TOKEN}, json={"to": 2}).json()["current"] == 2
+        parts = wait_for_takes(client, "step-02")
+        assert [p["take"] for p in parts] == [two["parts"][0]["take"]], "the page gives the take that the facts give"
+
+
+def test_a_run_that_fails_says_why_and_runs_again(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """When uv add fails in the scratch copy, as with no network, do mode says why on each do$ line, and does not give the
+    plain command silently. Try again (/api/takes) runs it again, and then the take comes. The facts have an error."""
+    import timewalk.observe as observe
+    from timewalk.facts import TakeError, move_takes
+    from timewalk.walks import load_toc
+
+    main, toc = uv_history(tmp_path, monkeypatch)
+    monkeypatch.setenv("FAKE_UV_OFFLINE", "1")
+    observe.MEMORY.clear()
+    repo = timewalk.Repo(main)
+    repo.select("step-*", None, tutorial=True)
+    with pytest.raises(TakeError, match=re.escape("uv add ruff failed (exit 2): error: Failed to fetch: no network")):
+        move_takes(main, repo.moves[1][0].sha, ["uv add ruff"], [])
+    auth = {"t": TOKEN}
+    with TestClient(timewalk.make_app(repo, TOKEN, PORT, assistant="", walks=load_toc(toc), root=toc.parent, run=True), headers=HOST) as client:
+        client.post("/api/move", params=auth, json={"to": 1})
+        parts = wait_for_takes(client, "step-01")
+        assert [bool(p.get("untaken")) for p in parts] == [True, True, False] and not any(p.get("take") for p in parts), \
+            "once for each move, at its first line of uv"
+        assert "uv add ruff failed (exit 2): error: Failed to fetch: no network" in parts[0]["untaken"]
+        again = wait_for_takes(client, "step-01")
+        assert again[0].get("untaken") and not again[0].get("taking"), "a read soon after does not run it again, so no loop of runs"
+        monkeypatch.delenv("FAKE_UV_OFFLINE")
+        with client.websocket_connect(f"/ws/events?t={TOKEN}") as events:
+            assert events.receive_json()["type"] == "hello"
+            assert client.post("/api/takes", params=auth, json={}).json() == {"ok": True}
+            assert events.receive_json()["type"] == "notes", "every window reads the notes again"
+        parts = wait_for_takes(client, "step-01")
+        assert [p["take"]["lines"] for p in parts] == [[0], [0, 1], []] and not any(p.get("untaken") for p in parts), "the run, again, finds the takes"
+    monkeypatch.setenv("FAKE_UV_OFFLINE", "1")
+    monkeypatch.delenv("TIMEWALK_NO_RUN")
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "empty-cache"))   # not the cache of the run that worked
+    facts, _ = facts_of(main, toc, "u")
+    assert any("step-01.1: do mode cannot take the files that its uv commands write from the commit, because the do$ line uv add ruff "
+               "failed (exit 2)" in e for e in facts["errors"]), facts["errors"]
+    assert all(p["take"] is None for p in facts["stops"][1]["moves"][0]["parts"] if p["kind"] == "command"), "no take, as on the page"
+    from timewalk.walks import check
+    observe.MEMORY.clear()   # not the run that worked, in this process
+    errors, _ = check(load_toc(toc), main, toc.parent, run=True)
+    assert any("step-01.1: do mode cannot take the files" in e for e in errors), "timewalk-check says the same error as the facts"
+
+
+def test_which_failed_runs_hide_the_takes() -> None:
+    """A run gives the takes unless a line did not run, a line of uv add or the like failed, or a line failed and wrote
+    nothing. The last line may fail after it writes, as uv run ruff check --fix does, but not when its command is not found."""
+    from timewalk.facts import run_problem
+
+    ran = lambda text, code, *writes: {"text": text, "exit": code, "writes": list(writes), "said": "no"}   # noqa: E731
+    assert run_problem([ran("uv add x", 0, "uv.lock"), ran("uv run ruff check --fix", 1, "a.py")], ["uv add x", "uv run ruff check --fix"]) == ""
+    assert run_problem([ran("uv add x", 2)], ["uv add x", "ls"]) == "the do$ line uv add x failed (exit 2): no"
+    assert run_problem([ran("uv sync", 1, "uv.lock")], ["uv sync"]).startswith("the do$ line uv sync failed"), "uv sync writes its files and fails"
+    assert run_problem([ran("uv run python x.py", 127, "uv.lock")], ["uv run python x.py"]).endswith("(exit 127): no"), "a command not found"
+    assert run_problem([ran("uv run x", 1)], ["uv run x"]) != "", "a line that failed and wrote nothing"
+    assert run_problem([ran("ls", 0)], ["ls", "uv add x"]) == "the do$ line uv add x did not run"
+    assert run_problem([ran("uv add ruff && ruff check --fix .", 1, "a.py")], ["uv add ruff && ruff check --fix ."]) == "", \
+        "a last line that runs a program as well as uv add may fail after it writes, as timewalk-check allows"
+
+
+def test_the_review_cases_of_takes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A uv.lock in a folder whose name starts with - is synced with --directory ./-w, never an option. A do copy says deletes
+    after a program. A do$ line in a tag on the commit of the step before is a warning. --no-run warns of a strict step of
+    one commit. What a failed line said names the scratch clone by the project's name, not by a path of this machine."""
+    import timewalk.observe as observe
+    from timewalk.export import take_lines
+    from timewalk.facts import take_command
+    from timewalk.walks import check, load_toc
+
+    assert take_command([{"path": "-w/uv.lock", "status": "modified", "old_path": None}], "c" * 40)[2].endswith(
+        "&& uv sync --directory ./-w --locked --all-groups --all-packages")
+    said = take_lines({"lines": [0], "files": ["uv.lock"], "deletes": ["old.txt"], "command": "x", "after": True}, ["uv run y"], "uv run y")
+    assert "It also writes `uv.lock`, and deletes `old.txt`." in said[0]
+    main, toc = uv_history(tmp_path, monkeypatch)
+    run_git(main, "tag", "-a", "step-02", "-m", "same", "step-01^{commit}")
+    (toc.parent / "notes.md").write_text((toc.parent / "notes.md").read_text() + "\n## step-02 Same\n\ndo$ uv add rich\n")
+    _, warnings = check(load_toc(toc), main, toc.parent)
+    assert any("step-02: the do$ line 'uv add rich' is in a step with no change of its own" in w for w in warnings), warnings
+    run_git(main, "tag", "-d", "step-02")
+    one_commit_step(main, toc)
+    notes = toc.parent / "notes.md"
+    notes.write_text(re.sub(r"### step-01\.1.*?(?=## step-02 Two)", "", notes.read_text().replace("\n## step-02 Same\n\ndo$ uv add rich\n", ""), flags=re.DOTALL))
+    toc.write_text(toc.read_text() + 'loose = ["pyproject.toml", "uv.lock"]\n')
+    loose_steps = run_export(main, "--toc", str(toc), "--walk", "u", "--markdown", str(tmp_path / "c"), "--github", "https://github.com/o/t")
+    toc.write_text(toc.read_text().replace('loose = ["pyproject.toml", "uv.lock"]\n', ""))
+    plain = run_export(main, "--toc", str(toc), "--walk", "u", "--markdown", str(tmp_path / "c"), "--github", "https://github.com/o/t", "--no-run")
+    assert "gives the uv commands of step-02 as they are" in plain.stderr and "nothing runs" not in loose_steps.stderr, \
+        "the warning names the step of one commit, and only a change with a do$ line of uv"
+    observe.MEMORY.clear()
+    parent = run_git(main, "rev-parse", "step-01~1")
+    found = observe.observe(main, parent, run_git(main, "rev-parse", "step-01~0^{commit}"), ["echo \"in $PWD\"; false"], observe.Scratch(main))
+    assert found["commands"][0]["said"] == "in uvp", found["commands"][0]["said"]
+
+
+def test_a_small_walk_checks_its_steps_of_one_commit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    "A walk that selects a strict step of one commit: timewalk-check runs its do$ lines, and a failed run is an error, as the facts say."
+    import timewalk.observe as observe
+    from timewalk.walks import check, load_toc
+
+    main, toc = uv_history(tmp_path, monkeypatch)
+    one_commit_step(main, toc)
+    toc.write_text(toc.read_text() + 'select = ["step-01", "step-02"]\n')
+    monkeypatch.setenv("FAKE_UV_OFFLINE", "1")
+    observe.MEMORY.clear()
+    errors, _ = check(load_toc(toc), main, toc.parent, run=True)
+    assert any("step-02: do mode cannot take the files" in e for e in errors), errors
+
+
+def test_the_do_copy_applies_nothing_after_a_take(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    "A patch$ line after uv add click, whose take puts pyproject.toml in place as the commit has it: the do copy says there is nothing to apply."
+    main, toc = uv_history(tmp_path, monkeypatch)
+    notes = toc.parent / "notes.md"
+    notes.write_text(notes.read_text().replace("do$ printf '[project]\\nname = \"m\"\\ndependencies = [\"click>=9.0\"]\\n# by hand\\n' > pyproject.toml\n",
+                                               "\npatch$ pyproject.toml\n"))
+    assert "patch$ pyproject.toml" in notes.read_text()
+    monkeypatch.delenv("TIMEWALK_NO_RUN")
+    done = run_export(main, "--toc", str(toc), "--walk", "u", "--markdown", str(tmp_path / "c"), "--github", "https://github.com/o/t")
+    do = (tmp_path / "c" / "TUTORIAL-do.md").read_text()
+    assert done.returncode == 0 and "with this change in it already, so there is nothing to apply." in do and "as its change shows" not in do, do
+
+
+def test_a_failed_run_is_tried_again_a_minute_later(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    "A read of the notes a minute after a failed run runs it again, as a refresh of the page does."
+    import timewalk.observe as observe
+    from timewalk.walks import load_toc
+
+    main, toc = uv_history(tmp_path, monkeypatch)
+    monkeypatch.setenv("FAKE_UV_OFFLINE", "1")
+    observe.MEMORY.clear()
+    repo = timewalk.Repo(main)
+    repo.select("step-*", None, tutorial=True)
+    clock = [1000.0]
+    monkeypatch.setattr(timewalk.time, "monotonic", lambda: clock[0])
+    with TestClient(timewalk.make_app(repo, TOKEN, PORT, assistant="", walks=load_toc(toc), root=toc.parent, run=True), headers=HOST) as client:
+        client.post("/api/move", params={"t": TOKEN}, json={"to": 1})
+        assert wait_for_takes(client, "step-01")[0].get("untaken")
+        monkeypatch.delenv("FAKE_UV_OFFLINE")
+        clock[0] += 61
+        first = next(p for p in client.get("/api/notes", params={"t": TOKEN}).json()["notes"]["step-01"]["parts"] if p.get("makes"))
+        assert first.get("untaken") and first.get("retrying"), "while it runs again, do mode still gives the line, and says why"
+        assert wait_for_takes(client, "step-01")[0]["take"]["lines"] == [0]
+
+
+def test_the_do_copy_of_a_strict_walk_takes_the_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """timewalk-export --markdown and --site: the do copy of a strict walk gives the take in place of uv add, and the watch
+    copy what the move ran. A loose walk gives the command. With no run, the copy gives the command, and says why."""
+    main, toc = uv_history(tmp_path, monkeypatch)
+    one_commit_step(main, toc)
+    monkeypatch.delenv("TIMEWALK_NO_RUN")
+    out = tmp_path / "copies"
+    done = run_export(main, "--toc", str(toc), "--walk", "u", "--markdown", str(out), "--site", str(out / "site"), "--github", "https://github.com/o/t")
+    assert done.returncode == 0, done.stderr
+    do, watch = (out / "TUTORIAL-do.md").read_text(), (out / "TUTORIAL-watch.md").read_text()
+    ruff = run_git(main, "rev-parse", "step-01~1")[:12]   # the commit of step-01.1
+    rich = run_git(main, "rev-parse", "step-02^{commit}")[:12]
+    assert "```bash\nuv add ruff\n```" not in do and "```bash\nuv add rich\n```" not in do, do
+    assert (f"The author ran `uv add ruff` here. It writes `.python-version`, `pyproject.toml` and `uv.lock`. On a later day, it can write "
+            "newer versions than the author's, and this walk compares these files line by line. So run this command in its place, from the "
+            "top of the project. It takes each file as the author has it, from the commit, and installs exactly the versions in `uv.lock`:\n\n"
+            f"```bash\ngit restore --source {ruff} -- .python-version pyproject.toml uv.lock && uv sync --locked --all-groups --all-packages\n```") in do
+    assert "The author ran `uv add click`, then `uv add" not in do and "The author then ran `printf" in do, "the joined line runs nothing"
+    assert f"git restore --source {rich} -- pyproject.toml uv.lock" in do, "a step of one commit too"
+    assert f"git restore --source {rich}" in (out / "site" / "do" / "step-02.qmd").read_text(), "the website's do pages too"
+    assert "git restore" not in watch and "The move ran: `uv add ruff`" in watch
+    monkeypatch.setenv("TIMEWALK_NO_RUN", "1")
+    plain = run_export(main, "--toc", str(toc), "--walk", "u", "--markdown", str(out), "--github", "https://github.com/o/t")
+    assert plain.returncode == 0 and "```bash\nuv add ruff\n```" in (out / "TUTORIAL-do.md").read_text()
+    assert "nothing runs (--no-run or TIMEWALK_NO_RUN), so the do copy gives the uv commands of step-01.1, step-01.2, step-02 as they are" \
+        in plain.stderr
+    toc.write_text(toc.read_text() + 'loose = ["pyproject.toml", "uv.lock"]\n')
+    monkeypatch.delenv("TIMEWALK_NO_RUN")
+    loose = run_export(main, "--toc", str(toc), "--walk", "u", "--markdown", str(out), "--github", "https://github.com/o/t")
+    assert loose.returncode == 0 and "```bash\nuv add ruff\n```" in (out / "TUTORIAL-do.md").read_text() and "nothing runs" not in loose.stderr
+
+
 def test_display_numbers() -> None:
     "A number is the name without the tags' prefix and its zeros."
     from timewalk.facts import display_number
@@ -4164,8 +4386,13 @@ def test_a_patch_line_is_checked(tutorial: timewalk.Repo, tutorial_class: Path) 
     one = timewalk.parse_notes("## step-02\npatch$ d.txt\n$ ls\n")["step-02"]["parts"]
     assert do_line_problems("step-02", one, True) == [], "a step of one commit is a change of its own, and may have patch$ lines"
     made = timewalk.parse_notes("## step-02\ndo$ touch d.txt\n$ ls\n")["step-02"]["parts"]
-    assert do_line_problems("step-02", made, True) == ["step-02: the do$ line 'touch d.txt' is in a step whose section has no ### move "
-                                                       "sections; such a step takes its files by patch$ lines, so write the command as a $ line"]
+    assert do_line_problems("step-02", made, True) == [], "a step of one commit is a change of its own, and its do$ lines make it"
+    assert do_line_problems("step-00", made, True, alone=False) == ["step-00: the do$ line 'touch d.txt' is in a step with no change of its own, "
+                                                                    "the first step or a tag on the commit of the step before; the learner's clone "
+                                                                    "has its files already, so write the command as a $ line"]
+    late = timewalk.parse_notes("## step-02\n$ ls\ndo$ touch d.txt\n")["step-02"]["parts"]
+    assert do_line_problems("step-02", late, True)[0].startswith("step-02: the do$ line 'touch d.txt' comes after the commands that check"), \
+        "the rules of a move's do$ lines"
     blocked = timewalk.parse_notes("## step-02\n::: do\npatch$ d.txt\n:::\n$ ls\n")["step-02"]["parts"]
     assert do_line_problems("step-02", blocked, True)[0].startswith("step-02: the line patch$ d.txt is in the block"), "the step, not None"
 

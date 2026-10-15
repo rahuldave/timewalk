@@ -463,6 +463,6 @@ body.shell-mode .layouts { opacity: 0.55; }   /* Shell covers the layout; the la
 .p-move.later .p-excerpt pre.diff, .p-move.later .p-excerpt.p-gone { cursor: default; }
 .p-move.later .p-excerpt pre.diff:hover .line { filter: none; }
 /* A See diff or See file button reads as Restart step does: the verb in the page's font, the path in the code's. */
-.p-files button, .p-item button, .p-patch button { font-family: var(--sans); font-size: 0.85em; padding: 2px 8px; }
+.p-files button, .p-item button, .p-patch button, .p-take > button { font-family: var(--sans); font-size: 0.85em; padding: 2px 8px; }
 /* A patch$ line: its button, and See diff, on one row that wraps in a narrow column. */
 .p-patch { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0.4em 0; min-width: 0; }

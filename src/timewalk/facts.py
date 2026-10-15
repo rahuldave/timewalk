@@ -16,11 +16,17 @@ import tomllib
 from pathlib import Path
 
 from timewalk import Move, Step, git, parse_notes, pick_steps, select_steps, step_moves, tag_steps, walk_notes
-from timewalk.observe import Scratch, observe, running, sources
+from timewalk.observe import Scratch, forget, observe, running, sources
 from timewalk.walks import Walk, check_walk, unquote_path
 
-FORMAT = 3   # the version of the layout; a change that a renderer must know of raises it
+FORMAT = 4   # the version of the layout; a change that a renderer must know of raises it
 EXACT = ("pyproject.toml", "uv.lock")   # the files that a uv command writes with the newest versions of the day, unless loose names them
+# The commands of uv whose job is to write pyproject.toml and uv.lock: do mode of a strict walk takes their files in their
+# place. Every other command of uv runs a program (run, tool, format, check, build), or reads or exports (tree, export,
+# audit, pip, venv, python, workspace, cache, self, auth, publish, help): the learner runs it, and a take follows it.
+UV_LOCKS = ("add", "remove", "lock", "init", "version", "sync")
+UV_VALUES = ("--directory", "--project", "--config-file", "--cache-dir", "--color", "--allow-insecure-host", "--python-preference",
+             "--python-fetch")   # uv's own options that take a value
 FENCE = re.compile(r"^\s*(```+|~~~+)")
 # Every diff reads the same on every machine, whatever the user's git config says, and a path is never a pattern
 DIFF = ["--literal-pathspecs", "-c", "core.quotePath=false", "-c", "diff.noprefix=false", "-c", "diff.mnemonicPrefix=false", "-c", "diff.relative=false",
@@ -250,27 +256,66 @@ def exact(
     return path.rsplit("/", 1)[-1] in EXACT and not any(fnmatch.fnmatchcase(path, glob) for glob in loose)
 
 
-def runs_uv(
+def line_commands(
     text: str,  # A do$ line
-) -> bool:  # True when a command of the line is uv, as in uv add x, or cd sub && uv add x
-    "Say whether a line of shell runs uv: its first word, or the first word after &&, ||, ;, | or a bracket, past any NAME=value."
+) -> list[tuple[str, str]]:  # Each command of the line, in order: its first word, and for uv its command, such as add ("" for none)
+    """Split a line of shell into its commands, at &&, ||, ;, | and brackets. A command's first word comes past any
+    NAME=value. The command of uv is the first word after uv that is not an option, past the value of an option of uv that
+    takes one, such as --directory sub."""
     try:
         lexer = shlex.shlex(text, posix=True, punctuation_chars=True)
         lexer.whitespace_split = True
         words = list(lexer)
     except ValueError:
         words = text.split()
-    start = True   # the next word begins a command, after any NAME=value
+    found: list[tuple[str, str]] = []
+    start, after_uv, skip = True, False, False   # a command begins; the words after a uv, before its command; an option's value
     for word in words:
         if set(word) <= set("&|;()"):
-            start = True
+            if after_uv:
+                found.append(("uv", ""))
+            start, after_uv, skip = True, False, False
+        elif after_uv:
+            if skip:
+                skip = False
+            elif word.startswith("-"):
+                skip = word in UV_VALUES
+            else:
+                found.append(("uv", word))
+                after_uv = False
         elif start and re.fullmatch(r"[A-Za-z_]\w*=.*", word, re.DOTALL):
             continue
         elif start:
-            if word == "uv":
-                return True
-            start = False
-    return False
+            after_uv, start = word == "uv", False
+            if not after_uv:
+                found.append((word, ""))
+    if after_uv:
+        found.append(("uv", ""))
+    return found
+
+
+def uv_commands(
+    text: str,  # A do$ line
+) -> list[str]:  # The command of uv that each uv of the line runs, such as add or run, in order; "" for none, as in uv --version
+    "Find each uv that a line of shell runs, and its command."
+    return [command for word, command in line_commands(text) if word == "uv"]
+
+
+def runs_uv(
+    text: str,  # A do$ line
+) -> bool:  # True when a command of the line is uv, as in uv add x, or cd sub && uv add x
+    "Say whether a line of shell runs uv."
+    return bool(uv_commands(text))
+
+
+def only_locks(
+    text: str,  # A do$ line
+) -> bool:  # True when the line runs uv, and each uv of it is a command whose job is to write pyproject.toml and uv.lock
+    """Say whether do mode can leave a line out, and take its files in its place: each command of it is uv add, remove,
+    lock, init, version or sync, or cd. A line with uv run, any other command of uv, or any other program, such as
+    uv add pre-commit && pre-commit install, runs a program, so the learner runs it, and the take comes after it."""
+    found = line_commands(text)
+    return any(word == "uv" for word, _ in found) and all(command in UV_LOCKS if word == "uv" else word == "cd" for word, command in found)
 
 
 def may_take(
@@ -301,7 +346,8 @@ def take_command(
     if gone:
         command += " && rm -f -- " + " ".join(shlex.quote(path) for path in gone)
     for lock in [path for path in kept if path.rsplit("/", 1)[-1] == "uv.lock"]:
-        where = f" --directory {shlex.quote(lock.rsplit('/', 1)[0])}" if "/" in lock else ""
+        folder = lock.rsplit("/", 1)[0]
+        where = f" --directory {shlex.quote(folder if not folder.startswith('-') else './' + folder)}" if "/" in lock else ""   # never an option
         command += f" && uv sync{where} --locked --all-groups --all-packages"
     return kept, gone, command
 
@@ -311,13 +357,18 @@ def takes(
     files: list[dict],  # The move's files, each with its by, as with_sources gives them
     sha: str,  # The move's commit
     loose: list[str],  # The walk's loose globs
-) -> dict[int, dict]:  # For each do$ line that do mode does not run, its take: see the schema's take
-    """Find the uv commands that do mode replaces by a take of their files from the move's commit, by walk-kit's rule. On a
-    later day, uv add, uv lock and the like write newer versions than the author's, and a strict walk compares pyproject.toml
-    and uv.lock line by line. A do$ line counts when it runs uv and writes a file of the move, a pyproject.toml or a uv.lock
-    that loose does not name. A later do$ line that writes a file that such a line writes joins it: the commit has each file
-    only as the move ends, so one command, at the first line, takes every file that the lines write. A joined line gets a
-    take with no lines and no command."""
+) -> dict[int, dict]:  # For each do$ line that do mode does not run, or runs and then takes after: its take; see the schema's take
+    """Find the uv commands whose files do mode takes from the move's commit. On a later day, uv add, uv lock and the like
+    write newer versions than the author's, and a strict walk compares pyproject.toml and uv.lock line by line. A do$
+    line counts when it runs uv and writes a file of the move, a pyproject.toml or a uv.lock that loose does not name. A
+    later do$ line that writes a file that such a line writes joins it: the commit has each file only as the move ends,
+    so one command takes every file that the lines write.
+
+    A line whose uv commands only write the files, such as uv add (only_locks), is left out, and so is any other line
+    that joins: the command stands in place of the first line, and a joined line gets a take with no lines and no
+    command. A line of uv that runs a program, such as uv run, stays: the learner runs it, and the command comes after it
+    (after). The first line of the group gives the command, and each later line of uv run that writes a file compared
+    exactly gives it again."""
     paths = {p for f in files for p in (f["path"], f["old_path"]) if p}
 
     def wrote(at: int) -> set[str]:
@@ -326,47 +377,129 @@ def takes(
             return {p for f in files if f["by"] == at for p in (f["path"], f["old_path"]) if p}
         return set(writes) & paths
 
+    def strict(found: set[str]) -> bool:   # a file that the move keeps and do mode compares line by line
+        return any(exact(f["path"], loose) and f["status"] != "deleted" and f["path"] in found for f in files)
+
     out: dict[int, dict] = {}
+    grouped: set[int] = set()
     for at, part in enumerate(makes):
-        if at in out:
+        if at in grouped:
             continue
         mine = wrote(at)
-        if not runs_uv(part["text"]) or not any(exact(f["path"], loose) and f["status"] != "deleted" and f["path"] in mine for f in files):
+        if not runs_uv(part["text"]) or not strict(mine):
             continue
         group, grew = [at], True
         while grew:   # until no later line writes a file of the group
             grew = False
             for later in range(at + 1, len(makes)):
-                if later not in group and later not in out and wrote(later) & mine:
+                if later not in group and later not in grouped and wrote(later) & mine:
                     group.append(later)
                     mine |= wrote(later)
                     grew = True
+        group.sort()
+        grouped |= set(group)
         kept, gone, command = take_command([f for f in files if f["path"] in mine or f["old_path"] in mine], sha)
-        out[at] = {"lines": sorted(group), "files": kept, "deletes": gone, "command": command}
+        runs = {n for n in group if runs_uv(makes[n]["text"]) and not only_locks(makes[n]["text"])}   # the learner runs these
+        out[at] = {"lines": [at, *(n for n in group[1:] if n not in runs)], "files": kept, "deletes": gone, "command": command, "after": at in runs}
         for later in group[1:]:
-            out[later] = {"lines": [], "files": [], "deletes": [], "command": ""}
+            if later not in runs:
+                out[later] = {"lines": [], "files": [], "deletes": [], "command": "", "after": False}
+            elif strict(wrote(later)):
+                out[later] = {"lines": [later], "files": kept, "deletes": gone, "command": command, "after": True}
     return out
+
+
+class TakeError(RuntimeError):
+    "The do$ lines of a move did not run to the end, so the files that they write, and so the takes, are not known."
 
 
 def move_takes(
     main: Path,  # The repository
-    sha: str,  # A move's commit
+    sha: str,  # A move's commit, or the commit of a step of one commit
     commands: list[str],  # Its do$ lines, in order
     loose: list[str],  # The walk's loose globs
     stop=None,  # An observe.Stop, which ends the run when the server stops
 ) -> dict[int, dict]:  # What takes finds, from a run of the commands at the commit before, or from the cache
-    "Run a move's do$ lines, or read the cache, to see which files each writes, and find the lines that do mode replaces by a take."
+    """Run a move's do$ lines, or read the cache, to see which files each writes, and find the takes. Raise TakeError when
+    a line did not run, or a line of uv failed, as when uv has no network: the run is then forgotten, so a later call
+    runs it again."""
     files = change_files(main, f"{sha}^", sha)
     if not may_take(commands, [f["path"] for f in files if f["status"] != "deleted"], loose):
         return {}
+    parent = git(main, "rev-parse", f"{sha}^")
     scratch = Scratch(main)
     try:
-        seen = observe(main, git(main, "rev-parse", f"{sha}^"), sha, commands, scratch, stop)
+        seen = observe(main, parent, sha, commands, scratch, stop)
     finally:
         scratch.close()
     ran = seen["commands"]
+    problem = run_problem(ran, commands)
+    if problem:
+        forget(parent, sha, commands)
+        raise TakeError(problem)
     makes = [{"text": text, "writes": ran[at]["writes"] if at < len(ran) else None} for at, text in enumerate(commands)]
     return takes(makes, with_sources(files, sources(main, sha, files, seen, loose, DIFF)[0]), sha, loose)
+
+
+def run_problem(
+    ran: list[dict],  # The commands that ran, from observe
+    commands: list[str],  # The do$ lines, in order
+) -> str:  # Why the files that the lines write are not known, in a sentence; "" when they are
+    """Say why a run does not give the takes: a line that did not run, a line of uv add or the like that failed, or a line
+    that failed and wrote nothing. The last line may fail after it writes, as uv run ruff check --fix does, with an exit
+    from 1 to 125, as timewalk-check allows: not a timeout, a signal, or a command not found."""
+    for at, command in enumerate(ran):
+        excused = 0 < command["exit"] < 126 and at == len(commands) - 1 and command["writes"] and not only_locks(command["text"])
+        if command["exit"] and not excused:
+            code = f"exit {command['exit']}" if command["exit"] > 0 else "it was stopped" if command["exit"] == -9 else "it ran too long"
+            said = f": {command['said'].rstrip('.')}" if command["said"] else ""
+            return f"the do$ line {command['text']} failed ({code}){said}"
+    if len(ran) < len(commands):
+        return f"the do$ line {commands[len(ran)]} did not run"
+    return ""
+
+
+def change_takes(
+    main: Path,  # The repository
+    walk: Walk,  # A walk
+    steps: list[Step],  # Its stops
+    moves: list[list[Move]],  # The moves of each
+    text: str,  # The notes the walk reads; a walk with notes of its own reads them through own
+    own: list[str | None] | None,  # A walk with notes of its own: each stop's section, with its includes
+    run: bool = True,  # Whether to run the do$ lines; without, no takes, and each change that would run is named
+) -> tuple[dict[str, list[tuple[str, dict | None]]], list[str]]:  # Each change's do$ lines with their takes; and why some cannot be known
+    """Find the takes of every move of a tutorial, and of every step of one commit, as the facts give them, for the do copies
+    of timewalk-export. Only a change with a do$ line of uv and a file compared exactly runs, and the cache serves a run
+    that a check made."""
+    if walk.kind != "tutorial":
+        return {}, []
+    notes = walk_notes(parse_notes(text), steps, moves, True, bool(walk.select), own)
+    out: dict[str, list[tuple[str, dict | None]]] = {}
+    problems: list[str] = []
+    for at, (step, found) in enumerate(zip(steps, moves, strict=True)):
+        parts = (notes.get(step.name) or {}).get("parts", [])
+        heads = [n for n, part in enumerate(parts) if part["kind"] == "move"]
+        changes = [(parts[n]["name"], next((m.sha for m in found if m.name == parts[n]["name"]), None), parts[n + 1:end])
+                   for n, end in zip(heads, [*heads[1:], len(parts)], strict=False)]
+        start = step.start or (steps[at - 1].sha if at else "")
+        if not found and not heads and start and git(main, "rev-parse", f"{step.sha}^") == start:
+            changes = [(step.name, step.sha, parts)]   # a step of one commit: its whole section
+        for name, sha, mine in changes:
+            commands = [part["text"] for part in mine if part["kind"] == "command" and part.get("makes")]
+            if sha is None or not commands:
+                continue
+            if not run:
+                files = [f["path"] for f in change_files(main, f"{sha}^", sha) if f["status"] != "deleted"]
+                if may_take(commands, files, list(walk.loose)):
+                    problems.append(name)
+                continue
+            try:
+                taken = move_takes(main, sha, commands, list(walk.loose))
+            except TakeError as error:
+                problems.append(f"{name}: the do copy gives its uv commands as they are, and not the author's files, because {error}")
+                continue
+            out[name] = [(command, taken.get(n)) for n, command in enumerate(commands)]
+    return out, problems
 
 
 def relative(
@@ -438,22 +571,16 @@ def gather(
             files = change_files(main, f"{move.sha}^", move.sha)
             parent = git(main, "rev-parse", f"{move.sha}^")
             parts = parts_of(mine)
-            commands = [part["text"] for part in parts if part["kind"] == "command" and part["makes"]]
-            seen = observe(main, parent, move.sha, commands, scratch) if commands and run else {"commands": [], "left": {}} if not commands else None
-            made = sources(main, move.sha, files, seen, walk.loose, DIFF)[0] if seen is not None else None
-            writes = iter(seen["commands"] if seen else [])
-            moved = with_sources(files, made)
-            makes = [part for part in parts if part["kind"] == "command" and part["makes"]]
-            for part in makes:
-                ran = next(writes, None) if seen else None   # a command after a failed one did not run
-                part["writes"] = ran["writes"] if ran else None
-            taken = takes(makes, moved, move.sha, list(walk.loose)) if made is not None else {}
-            for at, part in enumerate(makes):
-                part["take"] = taken.get(at)
+            moved = made_by(main, parent, move.sha, parts, files, walk, run, scratch)
             walked.append({"name": move.name, "number": display_number(move.name, walk.tags), "title": move_title(move, heading.get("title", "")),
                            "commit": move.sha, "parent": parent, "parts": parts, "files": moved})
         whole = not step.section
         files = [] if found else change_files(main, start or None, step.sha)
+        own_parts = parts_of(before)
+        if tutorial and not found and not cut and start and git(main, "rev-parse", f"{step.sha}^") == start:   # a step of one commit is a change of its own
+            files = made_by(main, start, step.sha, own_parts, files, walk, run, scratch)
+        else:
+            files = with_sources(files, {f["path"]: ("patch", f["diff"]) for f in files})
         section = own[at] if own is not None and at < len(own) else None
         stops.append({
             "name": step.name,
@@ -463,9 +590,9 @@ def gather(
             "commit": step.sha,
             "start": start or None,
             "own": {"title": step.title, "text": section.split("\n", 1)[1].strip("\n") + "\n"} if section else None,
-            "parts": parts_of(before),
+            "parts": own_parts,
             "moves": walked,
-            "files": with_sources(files, {f["path"]: ("patch", f["diff"]) for f in files}),
+            "files": files,
         })
     slides = None
     if walk.slides is not None and walk.slides.is_file():
@@ -491,6 +618,33 @@ def gather(
         "errors": [relative(e, main, root) for e in errors],
         "warnings": [relative(w, main, root) for w in warnings],
     }
+
+
+def made_by(
+    main: Path,  # The repository
+    parent: str,  # The commit before it
+    sha: str,  # Its commit
+    parts: list[dict],  # Its parts, from parts_of: each do$ line gets its writes and its take
+    files: list[dict],  # Its files, from change_files
+    walk: Walk,  # The walk
+    run: bool,  # Whether to run the do$ lines
+    scratch: Scratch,  # The clone they run in
+) -> list[dict]:  # The files, each with its by and its patch, as with_sources gives them
+    "Run a change's do$ lines, or read the cache: say what each line writes, where each file comes from, and the takes."
+    makes = [part for part in parts if part["kind"] == "command" and part["makes"]]
+    commands = [part["text"] for part in makes]
+    seen = observe(main, parent, sha, commands, scratch) if commands and run else {"commands": [], "left": {}} if not commands else None
+    made = sources(main, sha, files, seen, walk.loose, DIFF)[0] if seen is not None else None
+    moved = with_sources(files, made)
+    for at, part in enumerate(makes):
+        ran = seen["commands"][at] if seen and at < len(seen["commands"]) else None   # a command after a failed one did not run
+        part["writes"] = ran["writes"] if ran else None
+    taken = takes(makes, moved, sha, list(walk.loose)) if made is not None else {}
+    if seen and run_problem(seen["commands"], commands):   # as the page and the do copy: no take, and timewalk-check gives the error
+        taken = {}
+    for at, part in enumerate(makes):
+        part["take"] = taken.get(at)
+    return moved
 
 
 def facts_text(

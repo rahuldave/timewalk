@@ -1442,7 +1442,7 @@ function drawNotes() {
     }
     // A strict walk's do$ line of uv: on a later day it writes newer versions than the author's, and the walk compares
     // the files line by line. So do mode gives the command that takes its files from the move's commit (the server's take).
-    if (part.makes && shown === "do" && (part.take || part.taking)) {
+    if (part.makes && shown === "do" && (part.take || part.taking || part.untaken)) {
       into.append(drawTake(part, makesOf[ownerName] || []));
       group = null;
       continue;
@@ -1752,41 +1752,77 @@ function listed(paths) {
   return out;
 }
 
-/** In do mode of a strict walk, a do$ line of uv that the learner does not run: what the author ran, and the command that
- *  takes its files from the move's commit in its place. A later do$ line that writes the same files joins the take, and
- *  has no command. Until timewalk knows which files the lines write, no command. */
+/** In do mode of a strict walk, a do$ line of uv: on a later day, uv writes newer versions than the author's, and the walk
+ *  compares pyproject.toml and uv.lock line by line. A line such as uv add is left out: the take's command, which takes
+ *  its files from the move's commit, stands in its place, and a later do$ line that writes the same files joins it with
+ *  no command. A line such as uv run runs a program, so the learner runs it, and the command comes after it (after).
+ *  Until timewalk knows which files the lines write, no command; if it cannot know, why, and the line as it is. */
 function drawTake(part, makes) {
   const box = document.createElement("div");
   box.className = "p-take";
   const said = document.createElement("p");
   const code = (text) => { const el = document.createElement("code"); el.textContent = text; return el; };
+  const commands = (text) => {
+    const group = document.createElement("div");
+    group.className = "p-commands";
+    group.dataset.mode = "makes";
+    group.append(commandButton({ track: "replay", text }));
+    return group;
+  };
+  if (part.untaken) {
+    said.append("timewalk could not run the do$ lines of this change in a scratch copy, to find the files that they write. So it cannot"
+      + ` give the author's exact versions: ${part.untaken}. If you run the uv commands, your `, ...listed(["pyproject.toml", "uv.lock"]),
+      " can name newer versions than the author's, and then they do not match.");
+    if (part.retrying) said.append(" timewalk is trying again.");
+    box.append(said);
+    if (!ROOM) {   // only your window has the button that acts
+      const again = document.createElement("button");
+      again.textContent = "\u21BB Try again";
+      again.title = "Run the do$ lines again in a scratch copy, to find the files that they write";
+      again.disabled = Boolean(part.retrying);
+      again.onclick = async () => { again.disabled = true; try { await api("/api/takes", {}); } catch { again.disabled = false; } };
+      box.append(again);
+    }
+    box.append(commands(part.text));
+    return box;
+  }
   if (!part.take) {
     said.append("The author ran ", code(part.text), " here. timewalk is running it in a scratch copy, to see which files it writes.");
     box.append(said);
     return box;
   }
-  const { lines, files, deletes, command } = part.take;
+  const { lines, files, deletes, command, after } = part.take;
   if (!lines.length) {
     said.append("The author then ran ", code(part.text), ". The command above takes the files that it writes, so do not run it.");
     box.append(said);
     return box;
   }
   const texts = lines.map((at) => makes[at] ?? part.text);
+  const skipped = after ? texts.slice(1) : texts;   // the lines that the learner does not run
   const one = texts.length === 1;
-  said.append("The author ran ");
-  texts.forEach((text, at) => said.append(...(at ? [", then "] : []), code(text)));
-  said.append(` here. ${one ? "It writes" : "They write"} `, ...listed(files));
-  if (deletes.length) said.append(`, and delete${one ? "s" : ""} `, ...listed(deletes));
-  said.append(`. On a later day, ${one ? "it" : "a uv command"} can write newer versions than the author's, and this walk compares these files`
-    + ` line by line. So run this in ${one ? "its" : "their"} place, from the top of the project: it takes `
-    + `${files.length > 1 ? "each file" : "the file"} as the author has it, from the move's commit`);
+  const takes = `it takes ${files.length > 1 ? "each file" : "the file"} as the author has it, from the move's commit`;
+  if (after) {
+    box.append(commands(part.text));
+    said.append("Run ", code(part.text), ", as above: it runs a program. It also writes ", ...listed(files));
+    if (deletes.length) said.append(", and deletes ", ...listed(deletes));
+    said.append(". On a later day, uv can write newer versions than the author's there, and this walk compares these files line by line.");
+    if (skipped.length) {
+      said.append(" The author then ran ");
+      skipped.forEach((text, at) => said.append(...(at ? [", then "] : []), code(text)));
+      said.append(`, which ${skipped.length === 1 ? "writes" : "write"} the same files: do not run ${skipped.length === 1 ? "it" : "them"}.`);
+    }
+    said.append(` After it, run this, from the top of the project: ${takes}`);
+  } else {
+    said.append("The author ran ");
+    texts.forEach((text, at) => said.append(...(at ? [", then "] : []), code(text)));
+    said.append(` here. ${one ? "It writes" : "They write"} `, ...listed(files));
+    if (deletes.length) said.append(`, and delete${one ? "s" : ""} `, ...listed(deletes));
+    said.append(`. On a later day, ${one ? "it" : "a uv command"} can write newer versions than the author's, and this walk compares these files`
+      + ` line by line. So run this in ${one ? "its" : "their"} place, from the top of the project: ${takes}`);
+  }
   if (files.some((path) => path.split("/").pop() === "uv.lock")) said.append(", and installs exactly the versions in ", ...listed(["uv.lock"]));
   said.append(".");
-  const group = document.createElement("div");
-  group.className = "p-commands";
-  group.dataset.mode = "makes";
-  group.append(commandButton({ track: "replay", text: command }));
-  box.append(said, group);
+  box.append(said, commands(command));
   return box;
 }
 

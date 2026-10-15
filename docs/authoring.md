@@ -411,8 +411,11 @@ the move. The page asks every two seconds, but each answer is about the whole mo
   `loose = ["pyproject.toml", "uv.lock"]` compares these files by the names of their packages, and the
   learner runs `uv add`. See
   [Files that match by the names of their packages](walks.md#files-that-match-by-the-names-of-their-packages).
-  A strict walk, without `loose`, gives the learner the author's versions. In do mode, a command that takes the
-  files from the move's commit replaces the `uv` command. See [A strict walk](walks.md#a-strict-walk).
+  A strict walk, without `loose`, gives the learner the author's versions. In do mode, the page gives a command that
+  takes the files from the move's commit. It runs `git restore` of the files, and then `uv sync`, which
+  installs the versions in `uv.lock`. The command takes the place of a line such as `uv add`, which only writes those
+  files. A `uv run` line runs a program, so the learner still runs it, and the command comes after it. A step
+  with no moves gets the same command. See [A strict walk](walks.md#a-strict-walk).
 - **A shared command after a block** checks only what that command shows. timewalk does not check the
   files there.
 
@@ -595,7 +598,8 @@ Then it checks each walk, and reports every problem that it finds:
 | In a tutorial, a file of a move that no `do$` line writes and no `patch$` line names, or that the move changes after its `do$` line with no `patch$` line | A warning |
 | In a tutorial that is not a small walk, in a step after the first with no moves, a file that the step's commit changes and no `patch$` line names | A warning |
 | In a tutorial that is not a small walk, in a step after the first with no moves, a `patch$` line for a file that the step's commit does not change | An error |
-| In a tutorial, a `do$` line in a step with no moves. Such a step takes its files by `patch$` lines, not by commands, so write the command as a `$` line | A warning |
+| In a tutorial, a `do$` line in a step with no change of its own: the first step, or a tag on the commit of the step before. The learner's clone already has the files of that step, so write the command as a `$` line | A warning |
+| In a strict tutorial, a move or a step whose `do$` lines fail, for example without a network. Do mode then cannot take the files of its `uv` commands | An error |
 | In a tutorial that is not a small walk, a `patch$` line in the first step. The learner's clone already has the files of that step | A warning |
 | A sentence that asks for **Apply this file** or **Apply the whole move**, which timewalk no longer has | A warning |
 | A fenced div of another name, for example `::: callout-note`, or a line `:::` that closes no block | A warning |

@@ -690,6 +690,25 @@ The page does this for a `do$` line when two things are true:
   `uv` too.
 - The line writes a file of the move, a `pyproject.toml` or a `uv.lock` that `loose` does not name.
 
+A step with no moves, after the first step, is one commit after the step before it. Do mode treats it as one
+move, and its `do$` lines of `uv` get the same command. Each of its files comes from a `do$` line or from a
+`patch$` line.
+
+**A `uv` command that runs a program stays.** Six commands of `uv` exist to write the files of the project,
+for example `pyproject.toml` and `uv.lock`, and run no program of the project. They are `uv add`,
+`uv remove`, `uv lock`, `uv init`, `uv version` and `uv sync`. The page leaves out a line of these
+commands, and gives the `git restore` command in its place. Every other command of `uv` runs a program or reads the project,
+for example `uv run`, `uv tool`, `uv format`, `uv tree` or `uv export`.
+
+- **Problem.** The author's move runs `do$ uv run python make.py`. The program makes `data.csv`, and `uv`
+  also locks the project again and writes `uv.lock`. If the page left the line out, the learner would never
+  make `data.csv`.
+- **Fix.** The page gives the line as a command to run. Then it gives the command that takes the files,
+  after the line. A line with both kinds, for example `uv add x && uv run y`, also runs, and the command
+  comes after it.
+- **A later line.** A later `uv add` that writes the same files gets no command of its own, as the next
+  paragraph explains. A later `uv run` that writes `uv.lock` again stays, and the command comes again after it.
+
 A later `do$` line of the move that writes a file of such a line joins it. For example, `do$ uv add click`
 writes `pyproject.toml` and `uv.lock`, and then `do$ printf ... >> pyproject.toml` changes `pyproject.toml`.
 The commit has each file only as the move ends. So the page gives one command, at the first line, that takes
@@ -704,14 +723,20 @@ To know which files each `do$` line writes, timewalk runs the move's `do$` lines
   `do$` line of the move has a button.
 - **Until the run ends.** The page says that timewalk is running the lines, and gives no command to run.
 - **The cache.** A move that `timewalk-check` checked before reads the result from the cache, and runs
-  nothing. A run where a line fails, for example without a network, is not kept. It runs again at the next
-  start, and the page gives the `do$` lines as they are.
+  nothing. A run where a line fails is not kept.
+- **A run that fails.** For example, `uv add` has no network. The first `do$` line of `uv` of the move
+  then says that timewalk cannot find the author's versions, and why. It gives the line as it is, and a
+  **↻ Try again** button. Try again runs the lines again, for every window. timewalk also runs them again by
+  itself when a window loads the notes a minute or more after the failure. A window loads the notes when it
+  moves to another step, and when you reload it.
 - **The end.** When you stop timewalk, a run in progress stops too.
 
 With `--no-run`, or `TIMEWALK_NO_RUN=1`, timewalk runs nothing, and the page gives the `uv` command.
 
 `timewalk-export --json` gives each such `do$` line the same command, in the field `take`. See
-[The facts file](reference.md#the-facts-file).
+[The facts file](reference.md#the-facts-file). If the lines fail, `timewalk-check` gives an error, with the line that failed and the reason, and the facts file has it in its `errors`. The do copies of
+`timewalk-export --markdown` and `--site` give the same command and the same words. If the lines do not run,
+the copy gives the `uv` command, and `timewalk-export` says why.
 
 ### Slides for moves
 

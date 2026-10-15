@@ -7,7 +7,7 @@
  "required": ["format", "timewalk", "made", "observed", "walk", "intro", "stops", "slides", "history", "errors", "warnings"],
  "additionalProperties": false,
  "properties": {
-  "format": {"const": 3, "description": "The version of this layout. A change that a renderer must know of raises it."},
+  "format": {"const": 4, "description": "The version of this layout. A change that a renderer must know of raises it."},
   "timewalk": {"type": "string", "description": "The version of timewalk that wrote the file."},
   "made": {"type": "string", "description": "The line that marks the file as made by timewalk-export, which writes over only its own files."},
   "observed": {"type": "boolean", "description": "Whether the do$ commands ran, so that each do$ line has its writes and each file of a move with do$ lines its by and patch."},
@@ -71,13 +71,14 @@
       "makes": {"type": "boolean", "description": "A do$ line: the command that makes the move."},
       "writes": {"type": ["array", "null"], "items": {"type": "string"},
                  "description": "For a do$ line that ran: the files it adds, changes or removes, in the order of their paths. null for any other command, or when it did not run."},
-      "take": {"type": ["object", "null"], "required": ["lines", "files", "deletes", "command"], "additionalProperties": false,
-               "description": "Added in timewalk 1.4.3, so a file of an older version has none. In a strict walk, for a do$ line that runs uv and writes a pyproject.toml or a uv.lock of the move that loose does not name, and for each later do$ line that writes a file that those lines write: what do mode gives in place of the lines. null for any other command, or when the do$ lines did not run and give no by.",
+      "take": {"type": ["object", "null"], "required": ["lines", "files", "deletes", "command", "after"], "additionalProperties": false,
+               "description": "In a strict walk, for a do$ line that runs uv and writes a pyproject.toml or a uv.lock of the change that loose does not name, and for each later do$ line that writes a file that those lines write: the command that do mode gives to take the files from the commit. The change is a move, or a step of one commit. null for any other command, or when the do$ lines did not run and give no by. Format 4 (timewalk 1.4.4) added after, and the takes of a step of one commit.",
                "properties": {
-                "lines": {"type": "array", "items": {"type": "integer", "minimum": 0}, "description": "At the first line of a take: the places, from 0 among the move's do$ lines, of the lines that the command stands for, this one first. Empty at a later line that joins an earlier take; files, deletes and command are then empty too."},
+                "lines": {"type": "array", "items": {"type": "integer", "minimum": 0}, "description": "At a line that gives the command: the places, from 0 among the change's do$ lines, of the lines whose files it takes, this one first. The learner runs none of them, except this one when after is true. Empty at a later line that joins an earlier take and is not run; files, deletes and command are then empty too."},
                 "files": {"type": "array", "items": {"type": "string"}, "description": "The files of the move that the lines write and the move keeps, in the order of the move's files: the command takes them from the move's commit."},
                 "deletes": {"type": "array", "items": {"type": "string"}, "description": "The files that the lines write and the move deletes, then the old paths of those it renames: the command removes them."},
-                "command": {"type": "string", "description": "git restore --source <12 characters of the move's commit> -- <files>, then && rm -f -- <deletes> when there are any, then && uv sync [--directory DIR] --locked --all-groups --all-packages for each uv.lock in files. From the top of the project."}
+                "command": {"type": "string", "description": "git restore --source <12 characters of the move's commit> -- <files>, then && rm -f -- <deletes> when there are any, then && uv sync [--directory DIR] --locked --all-groups --all-packages for each uv.lock in files. From the top of the project."},
+                "after": {"type": "boolean", "description": "false: the command stands in place of the line, which runs only uv add, remove, lock, init, version or sync. true: the line runs a program, such as uv run, so the learner runs it, and then the command."}
                }}
      }
     },
@@ -131,7 +132,7 @@
     "diff": {"type": "string", "description": "The whole diff of the file, from its first hunk; \"\" for a binary file or a change of mode alone."},
     "names": {"$ref": "#/$defs/names"},
     "by": {"oneOf": [{"type": "integer", "minimum": 0}, {"const": "patch"}, {"type": "null"}],
-           "description": "Where the file comes from: the index, among the move's do$ lines, of the last one that writes it; \"patch\" when no do$ line writes it, so a patch$ line should name it; null when the do$ lines did not run."},
+           "description": "Where the file comes from: the index, among the do$ lines of the move or the step of one commit, of the last one that writes it; \"patch\" when no do$ line writes it, so a patch$ line should name it; null when the do$ lines did not run."},
     "patch": {"type": ["string", "null"],
               "description": "What a person changes by hand, from its first hunk: the whole diff for a patch, and for a file of a do$ line the diff from what the line left to the commit, \"\" when there is none. null when the do$ lines did not run."}
    }

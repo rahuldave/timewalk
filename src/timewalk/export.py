@@ -28,7 +28,8 @@ from pathlib import Path
 from urllib.parse import quote
 
 from timewalk import PATCH_LINE, GitError, Move, Step, code_span, git, note_blocks, pick_steps, select_steps, shown_line, step_moves, tag_steps
-from timewalk.facts import facts_text, walk_facts
+from timewalk.facts import change_takes, facts_text, walk_facts
+from timewalk.observe import running
 from timewalk.walks import TocError, Walk, in_a_copy, inside, load_toc, own_errors_text
 
 MADE = "Made by timewalk-export from the notes of the walk. Do not edit it by hand: run timewalk-export again."
@@ -258,6 +259,7 @@ def build(
     watch: bool = False,  # For a reader who watches: a do$ line is what the move ran; see render
     tutorial: bool = False,  # A tutorial: a whole step with moves, like a small step, stands first on its Start
     own: list[Source | None] | None = None,  # A walk with notes of its own: each stop's section, with its includes put in, or None, in place of `sources`
+    takes: dict[str, list[tuple[str, dict | None]]] | None = None,  # In do mode of a strict walk: each change's do$ lines and their takes
 ) -> list[Section]:  # The stops, each with its text and its links
     """Make each stop of the walk from the sections of the notes: a whole step is its section; a small step is the
     commands at the top of its step's section, such as `$ just setup`, and its moves; a narrative's stop is the text of a
@@ -282,7 +284,8 @@ def build(
         else:   # a step at its tag; a narrative's stop at a move, at the move's commit
             link = f"[The code at {step.name}]({url}/tree/{step.sha if step.section else quote(step.name)})"
         body: list[tuple[str, str | None]] = [(link, None), ("", None)]
-        body += render(lead(source.before) if step.section and own is None else source.before, step.name, url, shas, starts, diff, watch)
+        body += render(lead(source.before) if step.section and own is None else source.before, step.name, url, shas, starts, diff, watch,
+                       None if found else (takes or {}).get(step.name))
         section = Section(step.name, source.title, "", [])
         for name in names:
             if name not in source.moves:
@@ -299,7 +302,7 @@ def build(
                                                    f"[The commit of this move]({url}/commit/{shas[name]}) shows what the move changes.", ""]]
             else:   # a narrative's stop at a move: its commit, then its words
                 body += [(f"[The commit of {name}]({url}/commit/{shas[name]}) shows what it changes.", None), ("", None)]
-            body += render(lines, name, url, shas, starts, diff, watch)
+            body += render(lines, name, url, shas, starts, diff, watch, (takes or {}).get(name))
         if step.section and len(names) > 1:
             section.title = ""
         section.title = step.title or section.title   # a title that select gives
@@ -330,6 +333,7 @@ def render(
     starts: dict[str, str],  # The commit before each step of the walk, or ""
     diff: Callable[[str, str, str], str] | None = None,  # The change of a file from one commit to another, to show under a diff item
     watch: bool = False,  # For a reader who watches, in watch mode or a narrative: a do$ line is what the move ran, not a command
+    takes: list[tuple[str, dict | None]] | None = None,  # In do mode of a strict walk: the change's do$ lines, in order, with their takes
 ) -> list[tuple[str, str | None]]:  # Each line, with the link to its change for an Apply in it; None: leave it as it is
     """Turn lines of the notes into Markdown to read: commands in code blocks, items as links to the code, and after a
     files: list, the change of each of its diff items."""
@@ -337,7 +341,12 @@ def render(
     body: list[tuple[str, str | None]] = []
     commands: list[tuple[str, str]] = []   # a run of commands: (track, command)
     items = False   # whether the lines are a files: list
-    commands_made = any((c := COMMAND.match(line)) and c.group(1) == "do" for at, line in enumerate(lines) if at not in code)
+    made = [c.group(2).strip() for at, line in enumerate(lines) if at not in code and (c := COMMAND.match(line)) and c.group(1) == "do"]
+    commands_made = bool(made)
+    texts = [text for text, _ in takes or []]
+    taken = [take for _, take in takes or []] if texts == made and not watch else [None] * len(made)   # by place, when the lines are the same
+    took = {path for take in taken if take for path in take["files"]}   # the files that a take puts in place, as the commit has them
+    made_at = 0   # the do$ lines met so far
     changes: list[tuple[str, str]] = []   # the diff items of that list: (the step or move, the path)
 
     def flush() -> None:
@@ -393,6 +402,15 @@ def render(
                 continue
             if command.group(1) == "do":   # what makes the move: a block of its own, apart from the commands that check it
                 flush()
+                take, made_at = taken[made_at] if made_at < len(taken) else None, made_at + 1
+                if take and take["after"]:   # a program that the learner runs, and then the take
+                    commands.append(("", command.group(2).strip()))
+                    flush()
+                if take:
+                    while body and not body[-1][0].strip():
+                        body.pop()
+                    body += [("", None), *((line, None) for line in take_lines(take, made, command.group(2).strip()))]
+                    continue
                 commands.append(("", command.group(2).strip()))
                 flush()
                 continue
@@ -409,6 +427,9 @@ def render(
                 body.pop()
             if watch:
                 body += [("", None), (f"A patch to {linked}.", None), ("", None)]
+            elif path in took:   # the take wrote the file as the commit has it, this change and all
+                body += [("", None), (f"The command above took {linked} from the commit with this change in it already, so there is "
+                                      "nothing to apply.", None), ("", None)]
             elif commands_made:   # a do$ line may have written the file first: the whole change would not apply on top of it
                 body += [("", None), (f"Change {linked} as its change shows.", None), ("", None)]
             else:   # the change on GitHub, which git apply takes one file of, from the top of the project
@@ -444,6 +465,46 @@ def render(
     flush()
     show_changes()
     return body
+
+
+def take_lines(
+    take: dict,  # The take of a do$ line, as facts.takes gives it
+    made: list[str],  # The change's do$ lines, in order, which the take's lines count in
+    text: str,  # The do$ line itself
+) -> list[str]:  # Markdown: what the author ran, and the command that takes the files, in a code block
+    """Say, in the do copy of a strict walk, which uv command the author ran and why the reader does not run it, or runs
+    it and then takes its files, and give the command that takes the files from the commit of the change."""
+    if not take["lines"]:
+        return [f"The author then ran {code_span(text)}. The command above takes the files that it writes, so do not run it.", ""]
+    names = [made[at] if at < len(made) else text for at in take["lines"]]
+    skipped = names[1:] if take["after"] else names
+    files = listed(take["files"])
+    gone = f", and delete{'s' if len(names) == 1 or take['after'] else ''} {listed(take['deletes'])}" if take["deletes"] else ""
+    each = "each file" if len(take["files"]) > 1 else "the file"
+    sync = ", and installs exactly the versions in `uv.lock`" if any(path.rsplit("/", 1)[-1] == "uv.lock" for path in take["files"]) else ""
+    if take["after"]:
+        said = (f"{code_span(text)} runs a program, so run it. It also writes {files}{gone}. On a later day, uv can write newer versions "
+                "than the author's there, and this walk compares these files line by line.")
+        if skipped:
+            one = len(skipped) == 1
+            said += (f" The author then ran {', then '.join(code_span(name) for name in skipped)}, which write{'s' if one else ''} the same "
+                     f"files: do not run {'it' if one else 'them'}.")
+        said += f" After it, run this command from the top of the project. It takes {each} as the author has it, from the commit{sync}:"
+    else:
+        one = len(names) == 1
+        said = (f"The author ran {', then '.join(code_span(name) for name in names)} here. {'It writes' if one else 'They write'} {files}{gone}. "
+                f"On a later day, {'it' if one else 'a uv command'} can write newer versions than the author's, and this walk compares these "
+                f"files line by line. So run this command in {'its' if one else 'their'} place, from the top of the project. It takes {each} "
+                f"as the author has it, from the commit{sync}:")
+    return [said, "", "```bash", take["command"], "```", ""]
+
+
+def listed(
+    paths: list[str],  # Files of the project
+) -> str:  # Them as code, with commas and an and
+    "Name files in a sentence."
+    names = [code_span(path) for path in paths]
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
 
 
 def slug(
@@ -627,7 +688,8 @@ def main() -> None:
     parser.add_argument("--quarto", action="store_true", help="write _quarto.yml for the website, not _smalldocs.yml")
     parser.add_argument("--json", type=Path, help="the file for the facts of the walk, for a class to render its own pages from")
     parser.add_argument("--private", action="store_true", help="with --json, keep the presenter's lines, for a presenter's copy")
-    parser.add_argument("--no-run", action="store_true", help="with --json, do not run the do$ commands to see which files they write")
+    parser.add_argument("--no-run", action="store_true", help="do not run the do$ commands to see which files they write: --json then gives "
+                        "no by and no take, and the do copy of a strict walk gives each uv command as it is")
     args = parser.parse_args()
     if not args.markdown and not args.site and not args.json:
         parser.error("give --markdown, --site, --json, or more than one")
@@ -711,16 +773,32 @@ def main() -> None:
     head = "\n\n".join(part.strip() for part in [intros[0], intros[1] if walk.intro or walk.shared else "" if args.no_opening else opening]
                          if part.strip())
     modes: list[str | None] = ["do", "watch"] if tutorial else [None]
+    takes: dict[str, list[tuple[str, dict | None]]] = {}
+    if tutorial and (args.markdown or args.site):   # a strict walk's do copy takes the files of its uv commands, as do mode does
+        if args.no_run or not running():
+            try:
+                strict = change_takes(main_repo, walk, steps, moves, text, walk.own_sections(), run=False)[1]
+            except GitError as error:
+                raise SystemExit(f"timewalk-export: {error}") from None
+            if strict:
+                warned.add(f"nothing runs (--no-run or TIMEWALK_NO_RUN), so the do copy gives the uv commands of {', '.join(strict)} as they "
+                           "are; a reader on a later day gets newer versions than the author's")
+        else:
+            try:
+                takes, problems = change_takes(main_repo, walk, steps, moves, text, walk.own_sections())
+            except GitError as error:
+                raise SystemExit(f"timewalk-export: {error}") from None
+            warned.update(problems)
     if args.markdown:
         files = {}
         for mode in modes:
             found = build(read_sections(texts[mode or "watch"])[2], steps, moves, url, 3, warned, history, history_starts, diff, mode != "do",
-                          tutorial, owns and owns[mode or "watch"])
+                          tutorial, owns and owns[mode or "watch"], takes if mode == "do" else None)
             files[FILE_NAME[mode] if mode else "TUTORIAL.md"] = markdown_file(mode, title, head, found)
         plan.append((args.markdown, files, ["TUTORIAL-do.md", "TUTORIAL-watch.md", "TUTORIAL.md"]))
     if args.site:
         by_mode = {mode: build(read_sections(texts[mode or "watch"])[2], steps, moves, url, 2, warned, history, history_starts, diff, mode != "do",
-                                  tutorial, owns and owns[mode or "watch"])
+                                  tutorial, owns and owns[mode or "watch"], takes if mode == "do" else None)
                    for mode in modes}
         plan.append((args.site, site_files(title, head, by_mode, args.quarto), ["watch/*.qmd", "do/*.qmd", "*.qmd"]))
     for warning in sorted(warned):

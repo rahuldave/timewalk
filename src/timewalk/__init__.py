@@ -2042,6 +2042,8 @@ def make_app(
 
         run = running()
     found_takes: dict[tuple, dict[int, dict]] = {}
+    failed_takes: dict[tuple, tuple[str, float]] = {}   # a move whose run failed, as when uv has no network: why, and when
+    retrying: dict[tuple, str] = {}   # a move that failed and runs again: why it failed, which do mode still says until the run ends
     waiting: list[tuple] = []
     finder: dict = {"task": None, "key": None, "urgent": set()}   # the task, the move it runs now, and the moves of the step on show
     from timewalk.observe import Stop  # imported here: observe imports this module
@@ -2058,9 +2060,14 @@ def make_app(
                 sha, commands, loose = key
                 try:
                     found_takes[key] = await asyncio.to_thread(move_takes, repo.main, sha, list(commands), list(loose), stopper["now"])
-                except Exception as error:   # any failure: the page then gives the do$ lines as they are, and the next move runs
+                    failed_takes.pop(key, None)
+                    retrying.pop(key, None)
+                except Exception as error:   # any failure: do mode says why, gives the do$ lines as they are, and the next move runs
+                    if stopper["now"].stopped.is_set():
+                        return
                     print(f"timewalk: cannot run the do$ lines of {sha[:12]} to see what they write: {error}")
-                    found_takes[key] = {}
+                    failed_takes[key] = (str(error) or type(error).__name__, time.monotonic())
+                    retrying.pop(key, None)
                 if stopper["now"].stopped.is_set():
                     return
                 if key in finder["urgent"] or not waiting:   # the pages draw again for the step on show, and once at the end
@@ -2072,8 +2079,10 @@ def make_app(
         notes: dict[str, dict],  # The notes of the walk, by stop, as walk_notes gives them
     ) -> dict[str, dict]:  # The same, with a take on each do$ line that do mode replaces, and taking on one not known yet
         """Give each do$ line of a strict walk its take, as the facts do: see facts.takes. A move whose lines have not run yet
-        has taking on each do$ line of uv, and goes to the task that runs them; the move of the step on show goes first."""
-        from timewalk.facts import may_take  # imported here: facts imports this module
+        has taking on each do$ line, and goes to the task that runs them; the move of the step on show goes first. A step
+        of one commit is a change of its own, as a move is. A move whose run failed has untaken, why, on its first line of uv;
+        it runs again after Try again (/api/takes), or when the notes are read a minute after the failure."""
+        from timewalk.facts import may_take, runs_uv  # imported here: facts imports this module
 
         walk = active["walk"]
         if walk is None or walk.kind != "tutorial" or not run:
@@ -2081,21 +2090,34 @@ def make_app(
         loose = tuple(walk.loose)
         out, first, others, urgent = {}, [], [], set()
         here = showing["step"]
+        steps = {step.name: (at, step) for at, step in enumerate(repo.steps)}
         for name, entry in notes.items():
             parts = [dict(part) for part in entry.get("parts", [])]
             heads = [at for at, part in enumerate(parts) if part["kind"] == "move"]
-            for at, end in zip(heads, [*heads[1:], len(parts)], strict=False):   # none when the stop has no move
-                move = repo.move_named(parts[at]["name"])
-                lines = [part for part in parts[at + 1:end] if part["kind"] == "command" and part.get("makes")]
+            changes = [(repo.move_named(parts[at]["name"]), at + 1, end) for at, end in zip(heads, [*heads[1:], len(parts)], strict=False)]
+            at, step = steps.get(name, (None, None))
+            if step is not None and not heads and not repo.moves[at] and not step.section and one_commit(step.sha, step.start or (repo.steps[at - 1].sha if at else "")):
+                changes = [(Move(step.name, step.sha, step.subject), 0, len(parts))]   # a step of one commit: its whole section
+            for move, begin, end in changes:
+                lines = [part for part in parts[begin:end] if part["kind"] == "command" and part.get("makes")]
                 commands = tuple(part["text"] for part in lines)
                 if move is None or not may_take(list(commands), [f["path"] for f in repo.move_files(move)], list(loose)):
                     continue
                 key = (move.sha, commands, loose)
+                if key in failed_takes and time.monotonic() - failed_takes[key][1] > 60:
+                    retrying[key] = failed_takes.pop(key)[0]
+                    found_takes.pop(key, None)
+                if key in failed_takes or key in retrying:   # do mode says why once, at the first line of uv, and gives every line as it is
+                    first_uv = next((part for part in lines if runs_uv(part["text"])), lines[0])
+                    first_uv["untaken"] = failed_takes[key][0] if key in failed_takes else retrying[key]
+                    if key in failed_takes:
+                        continue
+                    first_uv["retrying"] = True   # and runs it again, below
                 if key in found_takes:
                     for number, part in enumerate(lines):
                         part["take"] = found_takes[key].get(number)
                     continue
-                for part in lines:
+                for part in lines if key not in retrying else []:
                     part["taking"] = True   # until the run says which lines a take stands for
                 if name == here:
                     urgent.add(key)   # the move that runs now too: its end tells the pages
@@ -2107,6 +2129,17 @@ def make_app(
         if waiting and finder["task"] is None:
             finder["task"] = asyncio.create_task(find_takes())
         return out
+
+    @functools.cache
+    def one_commit(
+        sha: str,  # A step's commit
+        start: str,  # The commit where the step starts: the step before it, or "" for the first step
+    ) -> bool:  # Whether the step is one commit after its start
+        "Say whether a step without moves is a change of its own, one commit, as facts.gather finds it."
+        try:
+            return bool(start) and git(repo.main, "rev-parse", f"{sha}^") == start
+        except GitError:
+            return False
 
     def remember(step: str | None, **what) -> None:
         "Note where a step is: its slide, or the scroll of one pane."
@@ -2474,6 +2507,14 @@ def make_app(
         return {"replay": recipes(repo.work), "main": recipes(repo.main)}
 
     @guarded
+    async def take_again(request: Request) -> dict:
+        "Try again: forget each failed run of do$ lines, and tell the pages, whose read of the notes then runs them again."
+        for key in list(failed_takes):
+            retrying[key] = failed_takes.pop(key)[0]
+        await hub.tell({"type": "notes"})
+        return {"ok": True}
+
+    @guarded
     async def notes(request: Request) -> dict:
         "The notes, read afresh, so the file can be edited while the class runs."
         if active["notes"] is None or not active["notes"].is_file():
@@ -2749,6 +2790,7 @@ def make_app(
         Route("/api/recipes", just_recipes),
         Route("/api/notes", notes),
         Route("/api/notes", save_notes, methods=["POST"]),
+        Route("/api/takes", take_again, methods=["POST"]),
         Route("/api/pdf", pdf),
         Route("/api/show", show, methods=["POST"]),
         Route("/api/type", type_command, methods=["POST"]),

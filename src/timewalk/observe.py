@@ -182,6 +182,8 @@ def run_commands(
             code = code or -9   # killed by the stop: never a run to keep
         after = snapshot(folder)
         writes = sorted(p for p in before.keys() | after.keys() if before.get(p) != after.get(p))
+        for place in sorted({str(folder), os.path.realpath(folder)}, key=len, reverse=True):   # the scratch clone by its name: no path of this machine
+            said = said.replace(place, folder.name)
         lines = [line for line in said.strip().splitlines() if line.strip()]
         done.append({"text": text, "writes": writes, "exit": code, "said": lines[-1] if lines else ""})
         written |= set(writes)
@@ -201,6 +203,24 @@ def run_commands(
 MEMORY: dict[str, dict] = {}   # the results of this process, failed ones too, so that one check runs a move once
 
 
+def run_key(
+    parent: str,  # The commit before the move
+    commit: str,  # The move's commit
+    commands: list[str],  # Its do$ commands, in order
+) -> str:  # The name of the run, in MEMORY and in the cache
+    "Name a run of a move's commands."
+    return hashlib.sha256(json.dumps([LAYOUT, parent, commit, commands]).encode()).hexdigest()
+
+
+def forget(
+    parent: str,  # The commit before the move
+    commit: str,  # The move's commit
+    commands: list[str],  # Its do$ commands, in order
+) -> None:
+    "Forget a failed run of this process, so that the next call runs the commands again, as when the network comes back."
+    MEMORY.pop(run_key(parent, commit, commands), None)
+
+
 def observe(
     main: Path,  # The project
     parent: str,  # The commit before the move
@@ -210,7 +230,7 @@ def observe(
     stop: Stop | None = None,  # Ends the run when the server stops
 ) -> dict:  # {"commands": [{text, writes, exit, said}], "left": {path: {data, exec} or None}}
     "Run a move's commands at the commit before it, or read what they did from the cache."
-    key = hashlib.sha256(json.dumps([LAYOUT, parent, commit, commands]).encode()).hexdigest()
+    key = run_key(parent, commit, commands)
     if key in MEMORY:
         return MEMORY[key]
     kept = cache_folder() / f"{key}.json"

@@ -322,12 +322,19 @@ def check_walk(
         history = {step.name for step in every} | {move.name for found in step_moves(main, every) for move in found}
         if walk.kind == "tutorial":
             moves = {step.name: found for step, found in zip(taken, taken_moves, strict=True)}
+            whole = [Move(step.name, step.sha, step.subject) for step, found in zip(taken, taken_moves, strict=True)   # a whole step of one commit
+                     if not found and not step.section and step.start and git(main, "rev-parse", f"{step.sha}^") == step.start]
     elif walk.kind == "tutorial":
         picked = pick_steps(tag_steps(main, walk.tags), walk.steps)
         moves = {step.name: found for step, found in zip(picked, step_moves(main, picked), strict=True)}
         whole = [Move(step.name, step.sha, step.subject) for before, step in itertools.pairwise(picked)   # a tag on the commit of the step
                  if not moves[step.name] and step.sha != before.sha]                                      # before has no change of its own
     names = set(steps) | {move.name for found in moves.values() for move in found} | history
+    alone: set[str] = set()   # the steps of the history that are a change of one commit, after the first, whose do$ lines make it
+    if walk.kind == "tutorial":
+        tagged = tag_steps(main, walk.tags)
+        alone = {step.name for before, step, found in zip(tagged, tagged[1:], step_moves(main, tagged)[1:], strict=False)
+                 if not found and step.sha != before.sha}
     changed = {path for found in moves.values() for move in found
                for path in git(main, "diff-tree", "-r", "--root", "--no-commit-id", "--name-only", "-z", move.sha).split("\x00") if path} if walk.loose else set()
     for glob in walk.loose:
@@ -357,7 +364,7 @@ def check_walk(
             warnings += [f"{name}: {walk.notes.name}:{line}: {problem}" for line, problem in show_problems(text)]
             if (walk.kind == "tutorial" or not walk.select) and walk.shared is None:   # a walk that selects shares notes that its tutorial checks
                 warnings += [f"{name}: {walk.notes.name}: {problem}" for step, found in sections.items()
-                             for problem in do_line_problems(step, found.get("parts", []), walk.kind == "tutorial")]
+                             for problem in do_line_problems(step, found.get("parts", []), walk.kind == "tutorial", step in alone)]
             if walk.kind != "tutorial" and not walk.select and "do" in blocks.mode:   # a walk that selects shares a tutorial's notes
                 line = blocks.mode.index("do")
                 warnings.append(f"{name}: {walk.notes.name}:{line}: a narrative has no do mode, so its ::: do blocks never show; "
@@ -616,9 +623,10 @@ def do_line_problems(
     step: str,  # The step whose section it is
     parts: list[dict],  # The parts of its notes
     tutorial: bool,  # Whether the walk is a tutorial
+    alone: bool = True,  # Whether the step is a change of one commit after the step before it; else, without moves, it makes nothing
 ) -> list[str]:  # What is wrong with its do$ lines, each a sentence
-    """Check the do$ lines of a step: each makes a move, so it is in a move's section, in the shared text, and before the
-    commands that check the move."""
+    """Check the do$ lines of a step: each makes a move, or a step of one commit, so it is in a move's section, or in the
+    section of a step without moves after the first; in the shared text; and before the commands that check the change."""
     problems: list[str] = []
     sections: list[tuple[str | None, list[dict]]] = [(None, [])]
     for part in parts:
@@ -637,27 +645,28 @@ def do_line_problems(
         makes = [at for at, part in enumerate(found) if part["kind"] == "command" and part.get("makes")]
         if not makes:
             continue
-        where = move or step
+        where = move or step   # a step of one commit is a change of its own, as a move is
         if not tutorial:
             problems.append(f"{where}: a narrative has no moves to make, so its do$ line {found[makes[0]]['text']!r} is shown as what a "
                             "move ran; write it as a $ line, or as text")
             continue
-        if move is None and len(sections) == 1:   # the pages take each file of a step of one commit by its patch$ line
-            problems.append(f"{step}: the do$ line {found[makes[0]]['text']!r} is in a step whose section has no ### move sections; such a "
-                            "step takes its files by patch$ lines, so write the command as a $ line")
+        if move is None and len(sections) == 1 and not alone:   # the first step, or a tag on the commit of the step before
+            problems.append(f"{step}: the do$ line {found[makes[0]]['text']!r} is in a step with no change of its own, the first step "
+                            "or a tag on the commit of the step before; the learner's clone has its files already, so write the command "
+                            "as a $ line")
             continue
-        if move is None:
+        if move is None and len(sections) > 1:
             problems.append(f"{step}: the do$ line {found[makes[0]]['text']!r} is before the first move; a do$ line makes a move, so put "
                             "it in the section of the move it makes")
             continue
         for at in makes:
             if found[at].get("mode"):
-                problems.append(f"{move}: the do$ line {found[at]['text']!r} is in the block ::: {found[at]['mode']}; a do$ line shows in "
+                problems.append(f"{where}: the do$ line {found[at]['text']!r} is in the block ::: {found[at]['mode']}; a do$ line shows in "
                                 "both modes, a command in do mode and what the move ran in watch mode, so put it outside the block")
         checks = [at for at, part in enumerate(found) if part["kind"] == "command" and not part.get("makes") and not part.get("mode")]
         last_check = checks[-1] if checks else -1
         if last_check >= 0 and makes[-1] > last_check:
-            problems.append(f"{move}: the do$ line {found[makes[-1]]['text']!r} comes after the commands that check the move; "
+            problems.append(f"{where}: the do$ line {found[makes[-1]]['text']!r} comes after the commands that check the move; "
                             "put the commands that make the move first")
     return problems
 
@@ -747,7 +756,7 @@ def source_problems(
     """Check where each file of each move comes from: a do$ line writes it, or a patch$ line names it. A file that a do$
     line writes and the move then changes needs a patch$ line too. Also check that each do$ line runs, and writes only
     files of the move. A patch$ line that names a file that the move does not change is an error; the rest are warnings."""
-    from timewalk.facts import DIFF, change_files  # here, as timewalk.facts imports this module
+    from timewalk.facts import DIFF, change_files, may_take, run_problem  # here, as timewalk.facts imports this module
 
     errors: list[str] = []
     problems: list[str] = []
@@ -755,7 +764,7 @@ def source_problems(
     try:
         for move in moves:
             parts = sections.get(move.name, {}).get("parts", []) if move.name in whole else move_parts(sections, move.name)
-            commands = [part["text"] for part in parts if part["kind"] == "command" and part.get("makes") and move.name not in whole]
+            commands = [part["text"] for part in parts if part["kind"] == "command" and part.get("makes")]
             files = change_files(main, f"{move.sha}^", move.sha)
             paths = {p for f in files for p in (f["path"], f["old_path"]) if p}
             named = [part["path"] for part in parts if part["kind"] == "patch"]
@@ -766,6 +775,10 @@ def source_problems(
                 continue
             found = observe(main, git(main, "rev-parse", f"{move.sha}^"), move.sha, commands, scratch) if commands else {"commands": [], "left": {}}
             made, outside = sources(main, move.sha, files, found, walk.loose, DIFF)
+            failed = run_problem(found["commands"], commands)
+            if failed and may_take(commands, [f["path"] for f in files if f["status"] != "deleted"], list(walk.loose)):   # a strict walk's uv
+                errors.append(f"{move.name}: do mode cannot take the files that its uv commands write from the commit, because {failed}; "
+                              "if the network was down, run the check again when it is up")
             before = len(problems) + len(errors)
             for file in files:
                 by, patch = made[file["path"]]
