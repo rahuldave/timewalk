@@ -3,9 +3,15 @@
 check.py checks the form of the text: the length of a sentence, a vague word, a colon between clauses. This script
 checks what check.py cannot: whether a reader of 12 can follow the text. It runs `claude -p`, headless, with the
 guide, the glossary, the changed text, and the reviewer's prompt in docs/style/REVIEW.md, a copy of
-walk-kit's style/REVIEW.md. It may read the code, to check what the text says of it, and nothing
+walk-kit's review/writing.md. It may read the code, to check what the text says of it, and nothing
 else. A text that passed is kept in a cache, so a second run
 of the same text costs nothing.
+
+It reviews only the text that readers outside the project read: the site, the README, and the notes and slides of
+the demo. It reviews the files at the same time, one `claude -p` for each, and prints their results in the order
+of the list. A review with findings is a round. A file has at most three rounds between two commits; the findings
+of the third stay for Rahul, and the check passes. Each file has one report, reports/writing/<path>.md, ignored by
+git, with a `# Round N` section for each round.
 
     python3 docs/style/review.py             # the files of `just style` that changed since the last commit
     python3 docs/style/review.py FILE ...    # the changes in these files
@@ -18,15 +24,16 @@ import hashlib
 import json
 import shutil
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 STYLE = Path(__file__).resolve().parent
-FILES = ["docs/*.md", "README.md", "CLAUDE.md", "demo/notes.md", "demo/walks/*/notes.md", "demo/slides/*.md"]   # as `just style`
+FILES = ["docs/*.md", "README.md", "demo/notes.md", "demo/walks/*/notes.md", "demo/slides/*.md"]   # as `just style`
 CACHE = Path.home() / ".cache" / "timewalk" / "style-review"
 MODEL = "opus"
 ROUNDS = 3  # the review of a file fails at most this many times between two commits; then its findings go to a shadow file
-FINDINGS = ROOT / "review-findings"  # one report for each reviewed file, ignored by git
+FINDINGS = ROOT / "reports" / "writing"  # one report for each reviewed file, ignored by git
 
 SCHEMA = {
     "type": "object",
@@ -46,10 +53,10 @@ SCHEMA = {
 
 def git(
     *args: str,  # Arguments to git
-    cwd: Path = ROOT,  # Where to run it: the top of timewalk, unless a file of another repository is reviewed
+    cwd: Path | None = None,  # Where to run it: the top of timewalk, unless a file of another repository is reviewed
 ) -> str:  # What git printed
     "Run git, at the top of timewalk unless told otherwise."
-    return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, check=True).stdout
+    return subprocess.run(["git", *args], cwd=cwd or ROOT, capture_output=True, text=True, check=True).stdout
 
 
 def in_scope() -> list[str]:  # The files that `just style` checks, relative to the top
@@ -111,7 +118,7 @@ def review(
 
 def shadow(
     file: str,  # A reviewed file, relative to the top of timewalk, or a path outside it
-) -> Path:  # Its shadow file in review-findings, at the same path with .md added
+) -> Path:  # Its report in reports/writing, at the same path with .md added
     "Name the shadow file of a reviewed file."
     path = (ROOT / file).resolve()
     name = str(path.relative_to(ROOT)) if path.is_relative_to(ROOT) else str(path).lstrip("/")
@@ -150,6 +157,30 @@ def keep(
     kept.write_text(f"round: {number}\ncommit: {head}\nfile: {file}\n\n{NOTE}\n\n{rounds.removeprefix(NOTE + chr(10) + chr(10))}{section}", encoding="utf-8")
 
 
+def review_file(
+    file: str,  # A file to review, relative to the top
+    whole: bool,  # True to review the whole file, False for its change since the last commit
+) -> tuple[list[str], int]:  # The lines to print, and the number of findings that fail the check; -1 if the review failed
+    "Review one file, keep its findings in its report, and say what to print."
+    number = round_of(file)
+    if number > ROUNDS:   # its findings wait in its report for a person, until the next commit
+        return [f"{file}: round {ROUNDS} is done; its findings are in {shadow(file).relative_to(ROOT)}"], 0
+    text = text_of(file, whole)
+    if text is None:   # no change since the last commit
+        return [], 0
+    try:
+        found = review(text)
+    except SystemExit as error:   # claude failed for this file: no round counts, and the other files still report
+        return [f"{file}: the review failed: {error}"], -1
+    if not found["findings"]:   # a pass is not a round: the next change is reviewed again
+        return [f"{file}: pass"], 0
+    keep(file, number, found["findings"])
+    if number == ROUNDS:   # the last round: the findings go to a person, and the check passes
+        return [f"{file}: round {ROUNDS}, {len(found['findings'])} findings left in {shadow(file).relative_to(ROOT)}"], 0
+    lines = [f"{f['file']}: \"{f['quote']}\"\n  problem: {f['problem']}\n  rewrite: {f['rewrite']}\n" for f in found["findings"]]
+    return [*lines, f"{file}: FAIL (round {number} of {ROUNDS})"], len(found["findings"])
+
+
 def main() -> None:
     "Review the changed prose, print each finding, and exit 1 if there is one."
     parser = argparse.ArgumentParser(description="Review the prose that changed against the writing guide, with a model")
@@ -163,29 +194,18 @@ def main() -> None:
     if not files:
         print("style review: no prose changed")
         return
-    failed = 0
-    for file in files:
-        number = round_of(file)
-        if number > ROUNDS:   # its findings wait in its shadow file for a person, until the next commit
-            print(f"{file}: round {ROUNDS} is done; its findings are in {shadow(file).relative_to(ROOT)}")
-            continue
-        text = text_of(file, args.all)
-        if text is None:   # no change since the last commit
-            continue
-        found = review(text)
-        if not found["findings"]:   # a pass is not a round: the next change is reviewed again
-            print(f"{file}: pass")
-            continue
-        keep(file, number, found["findings"])
-        if number == ROUNDS:   # the last round: the findings go to a person, and the check passes
-            print(f"{file}: round {ROUNDS}, {len(found['findings'])} findings left in {shadow(file).relative_to(ROOT)}")
-            continue
-        for finding in found["findings"]:
-            failed += 1
-            print(f"{finding['file']}: \"{finding['quote']}\"\n  problem: {finding['problem']}\n  rewrite: {finding['rewrite']}\n")
-        print(f"{file}: FAIL (round {number} of {ROUNDS})")
-    if failed:
-        raise SystemExit(f"style review: {failed} findings")
+    with ThreadPoolExecutor(max_workers=min(len(files), 8)) as pool:   # one `claude -p` for each file, eight at a time
+        outcomes = list(pool.map(lambda file: review_file(file, args.all), files))
+    failed, broken = 0, []
+    for file, (lines, findings) in zip(files, outcomes, strict=True):   # in the order of the list, whichever review ended first
+        if findings < 0:
+            broken.append(file)
+        else:
+            failed += findings
+        for line in lines:
+            print(line)
+    if failed or broken:
+        raise SystemExit(f"style review: {failed} findings" + (f"; the review failed for {', '.join(broken)}" if broken else ""))
 
 
 if __name__ == "__main__":

@@ -289,7 +289,7 @@ In the timewalk folder, `just` lists these:
 | `just lint` | Lint the Python |
 | `just screenshots` | Take the site's screenshots again, from the demo |
 | `just site` | Build this site into `docs/_site` and serve it locally |
-| `just style ...` | Check the pages of the site against the writing guide, `docs/style/GUIDE.md`. Add `-v` to also show the soft notes |
+| `just style ...` | Check the pages of the site against the writing guide, `docs/style/GUIDE.md`. Add `-v` to also show the soft notes. Then Claude Code reviews the prose that changed since the last commit, and a problem that it finds fails the check. Each file has a report in `reports/writing/` |
 
 ## The slides manifest
 

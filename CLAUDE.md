@@ -20,7 +20,7 @@ Edit button. The browser keeps the theme, text size, terminal height and run on 
 
 Write every site page by the nossaifd writing guide, `docs/style/GUIDE.md`. Use the glossary and the
 linked headings in `docs/style/README.md`. Define jargon where it first appears. Check with `just style`.
-It checks the site, the README, this file, and the notes and slides of the demo.
+It checks the site, the README, and the notes and slides of the demo. It does not check this file.
 
 The user documentation is the site in `docs/`, published to rahuldave.com/timewalk. The README is a short
 front page that links into the site. Keep both true when the behaviour changes. When the page looks

@@ -51,16 +51,21 @@ change, take the pictures again.
 
 ## The writing guide
 
-Every page of the site follows the writing guide, `docs/style/GUIDE.md`. So do the README, `CLAUDE.md`, and
-the notes and slides of the demo. The glossary of terms is in `docs/style/README.md`, with the headings that
-other pages link to. Check the pages with the recipe:
+Every page of the site follows the writing guide, `docs/style/GUIDE.md`. So do the README and the notes and
+slides of the demo. The glossary of terms is in `docs/style/README.md`, with the headings that other pages
+link to. Check the pages with the recipe:
 
 ```
-just style                                    # every page, the README, CLAUDE.md and the demo's prose
+just style                                    # every page, the README and the demo's prose
 python3 docs/style/check.py -v docs/edits.md  # one page, with the soft notes
 ```
 
 Fix each hard problem. Then read the page, and build the site with `uv run docs/build.py`.
+
+`just style` then asks Claude Code, through `claude -p`, to review the prose that changed since the last
+commit. A problem that Claude finds fails the check. Each file gets at most three such rounds between two
+commits. After the third, the check passes, and the findings wait for a person in the file's report in
+`reports/writing/`. Without Claude Code, `just style` skips this review.
 
 ## The demo
 

@@ -26,5 +26,5 @@ Check each fact about the code against the code before you report it or put it i
 folders that your tools can read. Never guess how the code works.
 
 Rank your findings by how much each hurts the reader, the worst first. Report at most five for a file. Give
-each finding a rewrite that reads as natural prose in its passage. The verdict is "pass" when nothing would
-make the reader stumble, or mislead the reader.
+each finding a rewrite that reads as natural prose in its passage. The verdict is "pass", with no findings, when
+nothing would make the reader stumble, or mislead the reader. Any finding fails the file.

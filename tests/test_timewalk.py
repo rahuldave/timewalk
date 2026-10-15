@@ -4015,3 +4015,65 @@ def test_the_patch_routes_refuse_odd_requests(tutored: TestClient) -> None:
     assert tutored.get("/api/patch", params=auth).json() == {"state": ""}
     assert tutored.post("/api/keep", params=auth, json=["x"]).status_code == 409
     assert tutored.get("/api/patch", params={"move": "step-01.1", "path": "a.txt"}).status_code == 403
+
+
+def load_review():  # The module docs/style/review.py, loaded from its file
+    "Load the style review script as a module."
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("style_review", Path(__file__).resolve().parent.parent / "docs" / "style" / "review.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_style_review_runs_files_together_and_counts_rounds(tmp_path, monkeypatch, capsys):
+    "The style review runs its files at the same time, prints them in order, counts only rounds with findings, and passes round 3."
+    review = load_review()
+    run_git(tmp_path, "init", "-q")
+    (tmp_path / "x").write_text("x\n")
+    run_git(tmp_path, "add", "x")
+    run_git(tmp_path, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "x")
+    monkeypatch.setattr(review, "ROOT", tmp_path)
+    monkeypatch.setattr(review, "FINDINGS", tmp_path / "reports" / "writing")
+    monkeypatch.setattr(review.shutil, "which", lambda name: "/bin/claude")
+    monkeypatch.setattr(review, "text_of", lambda file, whole: f"text of {file}")
+    calls, passing = [], set()
+
+    def fake(text):  # A review that takes a while, and finds one problem unless the file passes
+        start = time.monotonic()
+        time.sleep(0.5 if "a.md" in text else 0.2)   # the first file ends last
+        calls.append((text, start, time.monotonic()))
+        if any(f in text for f in passing):
+            return {"verdict": "pass", "findings": []}
+        return {"verdict": "fail", "findings": [{"file": text[8:], "quote": "q", "problem": "p", "rewrite": "r"}]}
+
+    monkeypatch.setattr(review, "review", fake)
+    monkeypatch.setattr(sys, "argv", ["review.py", "docs/a.md", "docs/b.md"])
+
+    def run() -> tuple[bool, str]:  # Whether the check failed, and what it printed
+        calls.clear()
+        try:
+            review.main()
+            failed = False
+        except SystemExit:
+            failed = True
+        return failed, capsys.readouterr().out
+
+    failed, out = run()
+    assert failed and out.index("docs/a.md: FAIL (round 1 of 3)") < out.index("docs/b.md: FAIL (round 1 of 3)")
+    (_, a0, a1), (_, b0, b1) = sorted(calls)
+    assert a0 < b1 and b0 < a1   # the two reviews overlapped
+    report = tmp_path / "reports" / "writing" / "docs" / "a.md.md"
+    assert "# Round 1" in report.read_text() and not (tmp_path / "review-findings").exists()
+
+    passing.add("b.md")   # a pass is not a round
+    failed, out = run()
+    assert failed and "docs/a.md: FAIL (round 2 of 3)" in out and "docs/b.md: pass" in out
+    assert review.round_of("docs/b.md") == 2
+
+    failed, out = run()   # round 3 of a.md: its findings stay for a person, and the check passes
+    assert "docs/a.md: round 3, 1 findings left in reports/writing/docs/a.md.md" in out
+    assert "# Round 3" in report.read_text() and "docs/b.md: pass" in out and not failed
+
+    failed, out = run()   # after round 3, a.md is not reviewed again until the next commit
+    assert not failed and "docs/a.md: round 3 is done" in out and len(calls) == 1
