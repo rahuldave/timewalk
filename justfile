@@ -43,6 +43,12 @@ screenshots:
 site:
     uv run docs/build.py --serve
 
-# Check the prose against the writing guide (docs/style/GUIDE.md): the site, README, CLAUDE.md, and the demo's notes and slides. -v also shows the soft notes
+# Check the prose against the writing guide (docs/style/GUIDE.md): the site, README, CLAUDE.md, and the demo's notes and slides.
+# First the form (check.py; -v also shows the soft notes), then a model reviews the text that changed, for a reader of 12
 style *args:
     python3 docs/style/check.py docs/*.md README.md CLAUDE.md demo/notes.md demo/walks/*/notes.md demo/slides/*.md {{ args }}
+    python3 docs/style/review.py
+
+# Review prose with a model alone: the given files' changes, or with --all the files whole
+style-review *args:
+    python3 docs/style/review.py {{ args }}

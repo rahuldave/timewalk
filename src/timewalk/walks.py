@@ -314,6 +314,7 @@ def check_walk(
     except GitError as error:
         return [f"{name}: {error}"], [], used
     moves: dict[str, list] = {}
+    whole: list[Move] = []   # the steps of one commit after the first, each a change of its own
     history = set(steps)   # the steps and moves of the whole history: a walk that selects may name them in shared notes and slides
     if walk.select:
         taken, taken_moves = select_steps(main, walk.tags, walk.select, walk.kind == "tutorial")
@@ -324,6 +325,8 @@ def check_walk(
     elif walk.kind == "tutorial":
         picked = pick_steps(tag_steps(main, walk.tags), walk.steps)
         moves = {step.name: found for step, found in zip(picked, step_moves(main, picked), strict=True)}
+        whole = [Move(step.name, step.sha, step.subject) for before, step in itertools.pairwise(picked)   # a tag on the commit of the step
+                 if not moves[step.name] and step.sha != before.sha]                                      # before has no change of its own
     names = set(steps) | {move.name for found in moves.values() for move in found} | history
     changed = {path for found in moves.values() for move in found
                for path in git(main, "diff-tree", "-r", "--root", "--no-commit-id", "--name-only", "-z", move.sha).split("\x00") if path} if walk.loose else set()
@@ -393,7 +396,13 @@ def check_walk(
             if walk.kind == "tutorial":
                 walked = taken_moves if walk.select else list(moves.values())
                 every_move = list({move.name: move for found in walked for move in found}.values())
-                more_errors, more_warnings = source_problems(walk, main, sections, every_move, running() if run is None else run)
+                first = steps[0] if steps and not walk.select else None   # where the walk starts: the learner's clone has its files
+                for part in sections.get(first, {}).get("parts", []) if first else []:
+                    if part["kind"] == "patch":
+                        warnings.append(f"{name}: {first}: the line patch$ {part['path']} is in the first step, where the walk starts; the "
+                                        "learner's clone has the file already, so take the line out")
+                more_errors, more_warnings = source_problems(walk, main, sections, every_move + whole, running() if run is None else run,
+                                                             {step.name for step in whole})
                 errors += [f"{name}: {problem}" for problem in more_errors]
                 warnings += [f"{name}: {problem}" for problem in more_warnings]
             warnings += [f"{name}: {walk.notes.name}: {problem}" for problem in apply_sentences(sections)]
@@ -619,11 +628,11 @@ def do_line_problems(
             sections[-1][1].append(part)
     for move, found in sections:
         for part in (part for part in found if part["kind"] == "patch" and tutorial):
-            if move is None:
+            if move is None and len(sections) > 1:   # a step of one commit is a change of its own, and may have patch$ lines
                 problems.append(f"{step}: the line patch$ {part['path']} is before the first move; put it in the section of the move "
                                 "that changes the file")
             elif part.get("mode"):
-                problems.append(f"{move}: the line patch$ {part['path']} is in the block ::: {part['mode']}; a patch$ line shows in both "
+                problems.append(f"{move or step}: the line patch$ {part['path']} is in the block ::: {part['mode']}; a patch$ line shows in both "
                                 "modes, so put it outside the block")
         makes = [at for at, part in enumerate(found) if part["kind"] == "command" and part.get("makes")]
         if not makes:
@@ -632,6 +641,10 @@ def do_line_problems(
         if not tutorial:
             problems.append(f"{where}: a narrative has no moves to make, so its do$ line {found[makes[0]]['text']!r} is shown as what a "
                             "move ran; write it as a $ line, or as text")
+            continue
+        if move is None and len(sections) == 1:   # the pages take each file of a step of one commit by its patch$ line
+            problems.append(f"{step}: the do$ line {found[makes[0]]['text']!r} is in a step whose section has no ### move sections; such a "
+                            "step takes its files by patch$ lines, so write the command as a $ line")
             continue
         if move is None:
             problems.append(f"{step}: the do$ line {found[makes[0]]['text']!r} is before the first move; a do$ line makes a move, so put "
@@ -729,6 +742,7 @@ def source_problems(
     sections: dict,  # The notes it reads, as parse_notes reads them
     moves: list[Move],  # Its moves
     run: bool,  # Whether to run the do$ lines; without, a move with do$ lines is not checked for where its files come from
+    whole: set[str] = frozenset(),  # The steps of one commit among the moves: the whole section of each is its change
 ) -> tuple[list[str], list[str]]:  # Errors and warnings, each a sentence
     """Check where each file of each move comes from: a do$ line writes it, or a patch$ line names it. A file that a do$
     line writes and the move then changes needs a patch$ line too. Also check that each do$ line runs, and writes only
@@ -740,8 +754,8 @@ def source_problems(
     scratch = Scratch(main)
     try:
         for move in moves:
-            parts = move_parts(sections, move.name)
-            commands = [part["text"] for part in parts if part["kind"] == "command" and part.get("makes")]
+            parts = sections.get(move.name, {}).get("parts", []) if move.name in whole else move_parts(sections, move.name)
+            commands = [part["text"] for part in parts if part["kind"] == "command" and part.get("makes") and move.name not in whole]
             files = change_files(main, f"{move.sha}^", move.sha)
             paths = {p for f in files for p in (f["path"], f["old_path"]) if p}
             named = [part["path"] for part in parts if part["kind"] == "patch"]

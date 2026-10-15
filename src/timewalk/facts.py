@@ -349,7 +349,7 @@ def gather(
         "made": "",
         "observed": run,
         "walk": {"id": walk.id, "title": title, "description": walk.description, "kind": walk.kind, "mode": walk.mode if tutorial else "watch",
-                 "github": url},
+                 "github": url, "loose": list(walk.loose)},
         "intro": intro_parts(intro),
         "stops": stops,
         "slides": slides,

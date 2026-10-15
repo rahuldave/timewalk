@@ -5,11 +5,11 @@
 Run timewalk from GitHub with uv, with no clone and no install:
 
 ```
-uvx --from git+https://github.com/rahuldave/timewalk@v1.4.0 timewalk [repo] [options]
-uvx --from git+https://github.com/rahuldave/timewalk@v1.4.0 timewalk-pdf [options]
+uvx --from git+https://github.com/rahuldave/timewalk@v1.4.1 timewalk [repo] [options]
+uvx --from git+https://github.com/rahuldave/timewalk@v1.4.1 timewalk-pdf [options]
 ```
 
-Or install the commands `timewalk`, `timewalk-pdf`, `timewalk-check`, `timewalk-notes` and `timewalk-export` once with `uv tool install git+https://github.com/rahuldave/timewalk@v1.4.0`. In a clone of timewalk, run them with
+Or install the commands `timewalk`, `timewalk-pdf`, `timewalk-check`, `timewalk-notes` and `timewalk-export` once with `uv tool install git+https://github.com/rahuldave/timewalk@v1.4.1`. In a clone of timewalk, run them with
 `uv run timewalk` and `uv run timewalk-pdf`.
 
 ## timewalk
@@ -98,6 +98,15 @@ nothing when it starts.
 
 A `patch$` line that names a file that its move does not change is an error. A `patch$` line before the
 first move of a step, or in a block for one mode, is a warning.
+
+A step after the first can be a single commit, right after the tag of the step before. Such a step has no
+moves. In a tutorial that is not a small walk, `timewalk-check` treats its commit as one move. Give a `patch$`
+line for each file that the commit changes. A file with no `patch$` line is a warning, and a `patch$` line for a
+file that the commit does not change is an error.
+
+A `do$` line in such a step is a warning, because the step has no move for it to make. Write the command as a
+`$` line. In a tutorial that is not a small walk, a `patch$` line in the first step is a warning too. The learner's
+clone already has every file of that step, so the line has nothing to do.
 
 A sentence that asks for **Apply this file** or **Apply the whole move** is a warning. timewalk no longer
 has these buttons. Write a line `patch$ PATH` for each file that the move changes by a patch.
@@ -218,7 +227,7 @@ left out.
 | `timewalk` | The version of timewalk that wrote the file |
 | `made` | The line "Made by timewalk-export". The command writes over only a file with this line |
 | `observed` | Whether the `do$` lines ran. See [timewalk-check](#timewalk-check) |
-| `walk` | `id`, `title`, `description`, `kind` (`tutorial` or `narrative`), `mode` (the mode that a tutorial starts in, and `watch` for a narrative) and `github`, the address of the project |
+| `walk` | `id`, `title`, `description`, `kind` (`tutorial` or `narrative`), `mode` (the mode that a tutorial starts in, and `watch` for a narrative), `github` (the address of the project) and `loose`, the list of files from the walk's `loose` setting, for example `["pyproject.toml", "uv.lock"]`. In do mode, a `pyproject.toml` or `uv.lock` on the list matches the move's copy by the names of its packages, not by their versions. See [Files that match by the names of their packages](walks.md#files-that-match-by-the-names-of-their-packages). A facts file that timewalk 1.4.0 wrote has no `loose` |
 | `intro` | The parts of the text before the first stop |
 | `stops` | The stops of the walk, in order |
 | `slides` | `null`, or the path of the manifest from the class folder, its `deck`, and its `slides` and `docs` for the stops and moves of the walk |

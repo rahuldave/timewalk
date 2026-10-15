@@ -3203,7 +3203,8 @@ def test_a_do_line_makes_the_move_runs_in_do_mode_and_is_shown_in_watch_mode(tut
     assert "SECRET" not in for_mode("## step-01\n\n> Say: SECRET\ndo$ uv add ruff\n", "watch"), "a do$ line ends a cue as a $ line does"
     assert "uv add ruff" in for_mode("## step-01\n\n> Say: SECRET\ndo$ uv add ruff\n", "watch")
     (tutorial_class / "notes.md").write_text("## step-00\n\n## step-01\ndo$ touch early\n$ just setup\n### step-01.1 A\n::: do\ndo$ uv add ruff\n"
-                                             "```\ndo$ in code\n```\n:::\n$ ls\n### step-01.2 B\n$ ls\ndo$ late\n### step-01.3 C\ndo$ fine\n$ ls\n\n## step-02\n")
+                                             "```\ndo$ in code\n```\n:::\n$ ls\n### step-01.2 B\n$ ls\ndo$ late\n### step-01.3 C\ndo$ fine\n$ ls\n\n## step-02\n"
+                                             "patch$ d.txt\n$ ls\n")
     _, warnings = check(load_toc(tutorial_class / "toc.toml"), tutorial.main, tutorial_class)
     found = [w for w in warnings if "do$" in w]
     assert any("step-01: the do$ line 'touch early' is before the first move" in w for w in found), found
@@ -3458,7 +3459,7 @@ def test_the_facts_of_a_tutorial(tutorial: timewalk.Repo, tutorial_class: Path) 
     (tutorial_class / "notes.md").write_text(BLOCK_NOTES)
     facts, raw = facts_of(tutorial.main, tutorial_class / "toc.toml", "tut")
     assert facts["format"] == 3 and facts["walk"] == {"id": "tut", "title": "t, one move at a time", "description": "", "kind": "tutorial",
-                                                      "mode": "do", "github": "https://github.com/o/t"}
+                                                      "mode": "do", "github": "https://github.com/o/t", "loose": []}
     assert facts["intro"] == [{"kind": "prose", "mode": "shared", "text": "The opening."}], "the text before the first step, without its title"
     assert [s["name"] for s in facts["stops"]] == ["step-00", "step-01", "step-02"]
     assert [s["number"] for s in facts["stops"]] == ["0", "1", "2"] and [m["number"] for m in facts["stops"][1]["moves"]] == ["1.1", "1.2", "1.3"]
@@ -3845,7 +3846,40 @@ def test_a_patch_line_is_checked(tutorial: timewalk.Repo, tutorial_class: Path) 
     assert errors == ["walk tut: step-01.1: the line patch$ zzz.txt names a file that the move does not change"]
     assert any("step-01: the line patch$ a.txt is before the first move" in w for w in warnings)
     assert any("step-01.2: the line patch$ b.txt is in the block ::: do" in w for w in warnings)
-    assert not any("no patch$ line names it" in w for w in warnings), "a patch$ line in a block still names its file"
+    assert not any("step-01" in w and "no patch$ line names it" in w for w in warnings), "a patch$ line in a block still names its file"
+    assert any("step-02: d.txt: no do$ line writes it, and no patch$ line names it" in w for w in warnings), "a step of one commit is a change too"
+    from timewalk.walks import do_line_problems
+
+    one = timewalk.parse_notes("## step-02\npatch$ d.txt\n$ ls\n")["step-02"]["parts"]
+    assert do_line_problems("step-02", one, True) == [], "a step of one commit is a change of its own, and may have patch$ lines"
+    made = timewalk.parse_notes("## step-02\ndo$ touch d.txt\n$ ls\n")["step-02"]["parts"]
+    assert do_line_problems("step-02", made, True) == ["step-02: the do$ line 'touch d.txt' is in a step whose section has no ### move "
+                                                       "sections; such a step takes its files by patch$ lines, so write the command as a $ line"]
+    blocked = timewalk.parse_notes("## step-02\n::: do\npatch$ d.txt\n:::\n$ ls\n")["step-02"]["parts"]
+    assert do_line_problems("step-02", blocked, True)[0].startswith("step-02: the line patch$ d.txt is in the block"), "the step, not None"
+
+
+def test_a_patch_line_of_a_step_of_one_commit_is_checked(tutorial: timewalk.Repo, tutorial_class: Path) -> None:
+    """A step of one commit is a change of its own: its patch$ lines must name its files, as a move's must. A patch$ line in
+    the first step gets a warning: the learner's clone starts there, with the file."""
+    from timewalk.walks import check, load_toc
+
+    (tutorial_class / "notes.md").write_text("## step-00\npatch$ README.md\n\n## step-01\n### step-01.1 A\npatch$ a.txt\n$ ls\n"
+                                             "### step-01.2 B\npatch$ b.txt\npatch$ README.md\n$ ls\n### step-01.3 C\npatch$ c.txt\n$ ls\n\n"
+                                             "## step-02\npatch$ dd.txt\n$ ls\n")
+    errors, warnings = check(load_toc(tutorial_class / "toc.toml"), tutorial.main, tutorial_class)
+    assert errors == ["walk tut: step-02: the line patch$ dd.txt names a file that the move does not change"], "a wrong path in a step of one commit"
+    assert any("step-02: d.txt: no do$ line writes it, and no patch$ line names it" in w for w in warnings)
+    assert any("step-00: the line patch$ README.md is in the first step" in w for w in warnings)
+    (tutorial_class / "notes.md").write_text((tutorial_class / "notes.md").read_text().replace("## step-00\npatch$ README.md\n", "## step-00\n")
+                                             .replace("patch$ dd.txt", "patch$ d.txt"))
+    errors, warnings = check(load_toc(tutorial_class / "toc.toml"), tutorial.main, tutorial_class)
+    assert errors == [] and not any("patch$" in w for w in warnings), warnings
+    run_git(tutorial.main, "tag", "--annotate", "step-03", "--message", "Same commit.", "step-02")
+    (tutorial_class / "notes.md").write_text((tutorial_class / "notes.md").read_text() + "\n## step-03\n$ ls\n")
+    errors, warnings = check(load_toc(tutorial_class / "toc.toml"), tutorial.main, tutorial_class)
+    assert not any("step-03" in e for e in errors if "slide" not in e), errors
+    assert not any("step-03" in w and "patch$" in w for w in warnings), "a tag on the commit of the step before changes nothing"
 
 
 def test_a_patch_line_offers_apply_or_replace(tutored: TestClient, tutorial: timewalk.Repo) -> None:

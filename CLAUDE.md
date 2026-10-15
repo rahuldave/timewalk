@@ -115,7 +115,7 @@ websockets, Playwright and pypdf. The tests use the `dev` group. In a clone, run
 the version changed.
 
 timewalk is not on PyPI, by Rahul's choice. Users run it from GitHub with
-`uvx --from git+https://github.com/rahuldave/timewalk@v1.4.0 timewalk`. To get a change to users, raise the
+`uvx --from git+https://github.com/rahuldave/timewalk@v1.4.1 timewalk`. To get a change to users, raise the
 version in `pyproject.toml` and tag the commit `vX.Y.Z`. Then push the tag, and update the pin in the docs and
 in the kits.
 
@@ -142,9 +142,34 @@ socket.
 
 ## Conventions
 
+- **Make every prompt for another agent copyable.** Write it to a file in the scratchpad, put it on the clipboard with
+  `pbcopy`, and give its path. Also show it whole, in a code block that opens
+  with four backticks and `text`.
+
 - **Answer Rahul succinctly, in precise language.** Short lines, one idea each. Name the actor and the thing. Write "the
   learner's file", not "theirs", and "the move's version", not "it". No vague words such as "there", "this", "stuff",
   "and so on". A list beats an essay.
+
+- **Write so that a child of 12 can follow.** Rahul could not follow Claude's answers about the 1.4.1
+  release. Keep these rules, which come from those answers:
+  - **Explain each name of the code the first time you use it.** Do not write "the facts" alone, or `loose`, or "a step
+    of one commit". For the first, write "the JSON file that `timewalk-export --json` writes, which walk-kit makes the pages from".
+  - **Give the problem first, as the student or the author meets it. Then give the fix.** Label them **Problem** and
+    **Fix**.
+  - **Say what a command does, step by step.** For example, do not write "`-I` hides the version
+    lines". Say what `git diff -I` compares, what it prints, and which lines it leaves out.
+  - **Show one real case.** For example: "The student runs `uv add ruff` a month later, and gets a newer ruff.
+    The page still says Your files match, because the walk's `loose` setting lets `uv.lock` match by the names of
+    its packages."
+  - **Say each rule exactly.** "Lines that are only version numbers" and "lines that differ only by version" are
+    two different rules. Write the one that the code does.
+  - **Call something a problem only if it breaks the purpose of the feature.** `loose` exists to let a student
+    have a newer version of a package. A newer version that passes is the feature working, not a problem.
+  - **Do not let a reviewer polish prose for many rounds.** Rules of style are defaults, not laws. Twenty rounds of
+    review turned `docs/reference.md` into a chain of definitions. Stop at three rounds, and rewrite by hand.
+  - **Give one topic at a time.** Do not mix a report of the work, the risks and two decisions in one answer.
+  - **Describe each problem in two to four lines.** If Rahul asks again about an answer, that answer was too
+    abstract. Make the next answer more concrete, not longer.
 
 - Python 3.11+, ruff with line length 150 (`ruff.toml`). Plain stdlib, with Starlette, uvicorn, Playwright
   and pypdf.

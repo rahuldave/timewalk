@@ -590,6 +590,10 @@ Then it checks each walk, and reports every problem that it finds:
 | In a tutorial, a `patch$` line in a block, or before the first move of a step | A warning |
 | In a tutorial, a `patch$` line that names a file that its move does not change | An error |
 | In a tutorial, a file of a move that no `do$` line writes and no `patch$` line names, or that the move changes after its `do$` line with no `patch$` line | A warning |
+| In a tutorial that is not a small walk, in a step after the first with no moves, a file that the step's commit changes and no `patch$` line names | A warning |
+| In a tutorial that is not a small walk, in a step after the first with no moves, a `patch$` line for a file that the step's commit does not change | An error |
+| In a tutorial, a `do$` line in a step with no moves. Such a step takes its files by `patch$` lines, not by commands, so write the command as a `$` line | A warning |
+| In a tutorial that is not a small walk, a `patch$` line in the first step. The learner's clone already has the files of that step | A warning |
 | A sentence that asks for **Apply this file** or **Apply the whole move**, which timewalk no longer has | A warning |
 | A fenced div of another name, for example `::: callout-note`, or a line `:::` that closes no block | A warning |
 | In a tutorial, a `diff` item for a file that its move does not change | A warning |

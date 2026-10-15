@@ -21,7 +21,8 @@
     "description": {"type": "string"},
     "kind": {"enum": ["tutorial", "narrative"]},
     "mode": {"enum": ["do", "watch"], "description": "The mode a tutorial starts in; a narrative is always watch."},
-    "github": {"type": "string", "description": "The project on GitHub, https://github.com/OWNER/NAME."}
+    "github": {"type": "string", "description": "The project on GitHub, https://github.com/OWNER/NAME."},
+    "loose": {"type": "array", "items": {"type": "string"}, "description": "The globs of the files that a tutorial compares by the names of their packages, such as uv.lock. Since 1.4.1."}
    }
   },
   "intro": {"$ref": "#/$defs/parts", "description": "The walk's text before its first stop."},
