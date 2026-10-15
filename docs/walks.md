@@ -690,6 +690,22 @@ The page does this for a `do$` line when two things are true:
   `uv` too.
 - The line writes a file of the move, a `pyproject.toml` or a `uv.lock` that `loose` does not name.
 
+**`uv` behind another command is an error.** In `env A=1 uv add x`, `time uv add x`, `sudo uv add x`,
+`bash -c "uv add x"` or `~/.local/bin/uv add x`, the first word is not `uv`. The page then does not find
+the `uv` command. It shows the line as the author wrote it, and not the `git restore` command. The learner
+runs the line, and can get newer versions than the author's.
+
+So in a move that changes a `pyproject.toml` or a `uv.lock` that `loose` does not name, `timewalk-check`
+gives an error for such a line. Put `uv` at the start of the command, for example `A=1 uv add x`.
+
+`timewalk-check` counts each `uv` in the line that starts a word, or comes after `/`, `=`, `(`, `` ` ``,
+`:` or `-`, and that ends the word, or comes before `` ` ``, `)` or `}`. It also counts the commands of the line
+that start with `uv`. If it finds more of the first than of the second, it gives the error. So `echo uv` and
+`cd uv && uv add x` are errors too. For a folder `uv`, write `cd uv/`.
+
+`timewalk-check` cannot see a `uv` that a recipe or a script runs, for example `just lock` or
+`./scripts/add.sh`. In a strict walk, write the `uv` command itself on the `do$` line.
+
 A step with no moves, after the first step, is one commit after the step before it. Do mode treats it as one
 move, and its `do$` lines of `uv` get the same command. Each of its files comes from a `do$` line or from a
 `patch$` line.

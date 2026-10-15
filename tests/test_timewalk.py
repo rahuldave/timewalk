@@ -3871,6 +3871,27 @@ def test_the_takes_of_tallys_strict_walks(tmp_path: Path, monkeypatch: pytest.Mo
     assert len(taken) >= 5 and "uv add --dev ruff" in taken, "ruff in strict; tabulate, mdformat, the library, talib and the remove in strict-extra"
 
 
+def test_the_check_refuses_uv_behind_another_command_in_a_strict_walk(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """In a strict walk, a do$ line that runs uv behind env, time, sudo or bash -c, or by a path, is an error: takes cannot
+    read it, so do mode would run it and the learner would get newer versions. A loose walk lets it be."""
+    from timewalk.facts import hidden_uv
+    from timewalk.walks import check_walk, load_toc
+
+    for text in ("env A=1 uv add x", "time uv add x", "sudo uv add x", 'bash -c "uv add x"', "~/.local/bin/uv add x", "`which uv` add x", '"$(which uv)" add x', '"${UV:-uv}" add x', "cd uv && uv add x"):
+        assert hidden_uv(text), text
+    for text in ("uv add x", "uv add x || true", "A=1 uv add x", "cd sub && uv add x", "uv --directory sub add x", "git add uv.lock", "uvx ruff", "cd uv/ && uv add x"):
+        assert not hidden_uv(text), text
+    main, toc = uv_history(tmp_path, monkeypatch)
+    notes = toc.parent / "notes.md"
+    notes.write_text(notes.read_text().replace("do$ uv add ruff", "do$ env A=1 uv add ruff"))
+    says = "walk u: step-01.1: the do$ line `env A=1 uv add ruff` names uv more times than it runs uv"
+    errors, _, _ = check_walk(load_toc(toc)[0], main, toc.parent, run=False)
+    assert any(e.startswith(says) for e in errors), errors
+    toc.write_text(toc.read_text() + 'loose = ["pyproject.toml", "uv.lock"]\n')
+    errors, _, _ = check_walk(load_toc(toc)[0], main, toc.parent, run=False)
+    assert not any(e.startswith(says) for e in errors), "a loose walk"
+
+
 def test_the_facts_give_a_strict_walks_uv_lines_a_take(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     "A do$ line of uv in a strict walk has a take of every file it last writes; a loose walk, or no run, has none."
     main, toc = uv_history(tmp_path, monkeypatch)

@@ -308,6 +308,22 @@ def runs_uv(
     return bool(uv_commands(text))
 
 
+def hidden_uv(
+    text: str,  # A do$ line
+) -> bool:  # True when the line names uv more times than it runs uv as a command, as in env A=1 uv add x or sudo uv add x
+    """Say whether a line runs uv in a way that takes cannot read: behind another program (env, time, sudo, bash -c), or by
+    a path such as ~/.local/bin/uv. A uv counts at the start of a word or after / = ( ` : or -, and before a space, `, ) or } or
+    the end of the word; so echo uv, or cd uv && uv add x, counts too."""
+    try:
+        lexer = shlex.shlex(text, posix=True, punctuation_chars=True)
+        lexer.whitespace_split = True
+        words = list(lexer)
+    except ValueError:
+        words = text.split()
+    named = sum(len(re.findall(r"(?:^|[\s/=(`:-])uv(?=$|[\s`)}])", word)) for word in words)
+    return named > len(uv_commands(text))
+
+
 def only_locks(
     text: str,  # A do$ line
 ) -> bool:  # True when the line runs uv, and each uv of it is a command whose job is to write pyproject.toml and uv.lock

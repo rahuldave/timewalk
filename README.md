@@ -28,11 +28,11 @@ opens it. It prints one address. Open it on the projector and on your own screen
 On your own project, run timewalk straight from GitHub with uv. uv downloads it once and keeps it:
 
 ```
-uvx --from git+https://github.com/rahuldave/timewalk@v1.4.4 timewalk ~/code/project --notes notes.md --slides slides/slides.toml
+uvx --from git+https://github.com/rahuldave/timewalk@v1.4.5 timewalk ~/code/project --notes notes.md --slides slides/slides.toml
 ```
 
 To install the commands `timewalk` and `timewalk-pdf` for good, run
-`uv tool install git+https://github.com/rahuldave/timewalk@v1.4.4`.
+`uv tool install git+https://github.com/rahuldave/timewalk@v1.4.5`.
 
 By default, the steps are the tags that match `step-*`. The message of an annotated tag is the note that
 the audience sees, in the status band under the step bar. The band also says what to do now.

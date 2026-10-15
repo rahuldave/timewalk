@@ -756,7 +756,7 @@ def source_problems(
     """Check where each file of each move comes from: a do$ line writes it, or a patch$ line names it. A file that a do$
     line writes and the move then changes needs a patch$ line too. Also check that each do$ line runs, and writes only
     files of the move. A patch$ line that names a file that the move does not change is an error; the rest are warnings."""
-    from timewalk.facts import DIFF, change_files, may_take, run_problem  # here, as timewalk.facts imports this module
+    from timewalk.facts import DIFF, change_files, exact, hidden_uv, may_take, run_problem  # here, as timewalk.facts imports this module
 
     errors: list[str] = []
     problems: list[str] = []
@@ -771,6 +771,12 @@ def source_problems(
             for path in dict.fromkeys(named):
                 if path not in paths:
                     errors.append(f"{move.name}: the line patch$ {path} names a file that the move does not change")
+            if any(exact(f["path"], list(walk.loose)) for f in files if f["status"] != "deleted"):   # a strict walk's pyproject.toml or uv.lock
+                for text in commands:
+                    if hidden_uv(text):
+                        errors.append(f"{move.name}: the do$ line {code_span(text)} names uv more times than it runs uv at the start of a command, "
+                                      "so do mode may not take the author's files for it; put each uv at the start of a command, as in uv add x "
+                                      "or cd sub && uv add x, and name no other uv (write cd uv/ for a folder uv)")
             if commands and not run:
                 continue
             found = observe(main, git(main, "rev-parse", f"{move.sha}^"), move.sha, commands, scratch) if commands else {"commands": [], "left": {}}
