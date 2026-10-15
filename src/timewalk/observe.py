@@ -28,6 +28,7 @@ import shutil
 import signal
 import subprocess
 import tempfile
+import threading
 from pathlib import Path
 
 from timewalk import GitError, blob_diff, git, loose_match, shell_environment
@@ -126,9 +127,27 @@ def snapshot(
     return out
 
 
+class Stop:
+    """A way to end the runs of a server that stops: no command starts after it, and each one running is killed."""
+
+    def __init__(self) -> None:
+        self.stopped = threading.Event()
+        self.groups: set[int] = set()   # the process groups of the commands that run now
+        self.lock = threading.Lock()
+
+    def stop(self) -> None:
+        "Kill every command that runs, and start no more."
+        with self.lock:
+            self.stopped.set()
+            for group in self.groups:
+                with contextlib.suppress(OSError):
+                    os.killpg(group, signal.SIGKILL)
+
+
 def run_commands(
     folder: Path,  # The scratch clone, at the commit before the move
     commands: list[str],  # The move's do$ commands, in order
+    stop: Stop | None = None,  # Ends the run when the server stops
 ) -> dict:  # What each command wrote, and the files as they left them; see observe
     """Run each command in a shell of its own process group, and note the files it adds, changes or removes. Its output
     goes to a file, not a pipe, so a process that a command leaves running does not hold the run up; each such process is
@@ -139,8 +158,13 @@ def run_commands(
     done, before, written = [], snapshot(folder), set()
     for text in commands:
         with tempfile.TemporaryFile() as said_file:
-            child = subprocess.Popen([shell, "-c", text], cwd=folder, env=env, stdin=subprocess.DEVNULL, stdout=said_file,
-                                     stderr=subprocess.STDOUT, start_new_session=True)
+            with stop.lock if stop else contextlib.nullcontext():   # a stop either comes first, or sees the new group
+                if stop and stop.stopped.is_set():
+                    break   # the server stops: the run ends here, as a failed one does, and is not kept
+                child = subprocess.Popen([shell, "-c", text], cwd=folder, env=env, stdin=subprocess.DEVNULL, stdout=said_file,
+                                         stderr=subprocess.STDOUT, start_new_session=True)
+                if stop:
+                    stop.groups.add(child.pid)
             try:
                 code = child.wait(timeout=TIMEOUT)
                 said_file.seek(0)
@@ -151,6 +175,11 @@ def run_commands(
                 with contextlib.suppress(OSError):
                     os.killpg(child.pid, signal.SIGKILL)   # the command, if it ran too long, and anything it left running
                 child.wait()
+                if stop:
+                    with stop.lock:
+                        stop.groups.discard(child.pid)
+        if stop and stop.stopped.is_set():
+            code = code or -9   # killed by the stop: never a run to keep
         after = snapshot(folder)
         writes = sorted(p for p in before.keys() | after.keys() if before.get(p) != after.get(p))
         lines = [line for line in said.strip().splitlines() if line.strip()]
@@ -178,6 +207,7 @@ def observe(
     commit: str,  # The move's commit
     commands: list[str],  # Its do$ commands, in order
     scratch: Scratch,  # The clone to run them in
+    stop: Stop | None = None,  # Ends the run when the server stops
 ) -> dict:  # {"commands": [{text, writes, exit, said}], "left": {path: {data, exec} or None}}
     "Run a move's commands at the commit before it, or read what they did from the cache."
     key = hashlib.sha256(json.dumps([LAYOUT, parent, commit, commands]).encode()).hexdigest()
@@ -191,9 +221,11 @@ def observe(
             return found
     except (OSError, ValueError):
         pass   # no cache, or a broken one: run again
-    found = run_commands(scratch.at(parent), commands)
+    found = run_commands(scratch.at(parent), commands, stop)
+    if stop and stop.stopped.is_set():
+        return found   # cut short by a server that stops: neither kept nor remembered
     MEMORY[key] = found
-    if all(command["exit"] == 0 for command in found["commands"]):
+    if len(found["commands"]) == len(commands) and all(command["exit"] == 0 for command in found["commands"]):
         try:
             kept.parent.mkdir(parents=True, exist_ok=True)
             partial = kept.with_suffix(f".{os.getpid()}.part")

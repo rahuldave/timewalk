@@ -233,6 +233,10 @@ status band does. At the first stop of a walk with an `intro`, the intro comes n
 walk". A green **Next step** button ends the notes. See [Notes](notes.md) and
 [The intro of a walk](walks.md#the-intro-of-a-walk).
 
+In do mode of a strict walk, a `do$` line of `uv`, for example `uv add --dev ruff`, has no button. The
+column says that the author ran it, and gives a command in its place that takes its files from the move's
+commit. See [A strict walk](walks.md#a-strict-walk).
+
 ## The terminals
 
 A row of tabs goes along the bottom of the page. Each tab is a terminal with a real shell, the program

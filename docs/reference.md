@@ -5,11 +5,11 @@
 Run timewalk from GitHub with uv, with no clone and no install:
 
 ```
-uvx --from git+https://github.com/rahuldave/timewalk@v1.4.2 timewalk [repo] [options]
-uvx --from git+https://github.com/rahuldave/timewalk@v1.4.2 timewalk-pdf [options]
+uvx --from git+https://github.com/rahuldave/timewalk@v1.4.3 timewalk [repo] [options]
+uvx --from git+https://github.com/rahuldave/timewalk@v1.4.3 timewalk-pdf [options]
 ```
 
-Or install the commands `timewalk`, `timewalk-pdf`, `timewalk-check`, `timewalk-notes` and `timewalk-export` once with `uv tool install git+https://github.com/rahuldave/timewalk@v1.4.2`. In a clone of timewalk, run them with
+Or install the commands `timewalk`, `timewalk-pdf`, `timewalk-check`, `timewalk-notes` and `timewalk-export` once with `uv tool install git+https://github.com/rahuldave/timewalk@v1.4.3`. In a clone of timewalk, run them with
 `uv run timewalk` and `uv run timewalk-pdf`.
 
 ## timewalk
@@ -35,6 +35,7 @@ timewalk [repo] [options]
 | `--assistant CMD` | The command the Claude tab starts. Default: `claude`. `''` for a plain shell |
 | `--port N` | The port to listen on. Default: 8765. If another program listens on the port, timewalk stops and says so. Then give another port. A timewalk that you just stopped does not block the port |
 | `--no-open` | Do not open the browser |
+| `--no-run` | In a strict tutorial, do not run the `do$` lines of `uv` to see which files they write. Do mode then gives the `uv` command itself. `TIMEWALK_NO_RUN=1` does the same. See [A strict walk](walks.md#a-strict-walk) |
 
 ## timewalk-pdf
 
@@ -99,7 +100,10 @@ second check runs nothing. A move with a `do$` line that failed runs again. Each
 A file that the walk's `loose` names, and that matches by the names of its packages, has no change after
 its `do$` line. So a `uv.lock` with newer versions is the `do$` line's. Give `--no-run`, or set
 `TIMEWALK_NO_RUN=1`, to run nothing. A move with `do$` lines is then not checked. timewalk itself runs
-nothing when it starts.
+nothing, unless a strict walk has a `do$` line of `uv`.
+
+In a strict walk, timewalk runs the `do$` lines of a move with a `do$` line of `uv`, in the
+background, with the same cache. See [A strict walk](walks.md#a-strict-walk).
 
 A `patch$` line that names a file that its move does not change is an error. A `patch$` line before the
 first move of a step, or in a block for one mode, is a warning.
@@ -228,7 +232,7 @@ left out.
 
 | Field | Holds |
 |---|---|
-| `format` | The version of the layout, now `3`. A change that a renderer must know of raises it. Version 2 added `observed`, `number`, `writes`, `by` and the field `patch` of a file. Version 3 added the part `patch`, and removed the part `apply` |
+| `format` | The version of the layout, now `3`. A change that a renderer must know of raises it. Version 2 added `observed`, `number`, `writes`, `by` and the field `patch` of a file. Version 3 added the part `patch`, and removed the part `apply`. timewalk 1.4.3 added the field `take` to the part `command`. A renderer that does not read `take` still works, so the version stayed `3` |
 | `timewalk` | The version of timewalk that wrote the file |
 | `made` | The line "Made by timewalk-export". The command writes over only a file with this line |
 | `observed` | Whether the `do$` lines ran. See [timewalk-check](#timewalk-check) |
@@ -261,7 +265,7 @@ The text of a stop or a move is a list of parts, in the order of the notes. Each
 | Kind | Holds |
 |---|---|
 | `prose` | `text`: Markdown, as written, every character. Fenced code stays whole |
-| `command` | `text`, the command. `track` is `""` for the shell at the step, `main`, or `runs` to `runs9`. `makes` is true for a `do$` line. `writes` lists the files that a `do$` line adds, changes or removes, when it ran. It is `null` for any other command |
+| `command` | `text`, the command. `track` is `""` for the shell at the step, `main`, or `runs` to `runs9`. `makes` is true for a `do$` line. `writes` lists the files that a `do$` line adds, changes or removes, when it ran. It is `null` for any other command. `take` is what do mode gives in place of a `do$` line of `uv` in a strict walk: `lines`, the places from 0 among the move's `do$` lines that the command stands for; `files`, the files that those lines write and the move keeps; `deletes`, the files that they delete, and the old paths of those that they rename; and `command`, the command that takes them from the move's commit, for example `git restore --source 1a2b3c4d5e6f -- pyproject.toml uv.lock && uv sync --locked --all-groups --all-packages`. A later line that joins the take has empty `lines`, `files` and `deletes`, and `command` `""`. `take` is `null` for any other command, and when the `do$` lines did not run. See [A strict walk](walks.md#a-strict-walk) |
 | `item` | An item under `files:`. `item` is `diff` or `file`. It also has `path`, `move` (the move that the item names, or `null` for its own move), `words`, and `show`, the lines that its `show:` lines quote |
 | `patch` | A `patch$` line. `path` is the file that the move changes by a patch, the diff of the move's commit. Do not mix it up with the field `patch` of a file |
 

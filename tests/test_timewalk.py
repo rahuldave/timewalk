@@ -1,6 +1,7 @@
 """Tests for timewalk: the git layer, the notes and slides readers, and the web application's guards."""
 
 import base64
+import contextlib
 import hashlib
 import json
 import os
@@ -3745,6 +3746,316 @@ def test_a_failed_run_is_not_kept(tmp_path: Path) -> None:
     found = observe.observe(main, run_git(main, "rev-parse", "step-01^"), late, ["false", "touch never"], observe.Scratch(main))
     assert [c["exit"] for c in found["commands"]] == [1], "the line after a failed one does not run"
     assert not observe.cache_folder().exists() or not list(observe.cache_folder().iterdir())
+
+
+FAKE_UV = """#!/bin/sh
+# A uv that writes the newer versions of a later day, and notes each sync in uv-synced, as a scratch run and a learner see it
+case "$1" in
+  add) printf '[project]\\nname = "m"\\ndependencies = ["%s>=9.1"]\\n' "$2" > pyproject.toml
+       printf 'version = 1\\n[[package]]\\nname = "%s"\\nversion = "9.1"\\n' "$2" > uv.lock
+       if [ "$2" = ruff ]; then printf '3.12\\n' > .python-version; fi ;;
+  sync) echo "$*" >> uv-synced ;;
+esac
+"""
+
+
+def uv_history(
+    tmp_path: Path,  # pytest's temporary directory
+    monkeypatch: pytest.MonkeyPatch,  # To put the fake uv first on PATH
+    loose: str = "",  # A line loose = [...] for the walk, or "": a strict walk
+) -> tuple[Path, Path]:  # The project, and the class's toc.toml
+    """A tutorial whose step-01.1 is made by do$ uv add ruff, which writes pyproject.toml, uv.lock and .python-version, and
+    whose step-01.2 is made by do$ uv add click and then a do$ line that writes pyproject.toml after it. The author's
+    versions are 9.0; the fake uv on PATH writes 9.1, as a later day does."""
+    tools = tmp_path / "bin"
+    tools.mkdir()
+    (tools / "uv").write_text(FAKE_UV)
+    os.chmod(tools / "uv", 0o755)
+    monkeypatch.setenv("PATH", f"{tools}{os.pathsep}{os.environ['PATH']}")
+    main = tmp_path / "uvp"
+    main.mkdir()
+    run_git(main, "init", "--quiet", "-b", "main")
+    run_git(main, "config", "user.name", "t")
+    run_git(main, "config", "user.email", "t@e")
+    (main / ".gitignore").write_text("uv-synced\n")
+    (main / "pyproject.toml").write_text('[project]\nname = "m"\ndependencies = []\n')
+    (main / "uv.lock").write_text("version = 1\n")
+    run_git(main, "add", "-A")
+    run_git(main, "commit", "-qm", "step-00: start")
+    run_git(main, "tag", "-a", "step-00", "-m", "start")
+    for name, extra in (("ruff", {".python-version": "3.12\n"}), ("click", {})):
+        (main / "pyproject.toml").write_text(f'[project]\nname = "m"\ndependencies = ["{name}>=9.0"]\n')
+        (main / "uv.lock").write_text(f'version = 1\n[[package]]\nname = "{name}"\nversion = "9.0"\n')
+        for path, text in extra.items():
+            (main / path).write_text(text)
+        if name == "click":
+            (main / "pyproject.toml").write_text('[project]\nname = "m"\ndependencies = ["click>=9.0"]\n# by hand\n')
+        run_git(main, "add", "-A")
+        run_git(main, "commit", "-qm", f"step-01.{1 if name == 'ruff' else 2}: {name}")
+    run_git(main, "tag", "-a", "step-01", "-m", "one")
+    folder = tmp_path / "class"
+    folder.mkdir()
+    (folder / "notes.md").write_text(
+        "## step-00\n\n## step-01 One\n\n### step-01.1 Ruff\n\ndo$ uv add ruff\n\n$ ls\n\n"
+        "### step-01.2 Click\n\ndo$ uv add click\ndo$ printf '[project]\\nname = \"m\"\\ndependencies = [\"click>=9.0\"]\\n# by hand\\n' > pyproject.toml\n\n$ ls\n")
+    toc = folder / "toc.toml"
+    toc.write_text(f'[[walk]]\nid = "u"\nkind = "tutorial"\nnotes = "notes.md"\n{loose}')
+    return main, toc
+
+
+def test_takes_follow_the_rule_of_walk_kit() -> None:
+    "walk-kit's rule: a do$ line that runs uv and writes a file compared exactly takes what it writes, and later lines that write the same join it."
+    from timewalk.facts import runs_uv, takes
+
+    sha = "0123456789abcdef0123"
+    file = lambda path, by, status="modified", old=None: {"path": path, "by": by, "status": status, "old_path": old}   # noqa: E731
+    line = lambda text, *writes: {"text": text, "writes": list(writes)}   # noqa: E731
+    found = takes([line("uv init --lib packages/x", "packages/x/pyproject.toml", "packages/x/[odd].py", "old.txt", "new name.txt", "was.txt"),
+                   line("uv add x", "pyproject.toml", "uv.lock"), line("touch y", "y")], [
+        file("packages/x/pyproject.toml", 0, "added"), file("packages/x/[odd].py", 0, "added"), file("old.txt", 0, "deleted"),
+        file("new name.txt", 0, "renamed", "was.txt"), file("pyproject.toml", 1), file("uv.lock", 1), file("y", 2, "added")], sha, [])
+    assert found[0] == {"lines": [0], "files": ["packages/x/pyproject.toml", "packages/x/[odd].py", "new name.txt"], "deletes": ["old.txt", "was.txt"],
+                        "command": "git restore --source 0123456789ab -- packages/x/pyproject.toml ':(top,literal)packages/x/[odd].py' "
+                                   "'new name.txt' && rm -f -- old.txt was.txt"}, "no uv.lock: no uv sync; the files in the order of the move's"
+    assert found[1]["command"] == "git restore --source 0123456789ab -- pyproject.toml uv.lock && uv sync --locked --all-groups --all-packages"
+    assert 2 not in found, "a line that is not uv"
+    joined = takes([line("uv add click", "pyproject.toml", "uv.lock"), line("printf x > pyproject.toml", "pyproject.toml"), line("ls")],
+                   [file("pyproject.toml", 1), file("uv.lock", 0)], sha, [])
+    assert joined == {0: {"lines": [0, 1], "files": ["pyproject.toml", "uv.lock"], "deletes": [],
+                          "command": "git restore --source 0123456789ab -- pyproject.toml uv.lock && uv sync --locked --all-groups --all-packages"},
+                      1: {"lines": [], "files": [], "deletes": [], "command": ""}}, "a later line that writes a file of the group joins it"
+    nested = takes([line("uv add --directory sub x", "sub/pyproject.toml", "sub/uv.lock")], [file("sub/pyproject.toml", 0), file("sub/uv.lock", 0)], sha, [])
+    assert nested[0]["command"].endswith("&& uv sync --directory sub --locked --all-groups --all-packages"), "a uv.lock that is not at the top"
+    two = [file("pyproject.toml", 0), file("uv.lock", 0)]
+    assert takes([line("uv add x", "pyproject.toml", "uv.lock")], two, sha, ["pyproject.toml", "uv.lock"]) == {}, "loose names both"
+    assert takes([line("uv add x", "pyproject.toml", "uv.lock")], two, sha, ["uv.lock"])[0]["files"] == ["pyproject.toml", "uv.lock"], \
+        "one file compared exactly is enough, and the line takes all it writes"
+    assert takes([line("uv run ruff check --fix", "src/a.py")], [file("src/a.py", 0)], sha, []) == {}, "no pyproject.toml or uv.lock"
+    assert takes([line("uv remove x", "uv.lock")], [file("uv.lock", 0, "deleted")], sha, []) == {}, "a deleted file is not one to take"
+    assert takes([{"text": "uv add x", "writes": None}], two, sha, [])[0]["files"] == ["pyproject.toml", "uv.lock"], "not run: by says"
+    assert runs_uv("'uv' add x") and runs_uv("cd sub && uv add x") and runs_uv("UV_INDEX=x uv add y") and not runs_uv("echo uv")
+
+
+WALK_KIT = Path.home() / "Projects" / "walk-kit" / "scripts"
+TALLY = Path.home() / "Projects" / "timewalk-test"
+
+
+def walk_kit_takes(
+    facts: dict,  # Facts of a tutorial, from timewalk-export --json
+) -> list[tuple[str, int, dict | None, dict | None]]:  # For each do$ line: its move, its place, walk-kit's take and timewalk's
+    "Run walk-kit's own rule, render.taken and render.take_lines, on each move of the facts, beside the facts' take."
+    sys.path.insert(0, str(WALK_KIT))
+    try:
+        import render
+    finally:
+        sys.path.remove(str(WALK_KIT))
+    out = []
+    for stop in facts["stops"]:
+        for move in stop["moves"]:
+            makes = [p for p in move["parts"] if p["kind"] == "command" and p["makes"]]
+            found = render.taken(facts, makes, move["files"])
+            for at, part in enumerate(makes):
+                theirs = None
+                if at in found:
+                    lines, files = found[at]
+                    command = ""
+                    if lines:
+                        said = render.take_lines([makes[i]["text"] for i in lines], files, move["commit"], facts)
+                        command = said[said.index("```bash") + 1]
+                    theirs = {"lines": lines, "files": [f["path"] for f in files if f["status"] != "deleted"], "command": command}
+                ours = part["take"] and {k: part["take"][k] for k in ("lines", "files", "command")}
+                out.append((move["name"], at, theirs, ours))
+    return out
+
+
+@pytest.mark.skipif(not (WALK_KIT / "render.py").is_file(), reason="walk-kit is not beside timewalk")
+def test_walk_kits_rule_and_take_agree_on_made_cases(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    "walk-kit's taken and take_lines give the same lines, files and command as the facts' take, for the cases of uv_history."
+    main, toc = uv_history(tmp_path, monkeypatch)
+    monkeypatch.delenv("TIMEWALK_NO_RUN")
+    facts, _ = facts_of(main, toc, "u")
+    found = walk_kit_takes(facts)
+    assert [theirs for _, _, theirs, _ in found] == [ours for _, _, _, ours in found], found
+    assert sum(1 for *_, ours in found if ours and ours["command"]) == 2
+
+
+@pytest.mark.skipif(not (WALK_KIT / "render.py").is_file() or not (TALLY / "toc.toml").is_file() or not shutil.which("uv"),
+                    reason="walk-kit, timewalk-test or uv is not here")
+@pytest.mark.timeout(1200)
+def test_walk_kits_rule_and_take_agree_on_tallys_strict_walks(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    "On timewalk-test's walks strict and strict-extra, run with real uv, walk-kit's rule and the facts' take give the same commands."
+    monkeypatch.delenv("TIMEWALK_NO_RUN")
+    monkeypatch.setenv("XDG_CACHE_HOME", os.environ.get("TIMEWALK_TEST_CACHE", str(Path.home() / ".cache")))   # the runs of earlier checks
+    repo = tmp_path / "repo"
+    subprocess.run([sys.executable, str(TALLY / "history" / "build.py"), str(repo)], check=True, capture_output=True)
+    folder = tmp_path / "class"   # a copy, as facts_of writes beside the toc.toml
+    folder.mkdir()
+    for name in ("toc.toml", "notes.md", "walks", "slides"):
+        (shutil.copytree if (TALLY / name).is_dir() else shutil.copy)(TALLY / name, folder / name)
+    taken = 0
+    for walk in ("strict", "strict-extra"):
+        facts, _ = facts_of(repo, folder / "toc.toml", walk)
+        assert facts["observed"] is True
+        found = walk_kit_takes(facts)
+        assert [theirs for _, _, theirs, _ in found] == [ours for _, _, _, ours in found], [f for f in found if f[2] != f[3]]
+        taken += sum(1 for *_, ours in found if ours and ours["command"])
+    assert taken >= 5, "ruff in strict; tabulate, mdformat, the library, talib and the remove in strict-extra"
+
+
+def test_the_facts_give_a_strict_walks_uv_lines_a_take(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    "A do$ line of uv in a strict walk has a take of every file it last writes; a loose walk, or no run, has none."
+    main, toc = uv_history(tmp_path, monkeypatch)
+    monkeypatch.delenv("TIMEWALK_NO_RUN")
+    facts, _ = facts_of(main, toc, "u")
+    ruff, click = facts["stops"][1]["moves"]
+    sha = ruff["commit"][:12]
+    assert [p["take"] for p in ruff["parts"] if p["kind"] == "command"] == [
+        {"lines": [0], "files": [".python-version", "pyproject.toml", "uv.lock"], "deletes": [],
+         "command": f"git restore --source {sha} -- .python-version pyproject.toml uv.lock && uv sync --locked --all-groups --all-packages"}, None]
+    assert [p["take"] and (p["take"]["lines"], p["take"]["files"]) for p in click["parts"] if p["kind"] == "command"] == [
+        ([0, 1], ["pyproject.toml", "uv.lock"]), ([], []), None], "the printf line writes pyproject.toml after uv add click, so it joins the take"
+    toc.write_text(toc.read_text() + 'loose = ["pyproject.toml", "uv.lock"]\n')
+    loose, _ = facts_of(main, toc, "u")
+    assert all(p["take"] is None for m in loose["stops"][1]["moves"] for p in m["parts"] if p["kind"] == "command"), "a loose walk runs uv add"
+    monkeypatch.setenv("TIMEWALK_NO_RUN", "1")
+    toc.write_text(toc.read_text().replace('loose = ["pyproject.toml", "uv.lock"]\n', ""))
+    unrun, _ = facts_of(main, toc, "u")
+    assert all(p["take"] is None for m in unrun["stops"][1]["moves"] for p in m["parts"] if p["kind"] == "command"), "no run, no by, no take"
+
+
+def wait_for_takes(
+    client: TestClient,  # A client that serves the walk, in a with block, so that the server's task runs between requests
+    step: str,  # The step whose notes to read
+) -> list[dict]:  # The do$ parts of its notes, once none waits for its run
+    "Read the notes until timewalk has run the do$ lines of uv of the step, as a page reads them again on each notes event."
+    for _ in range(200):
+        parts = [p for p in client.get("/api/notes", params={"t": TOKEN}).json()["notes"][step]["parts"] if p.get("makes")]
+        if not any(p.get("taking") for p in parts):
+            return parts
+        time.sleep(0.05)
+    pytest.fail("the do$ lines never ran")
+
+
+def test_the_page_gets_the_take_and_the_files_then_match(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    "The server runs a strict walk's do$ lines of uv once, gives the take as the facts do, and the take's command makes the files match."
+    from timewalk.walks import load_toc
+
+    main, toc = uv_history(tmp_path, monkeypatch)
+    repo = timewalk.Repo(main)
+    repo.select("step-*", None, tutorial=True)
+    auth = {"t": TOKEN}
+    with TestClient(timewalk.make_app(repo, TOKEN, PORT, assistant="", walks=load_toc(toc), root=toc.parent, run=True), headers=HOST) as client:
+        client.post("/api/move", params=auth, json={"to": 1})
+        first = [p for p in client.get("/api/notes", params=auth).json()["notes"]["step-01"]["parts"] if p.get("makes")]
+        assert [p.get("taking", False) for p in first] == [True, True, True], "every do$ line of a move with a line of uv waits for its run"
+        parts = wait_for_takes(client, "step-01")
+        assert [p["take"]["lines"] for p in parts] == [[0], [0, 1], []], "as the facts give them"
+        command = parts[0]["take"]["command"]
+        assert command.startswith(f"git restore --source {repo.moves[1][0].sha[:12]} -- .python-version pyproject.toml uv.lock")
+        subprocess.run(["uv", "add", "ruff"], cwd=repo.work, check=True)   # what the learner gets on a later day
+        assert sorted(client.get("/api/match", params=auth).json()["differ"]) == ["pyproject.toml", "uv.lock"]
+        subprocess.run(command, shell=True, cwd=repo.work, check=True)
+        found = client.get("/api/match", params=auth).json()
+        assert (found["move"], found["match"]) == ("step-01.1", True), found
+        assert (repo.work / "uv-synced").read_text() == "sync --locked --all-groups --all-packages\n"
+        client.post("/api/show", params=auth, json={"mode": "watch"})
+        assert wait_for_takes(client, "step-01")[0]["take"] == parts[0]["take"], "the notes are the same; the page uses the take in do mode only"
+    toc.write_text(toc.read_text() + 'loose = ["pyproject.toml", "uv.lock"]\n')
+    with TestClient(timewalk.make_app(repo, TOKEN, PORT, assistant="", walks=load_toc(toc), root=toc.parent, run=True), headers=HOST) as client:
+        parts = [p for p in client.get("/api/notes", params=auth).json()["notes"]["step-01"]["parts"] if p.get("makes")]
+        assert not any("take" in p or "taking" in p for p in parts), "a loose walk runs nothing, and runs uv add"
+    with TestClient(timewalk.make_app(repo, TOKEN, PORT, notes_path=toc.parent / "notes.md", assistant="", run=True), headers=HOST) as client:
+        parts = [p for p in client.get("/api/notes", params=auth).json()["notes"]["step-01"]["parts"] if p.get("makes")]
+        assert not any("taking" in p for p in parts), "without a walk, no tutorial"
+
+
+def test_a_stop_kills_a_run_and_keeps_nothing(tmp_path: Path) -> None:
+    "When the server stops, the do$ line that runs is killed at once, no line starts after it, and the run is neither cached nor remembered."
+    import threading
+
+    import timewalk.observe as observe
+
+    main, _ = made_history(tmp_path)
+    late, parent = run_git(main, "rev-parse", "step-01"), run_git(main, "rev-parse", "step-01^")
+    stop = observe.Stop()
+    threading.Timer(0.5, stop.stop).start()
+    began = time.time()
+    found = observe.observe(main, parent, late, ["sleep 30", "touch never"], observe.Scratch(main), stop)
+    assert time.time() - began < 10 and [c["text"] for c in found["commands"]] == ["sleep 30"] and found["commands"][0]["exit"] != 0
+    assert not any(k for k in observe.MEMORY if observe.MEMORY[k] is found)
+    assert not observe.cache_folder().exists() or not list(observe.cache_folder().iterdir())
+    assert observe.observe(main, parent, late, ["true"], observe.Scratch(main), stop)["commands"] == [], "nothing starts after a stop"
+
+
+def test_a_failed_run_of_the_server_gives_the_lines_as_they_are(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    "Any error in a run ends the wait: the do$ lines lose taking, and the pages hear of it."
+    import timewalk.facts as facts
+    from timewalk.walks import load_toc
+
+    main, toc = uv_history(tmp_path, monkeypatch)
+    repo = timewalk.Repo(main)
+    repo.select("step-*", None, tutorial=True)
+    monkeypatch.setattr(facts, "move_takes", lambda *a: (_ for _ in ()).throw(ValueError("broken")))
+    with TestClient(timewalk.make_app(repo, TOKEN, PORT, assistant="", walks=load_toc(toc), root=toc.parent, run=True), headers=HOST) as client:
+        parts = wait_for_takes(client, "step-01")
+        assert not any(p.get("take") or p.get("taking") for p in parts), "no take: the page gives each do$ line as a command"
+
+
+def test_a_second_window_keeps_the_step_on_show_first(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    "A window that reads the notes while a move of the step on show runs: the end of that move still tells the pages, before the queue drains."
+    import threading
+
+    import timewalk.facts as facts
+    from timewalk.walks import load_toc
+
+    main, toc = uv_history(tmp_path, monkeypatch)
+    (main / "pyproject.toml").write_text('[project]\nname = "m"\ndependencies = ["rich>=9.0"]\n')
+    run_git(main, "add", "-A")
+    run_git(main, "commit", "-qm", "step-02.1: rich")
+    run_git(main, "tag", "-a", "step-02", "-m", "two")
+    notes = toc.parent / "notes.md"
+    notes.write_text(notes.read_text() + "\n## step-02 Two\n\n### step-02.1 Rich\n\ndo$ uv add rich\n")
+    calls = []
+
+    def slow(main, sha, commands, loose, stop=None):
+        calls.append(sha)
+        time.sleep(1.0 if len(calls) == 1 else 5.0)
+        return {0: {"lines": [0], "files": ["pyproject.toml"], "deletes": [], "command": "x"}}
+
+    monkeypatch.setattr(facts, "move_takes", slow)
+    repo = timewalk.Repo(main)
+    repo.select("step-*", None, tutorial=True)
+    auth = {"t": TOKEN}
+    with TestClient(timewalk.make_app(repo, TOKEN, PORT, assistant="", walks=load_toc(toc), root=toc.parent, run=True), headers=HOST) as client:
+        client.post("/api/move", params=auth, json={"to": 1})
+        with client.websocket_connect(f"/ws/events?t={TOKEN}") as events:
+            assert events.receive_json()["type"] == "hello"
+            client.get("/api/notes", params=auth)   # the first window starts the runs
+            time.sleep(0.3)
+            client.get("/api/notes", params=auth)   # the second window reads while the first move of step-01 runs
+            got = []
+
+            def read() -> None:
+                with contextlib.suppress(Exception):
+                    while True:
+                        got.append(events.receive_json()["type"])
+
+            threading.Thread(target=read, daemon=True).start()
+            time.sleep(3)
+            assert "notes" in got, "the pages hear of the first move of the step on show, though the queue still runs"
+    assert calls[0] == repo.moves[1][0].sha and repo.steps[2].sha not in calls[:2], "the step on show first"
+
+
+def test_no_run_gives_the_uv_command(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    "With TIMEWALK_NO_RUN, or --no-run, timewalk runs nothing, and a strict walk's do$ line of uv stays a command."
+    from timewalk.walks import load_toc
+
+    main, toc = uv_history(tmp_path, monkeypatch)
+    repo = timewalk.Repo(main)
+    repo.select("step-*", None, tutorial=True)
+    with TestClient(timewalk.make_app(repo, TOKEN, PORT, assistant="", walks=load_toc(toc), root=toc.parent), headers=HOST) as client:
+        parts = [p for p in client.get("/api/notes", params={"t": TOKEN}).json()["notes"]["step-01"]["parts"] if p.get("makes")]
+        assert not any("take" in p or "taking" in p for p in parts)
 
 
 def test_display_numbers() -> None:

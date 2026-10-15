@@ -370,7 +370,8 @@ shows the notes in this way:
 - **The text outside a block** shows in both modes.
 - **A `do` block** shows only in do mode, and **a `watch` block** only in watch mode.
 - **A `do$` line** shows in both modes. In do mode, it is a command to run. In watch mode, it shows as
-  "The move ran:" and the command, with no button.
+  "The move ran:" and the command, with no button. In a strict walk, do mode replaces some `do$` lines of `uv`
+  with a command that takes their files. See [A strict walk](#a-strict-walk).
 - **The switch Do / Watch** changes the blocks on show, in every window. The step and the move stay.
 - **A narrative** has no mode. It shows the `watch` blocks, and `timewalk-check` warns of a `do` block.
 
@@ -653,6 +654,64 @@ by the names of the packages, not their versions)". A file left out shows as "(n
 It also warns of a move whose changes are all in files that `loose` names, and that a loose match finds
 equal. An example is a move that only changes the version of a package. Do mode would mark that move done
 before the learner makes it. Take its files out of `loose`, or join the move with one that changes more.
+
+### A strict walk
+
+A tutorial whose `loose` does not name `pyproject.toml` or `uv.lock` is strict for that file. Do mode
+compares the file line by line, so the learner must have the author's versions.
+
+**Problem.** The author's move runs `do$ uv add --dev ruff`, and that command wrote ruff 0.17.0. A learner
+runs the same command a month later, and gets ruff 0.17.1. The learner's `uv.lock` then differs from the
+move's `uv.lock`, and **Your files match** never comes.
+
+**Fix.** In do mode of a strict walk, the page does not give such a `uv` command. It says that the author
+ran the command, and gives one command in its place, for example:
+
+```bash
+git restore --source 1a2b3c4d5e6f -- pyproject.toml uv.lock && uv sync --locked --all-groups --all-packages
+```
+
+- `git restore --source 1a2b3c4d5e6f` takes each file that the `uv` command wrote from the commit of the
+  move, as the author has it. A `uv` command such as `uv init` writes other files too, for example
+  `.python-version`. The command takes them too.
+- `rm -f` follows for each file that the `uv` command deleted, if there is one.
+- `uv sync --locked --all-groups --all-packages` installs exactly the versions of that `uv.lock`, in every
+  group and every member of a workspace. It does not change `uv.lock`. It comes once for each `uv.lock`
+  that the command takes. For a `uv.lock` in a folder, for example `sub/uv.lock`, it has `--directory sub`.
+
+The command is from the top of the project. A click on it types it into the **At this step** tab. With
+run on click, it also runs. The move then matches. Watch mode, and a walk whose `loose` names both files,
+still show the `uv` command.
+
+The page does this for a `do$` line when two things are true:
+
+- The line runs `uv`. Its first word is `uv`, or the first word after `&&`, `||`, `;`, `|` or a bracket is
+  `uv`, for example `cd sub && uv add x`. Settings before the word are skipped, so `UV_INDEX=x uv add y` runs
+  `uv` too.
+- The line writes a file of the move, a `pyproject.toml` or a `uv.lock` that `loose` does not name.
+
+A later `do$` line of the move that writes a file of such a line joins it. For example, `do$ uv add click`
+writes `pyproject.toml` and `uv.lock`, and then `do$ printf ... >> pyproject.toml` changes `pyproject.toml`.
+The commit has each file only as the move ends. So the page gives one command, at the first line, that takes
+every file of both lines. At the later line, it says that the command above takes its files.
+
+To know which files each `do$` line writes, timewalk runs the move's `do$` lines in a scratch clone, as
+`timewalk-check` does. See [timewalk-check](reference.md#timewalk-check). It runs them in this way:
+
+- **When.** A window opens. timewalk then runs them in the background, the moves of the step on show first.
+- **Which moves.** Each move of the walk with a `do$` line of `uv` and a file that is compared line by line.
+  It runs every `do$` line of such a move, for example a `do$ just train` too. Until the run ends, no
+  `do$` line of the move has a button.
+- **Until the run ends.** The page says that timewalk is running the lines, and gives no command to run.
+- **The cache.** A move that `timewalk-check` checked before reads the result from the cache, and runs
+  nothing. A run where a line fails, for example without a network, is not kept. It runs again at the next
+  start, and the page gives the `do$` lines as they are.
+- **The end.** When you stop timewalk, a run in progress stops too.
+
+With `--no-run`, or `TIMEWALK_NO_RUN=1`, timewalk runs nothing, and the page gives the `uv` command.
+
+`timewalk-export --json` gives each such `do$` line the same command, in the field `take`. See
+[The facts file](reference.md#the-facts-file).
 
 ### Slides for moves
 

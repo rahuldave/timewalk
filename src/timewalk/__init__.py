@@ -1999,6 +1999,7 @@ def make_app(
     walks: list | None = None,  # The walks of a table of contents, the default first; each has its own notes and slides
     root: Path | None = None,  # With walks: the class folder, where every walk's slides are served from
     start_walk: str | None = None,  # With walks: the id of the walk to start on, instead of the first
+    run: bool | None = None,  # Whether to run a strict walk's do$ lines of uv, to see the files they write; None: unless TIMEWALK_NO_RUN is set
 ) -> Starlette:  # The web application
     "Build the web application: the two pages, the read-only repository API, the terminals, and the event hub."
     terminals: dict[str, Terminal] = {}
@@ -2034,6 +2035,78 @@ def make_app(
     memory: dict[str, dict] = {}
     # With several walks, each keeps its own memory and the step it was left at; `memory` holds the walk on show.
     left: dict[str, tuple[dict, str | None]] = {}
+    # A strict walk's do$ lines of uv that do mode replaces by a take of their files: what facts.takes finds for each move,
+    # by its commit, its do$ lines and the walk's loose. A move not found yet waits in `waiting`, for one task to run.
+    if run is None:
+        from timewalk.observe import running  # imported here: observe imports this module
+
+        run = running()
+    found_takes: dict[tuple, dict[int, dict]] = {}
+    waiting: list[tuple] = []
+    finder: dict = {"task": None, "key": None, "urgent": set()}   # the task, the move it runs now, and the moves of the step on show
+    from timewalk.observe import Stop  # imported here: observe imports this module
+
+    stopper: dict = {"now": Stop()}   # at the server's end, kills a run, so that Ctrl-C does not wait for it; one for each lifespan
+
+    async def find_takes() -> None:
+        "Run the do$ lines of each waiting move in a scratch clone, one move at a time, and tell the pages after each."
+        from timewalk.facts import move_takes  # imported here: facts imports this module
+
+        try:
+            while waiting:
+                key = finder["key"] = waiting.pop(0)
+                sha, commands, loose = key
+                try:
+                    found_takes[key] = await asyncio.to_thread(move_takes, repo.main, sha, list(commands), list(loose), stopper["now"])
+                except Exception as error:   # any failure: the page then gives the do$ lines as they are, and the next move runs
+                    print(f"timewalk: cannot run the do$ lines of {sha[:12]} to see what they write: {error}")
+                    found_takes[key] = {}
+                if stopper["now"].stopped.is_set():
+                    return
+                if key in finder["urgent"] or not waiting:   # the pages draw again for the step on show, and once at the end
+                    await hub.tell({"type": "notes"})
+        finally:
+            finder["task"] = finder["key"] = None
+
+    def with_takes(
+        notes: dict[str, dict],  # The notes of the walk, by stop, as walk_notes gives them
+    ) -> dict[str, dict]:  # The same, with a take on each do$ line that do mode replaces, and taking on one not known yet
+        """Give each do$ line of a strict walk its take, as the facts do: see facts.takes. A move whose lines have not run yet
+        has taking on each do$ line of uv, and goes to the task that runs them; the move of the step on show goes first."""
+        from timewalk.facts import may_take  # imported here: facts imports this module
+
+        walk = active["walk"]
+        if walk is None or walk.kind != "tutorial" or not run:
+            return notes
+        loose = tuple(walk.loose)
+        out, first, others, urgent = {}, [], [], set()
+        here = showing["step"]
+        for name, entry in notes.items():
+            parts = [dict(part) for part in entry.get("parts", [])]
+            heads = [at for at, part in enumerate(parts) if part["kind"] == "move"]
+            for at, end in zip(heads, [*heads[1:], len(parts)], strict=False):   # none when the stop has no move
+                move = repo.move_named(parts[at]["name"])
+                lines = [part for part in parts[at + 1:end] if part["kind"] == "command" and part.get("makes")]
+                commands = tuple(part["text"] for part in lines)
+                if move is None or not may_take(list(commands), [f["path"] for f in repo.move_files(move)], list(loose)):
+                    continue
+                key = (move.sha, commands, loose)
+                if key in found_takes:
+                    for number, part in enumerate(lines):
+                        part["take"] = found_takes[key].get(number)
+                    continue
+                for part in lines:
+                    part["taking"] = True   # until the run says which lines a take stands for
+                if name == here:
+                    urgent.add(key)   # the move that runs now too: its end tells the pages
+                if key != finder["key"]:
+                    (first if name == here else others).append(key)
+            out[name] = {**entry, "parts": parts}
+        finder["urgent"] = urgent
+        waiting[:] = list(dict.fromkeys(first + others))   # only what these notes need: an older text's moves do not run
+        if waiting and finder["task"] is None:
+            finder["task"] = asyncio.create_task(find_takes())
+        return out
 
     def remember(step: str | None, **what) -> None:
         "Note where a step is: its slide, or the scroll of one pane."
@@ -2409,7 +2482,7 @@ def make_app(
         own = walk.own_sections() if walk else None   # a walk with notes of its own reads the shared notes through its includes
         parsed = parse_notes(active["notes"].read_text(encoding="utf-8")) if own is None else {}
         tutorial = walk is not None and walk.kind == "tutorial"
-        return {"notes": walk_notes(parsed, repo.steps, repo.moves, tutorial, bool(walk and walk.select), own), "path": str(active["notes"])}
+        return {"notes": with_takes(walk_notes(parsed, repo.steps, repo.moves, tutorial, bool(walk and walk.select), own)), "path": str(active["notes"])}
 
     @guarded
     async def save_notes(request: Request) -> dict:
@@ -2648,6 +2721,7 @@ def make_app(
     @contextlib.asynccontextmanager
     async def lifespan(app: Starlette):
         "Watch the working copy for edits, and the notes and slides for changes, while the server runs."
+        stopper["now"] = Stop()
         watchers = [asyncio.create_task(watch_edits(repo, hub, watch_every))]
         if any(w.notes or w.slides for w in walks) or active["notes"] is not None or active["slides"] is not None:
             watchers.append(asyncio.create_task(watch_content(lambda: (active["notes"], active["slides"], active["root"],
@@ -2657,6 +2731,9 @@ def make_app(
         finally:
             for watcher in watchers:
                 watcher.cancel()
+            stopper["now"].stop()   # a run of do$ lines in its thread ends now
+            if finder["task"] is not None:
+                finder["task"].cancel()
 
     return Starlette(lifespan=lifespan, routes=[
         Route("/", page("index.html")),
@@ -2704,6 +2781,8 @@ def main() -> None:
     parser.add_argument("--host", default="127.0.0.1", help="the address to listen on (default: 127.0.0.1, this machine only). "
                         "0.0.0.0 listens on every network: anyone who can reach the port and has the address can run commands as you")
     parser.add_argument("--no-open", action="store_true", help="do not open the browser")
+    parser.add_argument("--no-run", action="store_true", help="in a strict tutorial, do not run the do$ lines of uv to see which files they write: "
+                        "do mode then gives the uv command itself (as TIMEWALK_NO_RUN=1 does)")
     args = parser.parse_args()
 
     walks, root, start = [], None, None
@@ -2791,7 +2870,7 @@ def main() -> None:
     if not args.no_open and local:
         webbrowser.open(address)
     uvicorn.run(make_app(repo, token, args.port, notes_path, args.assistant, slides_path, show_clock=args.clock, any_host=not local,
-                         walks=walks, root=root, start_walk=start.id if start else None),
+                         walks=walks, root=root, start_walk=start.id if start else None, run=False if args.no_run else None),
                 host=args.host, port=args.port, log_level="warning")
 
 

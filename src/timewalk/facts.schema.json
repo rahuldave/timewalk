@@ -70,7 +70,15 @@
       "track": {"type": "string", "pattern": "^(|main|runs[2-9]?)$", "description": "\"\" for the shell at the step, main for the repository you started from, runs to runs9 for the Runs tabs."},
       "makes": {"type": "boolean", "description": "A do$ line: the command that makes the move."},
       "writes": {"type": ["array", "null"], "items": {"type": "string"},
-                 "description": "For a do$ line that ran: the files it adds, changes or removes, in the order of their paths. null for any other command, or when it did not run."}
+                 "description": "For a do$ line that ran: the files it adds, changes or removes, in the order of their paths. null for any other command, or when it did not run."},
+      "take": {"type": ["object", "null"], "required": ["lines", "files", "deletes", "command"], "additionalProperties": false,
+               "description": "Added in timewalk 1.4.3, so a file of an older version has none. In a strict walk, for a do$ line that runs uv and writes a pyproject.toml or a uv.lock of the move that loose does not name, and for each later do$ line that writes a file that those lines write: what do mode gives in place of the lines. null for any other command, or when the do$ lines did not run and give no by.",
+               "properties": {
+                "lines": {"type": "array", "items": {"type": "integer", "minimum": 0}, "description": "At the first line of a take: the places, from 0 among the move's do$ lines, of the lines that the command stands for, this one first. Empty at a later line that joins an earlier take; files, deletes and command are then empty too."},
+                "files": {"type": "array", "items": {"type": "string"}, "description": "The files of the move that the lines write and the move keeps, in the order of the move's files: the command takes them from the move's commit."},
+                "deletes": {"type": "array", "items": {"type": "string"}, "description": "The files that the lines write and the move deletes, then the old paths of those it renames: the command removes them."},
+                "command": {"type": "string", "description": "git restore --source <12 characters of the move's commit> -- <files>, then && rm -f -- <deletes> when there are any, then && uv sync [--directory DIR] --locked --all-groups --all-packages for each uv.lock in files. From the top of the project."}
+               }}
      }
     },
     {

@@ -1336,6 +1336,14 @@ function drawNotes() {
     into.append(label);
     box.append(into);
   }
+  // The do$ lines of each move, in both modes, in order: the lines that a take stands for are counted in them.
+  const makesOf = {};
+  let ownerName = "";   // the move whose section it is, by name
+  for (const part of mine?.parts || []) {
+    if (part.kind === "move") ownerName = part.name;
+    else if (part.makes) (makesOf[ownerName] ||= []).push(part.text);
+  }
+  ownerName = "";
   let files = [];       // the files of that move's commit, for a files: line
   let owner = 0;        // the move whose section it is
   let group = null;     // the buttons of a run of commands of one block, one after another in the file
@@ -1366,6 +1374,7 @@ function drawNotes() {
   };
   for (const part of parts) {
     if (part.kind === "move") {
+      ownerName = part.name;
       markAnchor(into);
       const number = moves.findIndex((m) => m.name === part.name) + 1;
       files = number ? moves[number - 1].files : [];
@@ -1428,6 +1437,13 @@ function drawNotes() {
     }
     if (part.kind === "patch") {
       into.append(drawPatch(part, owner, shown, into.classList.contains("here")));
+      group = null;
+      continue;
+    }
+    // A strict walk's do$ line of uv: on a later day it writes newer versions than the author's, and the walk compares
+    // the files line by line. So do mode gives the command that takes its files from the move's commit (the server's take).
+    if (part.makes && shown === "do" && (part.take || part.taking)) {
+      into.append(drawTake(part, makesOf[ownerName] || []));
       group = null;
       continue;
     }
@@ -1724,6 +1740,56 @@ async function fillExcerpt(box, path, move, line) {
   box.replaceChildren(drawDiff(rows.slice(start, end + 1).join("\n"), [line]));
 }
 
+/** Paths as a list, each in the code font: "a", "a and b", "a, b and c". */
+function listed(paths) {
+  const out = [];
+  paths.forEach((path, at) => {
+    if (at) out.push(at === paths.length - 1 ? " and " : ", ");
+    const code = document.createElement("code");
+    code.textContent = path;
+    out.push(code);
+  });
+  return out;
+}
+
+/** In do mode of a strict walk, a do$ line of uv that the learner does not run: what the author ran, and the command that
+ *  takes its files from the move's commit in its place. A later do$ line that writes the same files joins the take, and
+ *  has no command. Until timewalk knows which files the lines write, no command. */
+function drawTake(part, makes) {
+  const box = document.createElement("div");
+  box.className = "p-take";
+  const said = document.createElement("p");
+  const code = (text) => { const el = document.createElement("code"); el.textContent = text; return el; };
+  if (!part.take) {
+    said.append("The author ran ", code(part.text), " here. timewalk is running it in a scratch copy, to see which files it writes.");
+    box.append(said);
+    return box;
+  }
+  const { lines, files, deletes, command } = part.take;
+  if (!lines.length) {
+    said.append("The author then ran ", code(part.text), ". The command above takes the files that it writes, so do not run it.");
+    box.append(said);
+    return box;
+  }
+  const texts = lines.map((at) => makes[at] ?? part.text);
+  const one = texts.length === 1;
+  said.append("The author ran ");
+  texts.forEach((text, at) => said.append(...(at ? [", then "] : []), code(text)));
+  said.append(` here. ${one ? "It writes" : "They write"} `, ...listed(files));
+  if (deletes.length) said.append(`, and delete${one ? "s" : ""} `, ...listed(deletes));
+  said.append(`. On a later day, ${one ? "it" : "a uv command"} can write newer versions than the author's, and this walk compares these files`
+    + ` line by line. So run this in ${one ? "its" : "their"} place, from the top of the project: it takes `
+    + `${files.length > 1 ? "each file" : "the file"} as the author has it, from the move's commit`);
+  if (files.some((path) => path.split("/").pop() === "uv.lock")) said.append(", and installs exactly the versions in ", ...listed(["uv.lock"]));
+  said.append(".");
+  const group = document.createElement("div");
+  group.className = "p-commands";
+  group.dataset.mode = "makes";
+  group.append(commandButton({ track: "replay", text: command }));
+  box.append(said, group);
+  return box;
+}
+
 /** One command of the notes, as a button that types it into its terminal, and runs it with run on click. */
 function commandButton(command) {
   const button = document.createElement("button");
@@ -1784,7 +1850,8 @@ for (const button of $("move-modes").querySelectorAll("button")) {
 }
 $("run-on-click").onchange = () => settings.set("run-on-click", $("run-on-click").checked);
 $("notes-edit").onclick = startEditing;
-$("notes-cancel").onclick = stopEditing;
+// A notes event while the editor was open was not drawn: the notes are read again, for example a take found meanwhile.
+$("notes-cancel").onclick = async () => { stopEditing(); await loadNotes(); drawNotes(); drawBand(); };
 $("notes-save").onclick = saveNotes;
 setInterval(drawBand, 1000);
 setInterval(checkMatch, 2000);

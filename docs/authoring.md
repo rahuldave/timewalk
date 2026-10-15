@@ -407,9 +407,12 @@ the move. The page asks every two seconds, but each answer is about the whole mo
   before the learner runs that block.
 - **The buttons of a `patch$` line** take their change from the commit of the move.
 - **A move with `uv add`** writes the newest version of a package. A learner on a later day gets another
-  version, and the files never match. Write the command as a `do$` line. Then give the walk
-  `loose = ["pyproject.toml", "uv.lock"]`, so that these files match by the names of their packages. See
+  version, and the files never match. Write the command as a `do$` line. Then choose. A walk with
+  `loose = ["pyproject.toml", "uv.lock"]` compares these files by the names of their packages, and the
+  learner runs `uv add`. See
   [Files that match by the names of their packages](walks.md#files-that-match-by-the-names-of-their-packages).
+  A strict walk, without `loose`, gives the learner the author's versions. In do mode, a command that takes the
+  files from the move's commit replaces the `uv` command. See [A strict walk](walks.md#a-strict-walk).
 - **A shared command after a block** checks only what that command shows. timewalk does not check the
   files there.
 
