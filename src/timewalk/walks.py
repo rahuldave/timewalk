@@ -765,13 +765,8 @@ def source_problems(
             if commands and not run:
                 continue
             found = observe(main, git(main, "rev-parse", f"{move.sha}^"), move.sha, commands, scratch) if commands else {"commands": [], "left": {}}
-            for command in found["commands"]:
-                if command["exit"]:
-                    code = f" (exit {command['exit']})" if command["exit"] > 0 else ""
-                    said = f": {command['said'].rstrip('.')}" if command["said"] else ""
-                    problems.append(f"{move.name}: the do$ line {code_span(command['text'])} fails at the commit before the move{code}{said}. "
-                                    "A do$ line runs before the move's patches; one that needs a patch gets a move of its own")
             made, outside = sources(main, move.sha, files, found, walk.loose, DIFF)
+            before = len(problems) + len(errors)
             for file in files:
                 by, patch = made[file["path"]]
                 if file["old_path"] and file["old_path"] not in named and (by == "patch" or patch):   # a rename removes the old file too
@@ -786,6 +781,17 @@ def source_problems(
                                     f"add patch$ {file['path']} for that change")
             for at, path in outside:
                 problems.append(f"{move.name}: the do$ line {code_span(commands[at])} writes {path}, which the move does not change")
+            # A do$ line that fails is a problem, but for one such as `ruff check --fix`, which writes its fixes and then exits 1
+            # for what it cannot fix: the move's last do$ line, with an exit from 1 to 125 (not a timeout, a signal, or a
+            # command not found), that wrote a file of the move that no patch$ line names, in a move with no other problem
+            wrote = {by for path, (by, _) in made.items() if isinstance(by, int) and path not in named}
+            for at, command in enumerate(found["commands"]):
+                excused = 0 < command["exit"] < 126 and at == len(commands) - 1 and at in wrote and len(problems) + len(errors) == before
+                if command["exit"] and not excused:
+                    code = f" (exit {command['exit']})" if command["exit"] > 0 else ""
+                    said = f": {command['said'].rstrip('.')}" if command["said"] else ""
+                    problems.append(f"{move.name}: the do$ line {code_span(command['text'])} fails at the commit before the move{code}{said}. "
+                                    "A do$ line runs before the move's patches; one that needs a patch gets a move of its own")
     finally:
         scratch.close()
     return errors, problems

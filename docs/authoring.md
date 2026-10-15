@@ -625,7 +625,10 @@ notes the files that each line writes, and warns of these cases:
 - a file that no `do$` line writes, and no `patch$` line names
 - a file that the move changes after its `do$` line, with no `patch$` line
 - a `do$` line that writes outside the move
-- a `do$` line that fails
+- a `do$` line that fails. One case is not a warning. The line is the move's last `do$` line, and it ends with an error
+  code from 1 to 125. It writes a file of the move that no `patch$` line names, and the move has no other problem. A
+  timeout, or a command that is not found, is always a warning. For example, `ruff check --fix` writes its fixes to the
+  files. Then it ends with error code 1, because of the problems that it cannot fix.
 
 Each warning marks a move that does not do one thing. A `patch$` line that names a file that the move
 does not change is an error. See [timewalk-check](reference.md#timewalk-check).

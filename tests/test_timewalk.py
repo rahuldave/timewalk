@@ -4077,3 +4077,40 @@ def test_style_review_runs_files_together_and_counts_rounds(tmp_path, monkeypatc
 
     failed, out = run()   # after round 3, a.md is not reviewed again until the next commit
     assert not failed and "docs/a.md: round 3 is done" in out and len(calls) == 1
+
+
+def test_a_do_line_that_writes_its_files_and_then_fails_is_fine(tmp_path: Path) -> None:
+    """A do$ line such as `ruff check --fix` writes its fixes and then exits 1 for what it cannot fix. When the files it writes
+    are the move's, timewalk-check says nothing of it; a failing line that writes nothing is still a problem."""
+    from timewalk.walks import check, load_toc
+
+    main = tmp_path / "proj"
+    main.mkdir()
+    run_git(main, "init", "-q", "-b", "main")
+    (main / "f.txt").write_text("a\n")
+    run_git(main, "add", "-A")
+    run_git(main, "commit", "-qm", "start")
+    run_git(main, "tag", "-a", "step-00", "-m", "zero")
+    (main / "f.txt").write_text("b\n")
+    run_git(main, "commit", "-qam", "step-01.1: fixed")
+    (main / "g.txt").write_text("g\n")
+    run_git(main, "add", "-A")
+    run_git(main, "commit", "-qm", "step-01.2: more")
+    run_git(main, "tag", "-a", "step-01", "-m", "one")
+    folder = tmp_path / "class"
+    folder.mkdir()
+    (folder / "notes.md").write_text(
+        "## step-00\n\n## step-01 One\n\n### step-01.1 Fixed\n\ndo$ sh -c 'echo b > f.txt; exit 1'\n\n$ ls\n\nfiles:\n- file `f.txt`: fixed.\n\n"
+        "### step-01.2 More\n\ndo$ false\npatch$ g.txt\n\n$ ls\n\nfiles:\n- file `g.txt`: more.\n")
+    toc = folder / "toc.toml"
+    toc.write_text('[[walk]]\nid = "m"\nkind = "tutorial"\nnotes = "notes.md"\n')
+    _, warnings = check(load_toc(toc), main, toc.parent, run=True)
+    assert not any("step-01.1" in w for w in warnings), warnings
+    assert any("step-01.2: the do$ line `false` fails" in w for w in warnings), warnings
+    notes = (folder / "notes.md").read_text()
+    for line, why in [("do$ sh -c 'echo b > f.txt; kill -9 $$'", "a signal"), ("do$ sh -c 'echo b > f.txt; exit 127'", "not found"),
+                      ("do$ sh -c 'echo b > f.txt; exit 1'\ndo$ sh -c 'echo s > stray.txt'", "not the last line"),
+                      ("do$ sh -c 'echo b > f.txt; exit 1'\npatch$ f.txt", "a patch$ line names its file")]:
+        (folder / "notes.md").write_text(notes.replace("do$ sh -c 'echo b > f.txt; exit 1'", line))
+        _, warnings = check(load_toc(toc), main, toc.parent, run=True)
+        assert any("step-01.1: the do$ line" in w and "fails" in w for w in warnings), (why, warnings)

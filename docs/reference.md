@@ -5,11 +5,11 @@
 Run timewalk from GitHub with uv, with no clone and no install:
 
 ```
-uvx --from git+https://github.com/rahuldave/timewalk@v1.4.1 timewalk [repo] [options]
-uvx --from git+https://github.com/rahuldave/timewalk@v1.4.1 timewalk-pdf [options]
+uvx --from git+https://github.com/rahuldave/timewalk@v1.4.2 timewalk [repo] [options]
+uvx --from git+https://github.com/rahuldave/timewalk@v1.4.2 timewalk-pdf [options]
 ```
 
-Or install the commands `timewalk`, `timewalk-pdf`, `timewalk-check`, `timewalk-notes` and `timewalk-export` once with `uv tool install git+https://github.com/rahuldave/timewalk@v1.4.1`. In a clone of timewalk, run them with
+Or install the commands `timewalk`, `timewalk-pdf`, `timewalk-check`, `timewalk-notes` and `timewalk-export` once with `uv tool install git+https://github.com/rahuldave/timewalk@v1.4.2`. In a clone of timewalk, run them with
 `uv run timewalk` and `uv run timewalk-pdf`.
 
 ## timewalk
@@ -83,13 +83,18 @@ It notes the files that each one writes. The clone is a `git clone --shared` in 
 afresh for each move, with no remote. So nothing is written in your repository.
 
 The result of each move goes into a cache, `~/.cache/timewalk/observed`, so a
-second check runs nothing. Each of these problems is a warning:
+second check runs nothing. A move with a `do$` line that failed runs again. Each of these problems is a warning:
 
 - No `do$` line writes a file of the move, and no `patch$` line names it. The warning ends "add patch$
   PATH".
 - A `do$` line writes a file, and the move changes it after that, and no `patch$` line names it.
 - A `do$` line writes a file that the move does not change.
-- A `do$` line fails at the commit before the move. The lines after it do not run.
+- A `do$` line fails at the commit before the move. The lines after it do not run. One case gets no warning. The
+  move's last `do$` line writes a file of the move that no `patch$` line names. Then it ends with an error code from 1
+  to 125. And the move has no other warning or error. An example is the linter ruff, as `ruff check --fix`. It writes its
+  fixes into the move's files. Then it ends with an error code, because some faults in the code are ones that it cannot
+  fix. Its fixes are the move's change, so the check does not warn. A line that runs out of time, is killed, or is not
+  found is always a warning. The result of a line that fails is not kept, so such a move runs its `do$` lines at each check.
 
 A file that the walk's `loose` names, and that matches by the names of its packages, has no change after
 its `do$` line. So a `uv.lock` with newer versions is the `do$` line's. Give `--no-run`, or set
