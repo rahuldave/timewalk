@@ -142,6 +142,11 @@ socket.
 
 ## Conventions
 
+- **Look for prior art before you build.** Before a new feature or fix, read the code of timewalk and walk-kit that
+  does the same job, and use it or call it. walk-kit's `git check` compared `pyproject.toml` with a `sed` pattern and
+  patched it as text, while timewalk's `package_names` already read it with a TOML library. Days of fixes went to the
+  copy. Say which code you read, and why it does not serve, before you write new code.
+
 - **Make every prompt for another agent copyable.** Write it to a file in the scratchpad, put it on the clipboard with
   `pbcopy`, and give its path. Also show it whole, in a code block that opens
   with four backticks and `text`.
