@@ -2509,7 +2509,7 @@ def test_timewalk_export_writes_a_markdown_file_for_each_mode(tutorial: timewalk
             assert (f"Apply the patch to {patched}, from the top of the project:\n\n```bash\n"
                     f"curl -sL {url}/commit/{shas['step-01.3']}.diff | git apply --include=c.txt\n```") in text
         else:
-            assert f"A patch to {patched}." in text, "watch mode: where the diff is"
+            assert f"See the new file {patched}." in text, "watch mode: what happened to the file, where its diff is"
         assert "patch$" not in text
     assert "[The same tutorial in watch mode](TUTORIAL-watch.md)" in do and "[The same tutorial in do mode](TUTORIAL-do.md)" in watch
     assert "```bash\ncat a.txt\n```" in do

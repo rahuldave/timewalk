@@ -5,11 +5,11 @@
 Run timewalk from GitHub with uv, with no clone and no install:
 
 ```
-uvx --from git+https://github.com/rahuldave/timewalk@v1.4.5 timewalk [repo] [options]
-uvx --from git+https://github.com/rahuldave/timewalk@v1.4.5 timewalk-pdf [options]
+uvx --from git+https://github.com/rahuldave/timewalk@v1.4.6 timewalk [repo] [options]
+uvx --from git+https://github.com/rahuldave/timewalk@v1.4.6 timewalk-pdf [options]
 ```
 
-Or install the commands `timewalk`, `timewalk-pdf`, `timewalk-check`, `timewalk-notes` and `timewalk-export` once with `uv tool install git+https://github.com/rahuldave/timewalk@v1.4.5`. In a clone of timewalk, run them with
+Or install the commands `timewalk`, `timewalk-pdf`, `timewalk-check`, `timewalk-notes` and `timewalk-export` once with `uv tool install git+https://github.com/rahuldave/timewalk@v1.4.6`. In a clone of timewalk, run them with
 `uv run timewalk` and `uv run timewalk-pdf`.
 
 ## timewalk
@@ -340,7 +340,7 @@ In the timewalk folder, `just` lists these:
 | `> text` | A cue. Every window shows it, in its own shade. Remove private cues before you give the notes to students |
 | `$ cmd`, `runs$ cmd`, `runs2$ cmd` to `runs9$ cmd`, `main$ cmd` | A command for that tab |
 | `do$ cmd` | In a tutorial: a command that makes the move. In do mode, a command for the **At this step** tab. In watch mode and in a narrative, the line "The move ran:" and the command, with no button. Never an anchor command. The do copy of `timewalk-export` shows it as a command, or in a strict walk as do mode does, and the watch copy as "The move ran:". The PDF prints it as written |
-| `patch$ PATH` | In a tutorial, in the shared text of a move: the move changes `PATH` by a patch, the diff of its commit. Write a path with a space in backticks. In do mode, on the move being made, **⇣ Apply patch PATH** or **⇄ Replace with the move's file PATH**, and **± See diff PATH**. In watch mode, "A patch to PATH" and **± See diff PATH**. See [patch$ buttons](walks.md#patch-buttons) |
+| `patch$ PATH` | In a tutorial, in the shared text of a move: the move changes `PATH` by a patch, the diff of its commit. Write a path with a space in backticks. In do mode, on the move being made, **⇣ Apply patch PATH** or **⇄ Replace with the move's file PATH**, and **± See diff PATH**. In watch mode, **± See the new file PATH** for a new file, or else **± See the change to PATH**, which opens the diff. See [patch$ buttons](walks.md#patch-buttons) |
 | `### step-NN.k Title` | In a tutorial: starts the section of move `k` of step `NN`. Write the sections in the order of the commits |
 | `files:` | Starts a list of items. With no items: a **± See diff** button for each file that the commit of the move added or changed |
 | ``- diff `path`: words`` | An item: a button **± See diff path** to the change of the move, or of the step, to that file. Its words go under the button |

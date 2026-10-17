@@ -115,7 +115,7 @@ websockets, Playwright and pypdf. The tests use the `dev` group. In a clone, run
 the version changed.
 
 timewalk is not on PyPI, by Rahul's choice. Users run it from GitHub with
-`uvx --from git+https://github.com/rahuldave/timewalk@v1.4.5 timewalk`. To get a change to users, raise the
+`uvx --from git+https://github.com/rahuldave/timewalk@v1.4.6 timewalk`. To get a change to users, raise the
 version in `pyproject.toml` and tag the commit `vX.Y.Z`. Then push the tag, and update the pin in the docs and
 in the kits.
 

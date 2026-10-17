@@ -425,8 +425,10 @@ def render(
             linked = f"[`{path}`]({change(where)}#diff-{hashlib.sha256(path.encode()).hexdigest()})"
             while body and not body[-1][0].strip():
                 body.pop()
-            if watch:
-                body += [("", None), (f"A patch to {linked}.", None), ("", None)]
+            if watch:   # what happened to the file: a new file, or a change; git's diff says which
+                text = diff(starts.get(where) or f"{shas[where]}^", shas[where], path) if diff else ""
+                new = bool(re.search(r"^(?:new file mode|--- /dev/null)", text, re.MULTILINE))
+                body += [("", None), (f"{'See the new file' if new else 'See the change to'} {linked}.", None), ("", None)]
             elif path in took:   # the take wrote the file as the commit has it, this change and all
                 body += [("", None), (f"The command above took {linked} from the commit with this change in it already, so there is "
                                       "nothing to apply.", None), ("", None)]

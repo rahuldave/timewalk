@@ -188,7 +188,8 @@ patch$ scripts/corpus.py
 - **In do mode,** the line shows a button. **⇣ Apply patch PATH** applies the patch to the learner's file.
   If the learner has changed the file, **⇄ Replace with the move's file PATH** shows instead. See
   [patch$ buttons](walks.md#patch-buttons).
-- **In watch mode,** the line reads "A patch to PATH", with **± See diff PATH**.
+- **In watch mode,** the line is one button that opens the diff. It says what the move does to the file. A new
+  file reads **± See the new file PATH**, and a changed one **± See the change to PATH**.
 - **In the copies and on a class's pages,** the do mode gives a command that applies the patch from
   GitHub. The watch mode links to the diff.
 

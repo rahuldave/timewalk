@@ -1597,13 +1597,10 @@ function drawPatch(part, owner, shown, here) {
   see.append("\u00B1 See diff ", pathOf());
   see.title = `What ${name || "this step"} changes in this file`;
   see.onclick = () => show({ path: part.path, ...changeView(owner) });
-  if (shown === "watch" || !name) {
-    const said = document.createElement("span");
-    said.className = "p-ran";
-    const code = document.createElement("code");
-    code.textContent = part.path;
-    said.append("A patch to ", code);
-    row.append(said, see);
+  if (shown === "watch" || !name) {   // what happened to the file, as the button to its diff: a new file, or a change
+    const status = moves[owner - 1]?.files?.find((f) => f.path === part.path)?.status;
+    see.replaceChildren(status === "A" ? "\u00B1 See the new file " : "\u00B1 See the change to ", pathOf());
+    row.append(see);
     return row;
   }
   const act = document.createElement("button");

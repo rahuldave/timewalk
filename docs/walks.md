@@ -585,8 +585,8 @@ give the form that `git apply` reads, whatever your git config says. A path is a
 - **The Room window shows no Apply patch or Replace button,** only **± See diff PATH**.
 
 The learner can also make the change by hand. The tab **Yours and step-NN.k** shows what still differs.
-Either way, the move is marked done when the files match. In watch mode, the line reads "A patch to PATH",
-with **± See diff PATH**.
+Either way, the move is marked done when the files match. In watch mode, the line is one button that opens
+the diff. A new file reads **± See the new file PATH**, and a changed one **± See the change to PATH**.
 
 ![The notes of step-02.2 in do mode with its patch$ line, Apply patch tests/test_empty.py and See diff, after Apply patch made step-02.1, and the reader on Next change: step-02.2](images/tutorial-patch.png)
 
@@ -871,7 +871,8 @@ presenter. See [The facts file](reference.md#the-facts-file).
 
 The `walk` skill of walk-kit, at github.com/rahuldave/walk-kit, makes the pages of a class from the facts
 file. It calls the two ways of reading **Read the tutorial**, for watch mode, and **Build it yourself**,
-for do mode. On its pages, a `patch$` line reads "A patch to `PATH`." in Read the tutorial. In Build it
+for do mode. On its pages, a `patch$` line in Read the tutorial is a button to the file's diff. It reads "± See the
+new file `PATH`", or "± See the change to `PATH`". In Build it
 yourself, it reads "Apply the patch to `PATH`:", with a command that applies the patch from GitHub.
 
 ### What a copy holds
@@ -910,7 +911,7 @@ Each copy is for one mode. It changes the notes in these ways:
 - **A `patch$` line follows the mode of the copy.** The do copy says "Apply the patch to `PATH`:", with
   the path linked to its diff on GitHub. A `bash` code block follows, with
   `curl -sL https://github.com/OWNER/NAME/commit/SHA.diff | git apply --include=PATH`. The watch copy says
-  "A patch to `PATH`.", with the same link. Any other sentence goes as written.
+  "See the new file `PATH`." or "See the change to `PATH`.", with the same link. Any other sentence goes as written.
 - **A copy holds only the sections of the steps and moves of the walk.** If the notes have a section for
   a name that is not a step of the history, the command says so.
 
