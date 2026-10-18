@@ -1,0 +1,84 @@
+project:
+  type: website
+  output-dir: _site
+  render: ["index.md", "tour.md", "tour-do.md", "tour-site.md", "demo.md", "class.md", "walk.md", "model.md", "page.md", "notes.md", "edits.md", "terminals.md", "steps.md", "slides.md", "walks.md", "build-walks.md", "authoring.md", "brand.md", "replay.md", "git.md", "python.md", "safety.md", "reference.md", "development.md"]   # only the pages of the site, not the guide in style/
+
+website:
+  title: "timewalk"
+  description: "A step browser: teach a project through a replay of how its authors built it."
+  site-url: https://rahuldave.com/timewalk/
+  repo-url: https://github.com/rahuldave/timewalk
+  page-navigation: true
+  search: true
+  navbar:
+    tools:
+      - icon: github
+        href: https://github.com/rahuldave/timewalk
+  sidebar:
+    style: docked
+    contents:
+      - section: "Start here"
+        contents:
+          - text: "Overview"
+            href: index.md
+          - text: "A tour of the demo"
+            href: demo.md
+      - section: "A tour of a class"
+        contents:
+          - text: "A class in timewalk"
+            href: tour.md
+          - text: "Make the moves yourself"
+            href: tour-do.md
+          - text: "Read a walk without timewalk"
+            href: tour-site.md
+      - section: "Teach"
+        contents:
+          - text: "Teach a class"
+            href: class.md
+          - text: "Make a walk"
+            href: walk.md
+          - text: "How it works"
+            href: model.md
+          - text: "The page"
+            href: page.md
+          - text: "Notes"
+            href: notes.md
+          - text: "Live edits"
+            href: edits.md
+          - text: "The terminals"
+            href: terminals.md
+      - section: "Build a class"
+        contents:
+          - text: "Making the steps"
+            href: steps.md
+          - text: "Slides and documents"
+            href: slides.md
+          - text: "Several walks"
+            href: walks.md
+          - text: "Build a class with several walks"
+            href: build-walks.md
+          - text: "What a narrative and a tutorial need"
+            href: authoring.md
+          - text: "Brand a PDF"
+            href: brand.md
+      - section: "How it works"
+        contents:
+          - text: "The replay copy"
+            href: replay.md
+          - text: "What timewalk does with git"
+            href: git.md
+          - text: "Python projects"
+            href: python.md
+          - text: "Safety"
+            href: safety.md
+      - section: "Reference"
+        contents:
+          - text: "Reference"
+            href: reference.md
+          - text: "Development"
+            href: development.md
+
+theme: atelier
+css: styles.css
+toc: true
+code-copy: true

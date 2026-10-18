@@ -12,7 +12,7 @@ websockets, and Playwright and pypdf for the PDF. The pages are plain HTML, CSS 
 | `src/timewalk/static/vendor/` | ghostty-web, highlight.js and marked, each with its licence |
 | `tests/test_timewalk.py` | The tests |
 | `demo/` | The demo submodule, with its notes and slides |
-| `docs/` | This site. It holds the pages, `build.py`, `screenshots.py`, `images/` and `style/` |
+| `docs/` | This site. It holds the pages, `_smalldocs.yml`, the theme Atelier in `_extensions/`, `styles.css`, `screenshots.py`, `images/` and `style/` |
 
 ## Tests and lint
 
@@ -38,12 +38,20 @@ clone away after the check.
 
 ```
 just screenshots     # take every picture again, from a clone of the demo
-just site            # build docs/_site and serve it at http://127.0.0.1:8000
+just site            # build the site with smalldocs, and serve it on this machine
 ```
 
-The pages are Markdown files in `docs/`. `build.py` renders them with one layout and the sidebar, in the
-order of its `PAGES` list. A GitHub Action builds the site on every push to `main`. Then it publishes the
-site to GitHub Pages.
+The pages are Markdown files in `docs/`. [smalldocs](https://github.com/rahuldave/smalldocs) builds them into a
+website. A theme named Atelier sets the look of the pages, such as the fonts, the colours and the sidebar. `docs/_smalldocs.yml` lists the pages, and the sections and order of the sidebar. A
+GitHub Action builds the site on each push to `main` that changes a file in `docs/` or the workflow itself. Then it
+publishes the site to GitHub Pages.
+
+The theme is in `docs/_extensions/atelier/`, with a `.source` file that says where it came from. To take a new
+version, run `uvx --from 'smalldocs>=0.3.3' smalldocs add rahuldave/smalldocs-atelier@TAG --force` in `docs/`, with the tag of the version for TAG,
+for example `v0.2.0`. The command copies the theme at that tag into `docs/_extensions/atelier/`. Without `--force`,
+smalldocs asks before it replaces the copy that is there, or stops with an error when it cannot ask. `--force` replaces
+it without asking. `docs/styles.css` holds the site's
+own CSS rules, which change parts of the theme's look.
 
 `screenshots.py` clones the demo into a temporary folder and serves the clone with timewalk. Then it drives
 the page in headless Chrome. It uses bash and a short prompt, so nothing personal shows. When the pages
@@ -60,7 +68,7 @@ just style                                    # every page, the README and the d
 python3 docs/style/check.py -v docs/edits.md  # one page, with the soft notes
 ```
 
-Fix each hard problem. Then read the page, and build the site with `uv run docs/build.py`.
+Fix each hard problem. Then read the page, and build the site with `just site`.
 
 `just style` then asks Claude Code, through `claude -p`, to review the prose that changed since the last
 commit. A problem that Claude finds fails the check. Each file gets at most three such rounds between two

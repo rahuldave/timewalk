@@ -1,0 +1,3 @@
+/* timewalk's own rules over the theme Atelier. */
+/* Atelier writes a fixed label over every title; the pages of timewalk have none. */
+html .quarto-title::before { content: none; }

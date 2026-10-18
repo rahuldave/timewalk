@@ -22,7 +22,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
-      - run: uv run docs/build.py
+      - run: uvx --from 'smalldocs>=0.3.3' smalldocs render docs
       - uses: actions/upload-pages-artifact@v3
         with:
           path: docs/_site

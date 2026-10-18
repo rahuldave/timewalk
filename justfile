@@ -39,9 +39,9 @@ lint:
 screenshots:
     uv run docs/screenshots.py
 
-# Build the site into docs/_site and serve it at http://127.0.0.1:8000
+# Build the site from docs/ with smalldocs, serve it on this machine, and build it again on every change
 site:
-    uv run docs/build.py --serve
+    uvx --from 'smalldocs>=0.3.3' smalldocs preview docs
 
 # Check the prose against the writing guide (docs/style/GUIDE.md): the site, README, and the demo's notes and slides, then a model review of the changed files.
 # First the form (check.py; -v also shows the soft notes), then a model reviews the text that changed, for a reader of 12

@@ -102,7 +102,7 @@ Rahul set these rules. Each rule has tests. Do not weaken them.
 | `src/timewalk/static/vendor/` | ghostty-web, highlight.js, marked, each with its licence. Vendored: do not edit |
 | `tests/test_timewalk.py` | The git layer, notes and slides, the guards of the app, a real terminal |
 | `demo/timewalk-demo` | A git submodule: the sample repository, five tagged steps, at github.com/rahuldave/timewalk-demo. Its replay copy, `demo/timewalk-demo-replay`, is ignored |
-| `docs/` | The site: one Markdown page per topic (`authoring.md` lists what a narrative and a tutorial need, for the skills that build classes), `build.py` (the order is its `PAGES` list), `site.css`, `screenshots.py`, `images/`. `_site/` is built and ignored. `.github/workflows/pages.yml` publishes it |
+| `docs/` | The site, built by smalldocs with the theme Atelier: one Markdown page per topic (`tour*.md` is a tour of a real class, cheesecracker; `authoring.md` lists what a narrative and a tutorial need, for the skills that build classes), `_smalldocs.yml` (the pages, and the sections and order of the sidebar), `_extensions/atelier/` (the theme, from `smalldocs add rahuldave/smalldocs-atelier@TAG --force`), `styles.css`, `screenshots.py`, `images/`. `_site/` is built and ignored. `.github/workflows/pages.yml` publishes it |
 | `demo/notes.md`, `demo/slides/`, `demo/toc.toml`, `demo/walks/` | The notes and slides of the demo, and a second walk. They stay here, outside the sample, as in a class kit |
 
 timewalk is a package, `src/timewalk`, built with hatchling from `pyproject.toml`. It gives five commands,
@@ -131,7 +131,7 @@ just demo-walks      # the same, with the two walks of demo/toc.toml
 just walk <repo> ... # run timewalk on a repository
 just pdf <manifest> -o out.pdf --title "..."
 just screenshots     # retake docs/images from a throwaway clone of the demo, and the tutorial from ../timewalk-test
-just site            # build docs/_site and serve it at http://127.0.0.1:8000
+just site            # build the site with smalldocs, and serve it on this machine
 just style           # check the prose against the writing guide; -v also shows the soft notes
 ```
 
